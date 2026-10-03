@@ -33,7 +33,9 @@ local SCAN_RADIUS_M   = 40.0
 local SCAN_RADIUS_U   = SCAN_RADIUS_M * UNITS_PER_METRE
 local MAX_SPOKEN      = 6
 local CLOCK_SIGN      = 1                 -- set to -1 if clock-directions come out mirrored
-local REPORT_UNCLASSIFIED = true          -- log (never speak) in-range actors no category claimed
+-- Log (never speak) in-range actors no category claimed. Debug only: it walks every Actor,
+-- and in Hogwarts Legacy each FindAllOf costs ~34 ms and full sweeps have frozen the game.
+local REPORT_UNCLASSIFIED = false
 
 -- Categories in priority order (most specific first). Each actor is claimed by the FIRST
 -- category whose FindAllOf returns it; later categories skip already-claimed actors.
