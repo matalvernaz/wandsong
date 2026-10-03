@@ -1,4 +1,4 @@
-// Wandsong installer.
+﻿// Wandsong installer.
 //
 // A plain console program, so screen readers read it naturally. When no screen reader is
 // running it also speaks each line itself (through Prism's system voices), so a blind
@@ -32,7 +32,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr char kVersion[] = "0.2.0";
+constexpr char kVersion[] = "0.3.0";
 constexpr char kSteamAppId[] = "990080";
 const fs::path kBinRel = fs::path("Phoenix") / "Binaries" / "Win64";
 const fs::path kBackupDir = "Wandsong-backup";

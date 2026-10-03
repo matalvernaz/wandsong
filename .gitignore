@@ -7,3 +7,6 @@ dist/
 third_party/
 
 *.log
+
+# Native build output
+native/build/

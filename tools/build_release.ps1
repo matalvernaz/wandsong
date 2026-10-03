@@ -46,6 +46,7 @@ Fetch-Prism
 Fetch-UE4SS
 Build "helper"
 Build "installer"
+Build "native"
 
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 $payload = Join-Path $stage "payload"
@@ -66,6 +67,10 @@ Copy-Item -Recurse (Join-Path $root "mod\Wandsong") (Join-Path $payload "Mods")
 New-Item -ItemType Directory -Force (Join-Path $mod "helper") | Out-Null
 Copy-Item (Join-Path $root "helper\build\Release\wandsong_helper.exe") (Join-Path $mod "helper")
 Copy-Item (Join-Path $third "prism\dynamic\release\bin\prism.dll") (Join-Path $mod "helper")
+# In-process speech and clicks (Lua C modules) sit beside the scripts that require them.
+$scripts = Join-Path $mod "Scripts"
+Copy-Item (Join-Path $root "native\build\Release\prism_bridge.dll"), (Join-Path $root "native\build\Release\click_bridge.dll") $scripts
+Copy-Item (Join-Path $third "prism\dynamic\release\bin\prism.dll") $scripts
 
 # Docs and licenses.
 Copy-Item (Join-Path $root "README.md"), (Join-Path $root "LICENSE") $stage
@@ -75,6 +80,7 @@ Copy-Item (Join-Path $third "UE4SS-LICENSE.txt") (Join-Path $lic "UE4SS-MIT.txt"
 Copy-Item (Join-Path $third "prism\LICENSES\prism\mpl-2.0.txt") (Join-Path $lic "Prism-MPL-2.0.txt")
 Copy-Item (Join-Path $third "prism\NOTICE") (Join-Path $lic "Prism-NOTICE.txt")
 Copy-Item (Join-Path $third "prism\LICENSES\nvdaController\lgpl-2.1.txt") (Join-Path $lic "NVDA-controller-LGPL-2.1.txt")
+Copy-Item (Join-Path $root "native\lua-5.4.4\LICENSE") (Join-Path $lic "Lua-MIT.txt")
 
 $zip = Join-Path $dist "Wandsong-$Version.zip"
 if (Test-Path $zip) { Remove-Item $zip }

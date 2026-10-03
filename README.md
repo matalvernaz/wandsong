@@ -105,9 +105,9 @@ switch tabs, and F to continue.
 
 ## Troubleshooting
 
-- No speech at all: check that Mods\Wandsong\helper\wandsong_helper.exe exists inside the
-  game's Phoenix\Binaries\Win64 folder. Its log, wandsong_helper.log, says which screen reader it
-  is using.
+- No speech at all: open UE4SS.log in the game's Phoenix\Binaries\Win64 folder and search
+  for "speech:". It says whether speech runs in-process (and through which screen reader) or
+  had to fall back to the helper program, and why.
 - The game crashes or won't start after an update: run setup and choose vanilla mode, then
   report the problem.
 - Bug reports: attach UE4SS.log from Phoenix\Binaries\Win64. It records everything the mod
@@ -129,8 +129,9 @@ dist\Wandsong-<version>.zip.
 Layout:
 
 - mod\Wandsong\Scripts: the UE4SS Lua mod (speech, menus, scanner).
-- helper: wandsong_helper.exe, the Prism-based speech process the mod starts and talks to over a
-  named pipe.
+- native: Lua C modules loaded in the game process: prism_bridge (speech and braille through
+  Prism) and click_bridge (presses buttons through their own OnClicked event).
+- helper: wandsong_helper.exe, a fallback speech process used only if prism_bridge can't load.
 - installer: WandsongSetup.exe.
 - ue4ss: the UE4SS settings and mods.txt the game needs.
 - docs: research notes and plans.
@@ -141,6 +142,9 @@ Layout:
 - [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) (MIT) loads the mod.
 - [Prism](https://github.com/ethindp/prism) (MPL 2.0) handles screen reader and voice output;
   its notices are in the licenses folder of each release.
+- The in-process speech and click modules (native/prism_bridge.c, native/click_bridge.cpp)
+  are adapted, with permission,
+  from another access mod's code. They statically link Lua 5.4.4 (MIT), the version UE4SS embeds.
 - Ideas borrowed with thanks from other access mods, and from the audio games A Hero's Call and Swamp.
 
 Wandsong is a fan-made accessibility mod. It is not affiliated with or endorsed by

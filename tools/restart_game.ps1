@@ -1,4 +1,4 @@
-# Dev helper: deploy the mod's scripts, close Hogwarts Legacy, wait until Steam itself has
+﻿# Dev helper: deploy the mod's scripts, close Hogwarts Legacy, wait until Steam itself has
 # noticed the game is gone (relaunching earlier leaves Steam convinced the game is still
 # running), then launch it again.
 param([switch]$NoDeploy)
@@ -15,7 +15,7 @@ $before = (Get-Content $steamLog).Count
 if (Get-Process HogwartsLegacy -ErrorAction SilentlyContinue) {
     Stop-Process -Name HogwartsLegacy -Force -ErrorAction SilentlyContinue
     $gone = $false
-    for ($i = 0; $i -lt 90; $i++) {
+    for ($i = 0; $i -lt 180; $i++) {
         Start-Sleep 1
         $new = Get-Content $steamLog | Select-Object -Skip $before
         if (-not (Get-Process HogwartsLegacy -ErrorAction SilentlyContinue) -and

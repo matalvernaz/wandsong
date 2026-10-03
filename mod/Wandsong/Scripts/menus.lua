@@ -10,6 +10,19 @@ local speech = require("speech")
 local ok_presets, PRESET_DESCRIPTIONS = pcall(require, "creator_presets")
 if not ok_presets then PRESET_DESCRIPTIONS = {} end
 
+-- Native OnClicked broadcaster; optional (clicks fall back to Blueprint handlers).
+local click_bridge
+do
+    local ok, mod = pcall(require, "click_bridge")
+    if ok and type(mod) == "table" then
+        local ready, why = mod.ready()
+        if ready then click_bridge = mod end
+        print("[Wandsong] click bridge: " .. tostring(why) .. "\n")
+    else
+        print("[Wandsong] click bridge unavailable: " .. tostring(mod) .. "\n")
+    end
+end
+
 local TAG = "[Wandsong] "
 
 local function log(s) print(TAG .. s .. "\n") end
@@ -873,6 +886,14 @@ local function click_current()
     local owner = owner_of(item.button)
     local fn = owner and click_handler(owner, item.button)
     if not fn then
+        -- No Blueprint handler named after this button: fire the button's own OnClicked
+        -- listeners natively (click_bridge, adapted from another access mod).
+        if click_bridge then
+            local okb, ok2, msg, n = pcall(click_bridge.broadcast_on_clicked, item.button:GetAddress())
+            log("click " .. item.text .. " via OnClicked broadcast: " .. tostring(okb and ok2) ..
+                " " .. tostring(msg) .. " (" .. tostring(n) .. " listeners)")
+            if okb and ok2 then return end
+        end
         log("no click handler for " .. item.text)
         speak("Sorry, I can't click " .. item.text .. " yet")
         return
