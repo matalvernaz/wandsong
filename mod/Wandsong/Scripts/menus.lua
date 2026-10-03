@@ -7,6 +7,8 @@
 -- ReadMenu, gather the strings ourselves and hand them to the speech module.
 
 local speech = require("speech")
+local ok_presets, PRESET_DESCRIPTIONS = pcall(require, "creator_presets")
+if not ok_presets then PRESET_DESCRIPTIONS = {} end
 
 local TAG = "[Wandsong] "
 
@@ -84,6 +86,8 @@ local function send_action_early(action)
     return ok
 end
 local label_for
+local walk, top_of   -- defined below; used by the hook and by tab naming
+local start_editing, editing
 local seen = {}
 local last_screen_time = -10
 local capture_until, hover_details = -10, {}
@@ -133,6 +137,25 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
         if is_screen then
             last_screen_time = os.clock()
             speak(text)
+            -- If the screen shows much more prose than the game's reader gives us (a letter,
+            -- a long notice), read that too, after the summary.
+            ExecuteWithDelay(400, function()
+                ExecuteInGameThread(function()
+                    local ok_v, still = pcall(function() return widget:IsValid() and widget:IsInViewport() end)
+                    if not (ok_v and still) then return end
+                    local items = {}
+                    walk(widget, items, nil, 0)
+                    local prose, buttons = {}, 0
+                    for _, it in ipairs(items) do
+                        if it.button then buttons = buttons + 1
+                        elseif not it.action and #it.text > 1 and not text:find(it.text, 1, true) then
+                            prose[#prose + 1] = it.text
+                        end
+                    end
+                    local body = table.concat(prose, " ")
+                    if #body > 200 and buttons < 8 then speak(body, true) end
+                end)
+            end)
         else
             speak(text, os.clock() - last_screen_time < 2.0)
         end
@@ -225,6 +248,8 @@ local BUTTON     = "/Script/UMG.Button"
 local CHECKBOX   = "/Script/UMG.CheckBox"
 local SWITCHER   = "/Script/UMG.WidgetSwitcher"
 local LEGENDITEM = "/Script/Phoenix.LegendItem"
+local EDITABLE   = "/Script/UMG.EditableText"
+local EDITBOX    = "/Script/UMG.EditableTextBox"
 local USERWIDGET = "/Script/UMG.UserWidget"
 local WIDGETTREE = "/Script/UMG.WidgetTree"
 
@@ -283,6 +308,19 @@ local function is_selected(o)
     return ok and v == true
 end
 
+-- Tab names learned from a screen's section heading while that tab is current,
+-- keyed by screen class then tab index (1-based).
+local learned_tabs = {}
+local logged_title_keys = {}
+
+-- "UI_CharacterCreator_Tab_Face" / "CC.Title.Complexion" -> "Face" / "Complexion"
+local function title_from_key(k)
+    k = tostring(k or "")
+    local last = k:match("([^%._/:]+)$") or k
+    last = last:gsub("^[Tt]itle", ""):gsub("^[Tt]ab", "")
+    return humanize(last)
+end
+
 -- Tab buttons inside a category nav bar: name them from the bar's CategoryNames.
 local function navbar_label(navbar, tile)
     local want, idx = addr(tile), nil
@@ -298,17 +336,39 @@ local function navbar_label(navbar, tile)
             if i == idx then name = to_text(e:get()) end
         end)
     end)
-    if not name or name == "" then name = "Tab " .. idx end
+    local named = name ~= nil and name ~= ""
+    if not named then
+        local screen = top_of(navbar)
+        local scls = cls_name(screen)
+        local learned = learned_tabs[scls] and learned_tabs[scls][idx]
+        if learned then
+            name, named = learned, true
+        else
+            local keys = {}
+            pcall(function()
+                screen.CustomizationPagesTitleKey:ForEach(function(i, e) keys[i] = to_text(e:get()) end)
+            end)
+            if not logged_title_keys[scls] and next(keys) then
+                logged_title_keys[scls] = true
+                local all = {}
+                for i = 1, #keys do all[#all + 1] = tostring(keys[i]) end
+                log("page title keys for " .. scls .. ": " .. table.concat(all, " | "))
+            end
+            local t = keys[idx] and title_from_key(keys[idx]) or ""
+            if t ~= "" then name, named = t, true end
+        end
+    end
+    if not named then name = "Tab " .. idx end
     local cur = -1
     pcall(function() cur = navbar.CurCategoryIndex end)
     if cur == idx - 1 then name = name .. ", current tab" end
-    return name
+    return name, named, idx
 end
 
 label_for = function(button)
     local tip = ""
     pcall(function() tip = clean(button:GetToolTipText():ToString()) end)
-    if tip ~= "" then return tip end
+    if tip ~= "" then return tip, {} end
 
     local o, chain = owner_of(button), {}
     local tile = o
@@ -316,20 +376,37 @@ label_for = function(button)
         if not o then break end
         local cn = cls_name(o)
         chain[#chain + 1] = cn
-        if cn:find("CategoryNavBar", 1, true) and tile then
-            local t = navbar_label(o, tile)
-            if t then return t end
+        if cn:find("CategoryNavBar", 1, true) then
+            -- The bar's own arrow buttons.
+            if o == owner_of(button) or addr(o) == addr(owner_of(button)) then
+                local bn = fname(button)
+                if bn:find("Left", 1, true) then return "Previous tab", { navarrow = "prev", navbar = o } end
+                if bn:find("Right", 1, true) then return "Next tab", { navarrow = "next", navbar = o } end
+            elseif tile then
+                local t, named, idx = navbar_label(o, tile)
+                if t then return t, { weak = not named, tab = true, tab_index = idx, tab_screen = cls_name(top_of(o)), navbar = o } end
+            end
         end
         tile = o
         o = owner_of(o)
     end
 
-    -- Picture tiles (face presets, swatches): use the widget's own name and state.
+    -- Picture tiles (face presets, swatches). Widgets made at runtime get names like
+    -- UI_BP_Creator_Presets_C_2147455411, which mean nothing: number them among their
+    -- siblings instead ("Preset 3 of 12"). Designer-named ones (Preset_9) read as named.
     local owner = owner_of(button)
     if owner then
-        local n = humanize(fname(owner))
+        local n = fname(owner)
+        local selected = is_selected(owner)
+        if n:match("_C_%d%d%d%d%d+$") then
+            local variant
+            pcall(function() variant = owner.presetGender end)
+            return nil, { weak = true, group = cls_name(owner), selected = selected, variant = variant }
+        end
+        if n:find("[Ss]lider") then return "Slider", { slider = true } end
+        n = humanize(n)
         if n ~= "" and n ~= "None" then
-            return n .. (is_selected(owner) and ", selected" or "")
+            return n .. (selected and ", selected" or ""), {}
         end
     end
 
@@ -338,10 +415,18 @@ label_for = function(button)
         unlabelled_logged[key] = true
         log("unlabelled button " .. fname(button) .. " owners: " .. key)
     end
-    return "unlabelled"
+    return "unlabelled", { weak = true }
 end
 
-local function walk(w, items, label, depth)
+-- "UI_BP_Creator_Presets_C" -> "Preset"
+local function group_noun(cls)
+    local n = cls:gsub("^UI_BP_", ""):gsub("_C$", ""):gsub("^Creator_", ""):gsub("^CharCreator_", "")
+    n = humanize(n)
+    if #n > 3 then n = n:gsub("s$", "") end
+    return n ~= "" and n or "Option"
+end
+
+walk = function(w, items, label, depth)
     if not w or depth > 48 or not shown(w) then return end
 
     if isa(w, TEXTBLOCK) or isa(w, RICHTEXT) then
@@ -351,6 +436,11 @@ local function walk(w, items, label, depth)
             if label then label[#label + 1] = t
             else items[#items + 1] = { text = t } end
         end
+        return
+    end
+
+    if isa(w, EDITABLE) or isa(w, EDITBOX) then
+        if label then label.editable = w end
         return
     end
 
@@ -396,14 +486,31 @@ local function walk(w, items, label, depth)
     end
 
     if is_button then
-        local t = #my_label > 0 and table.concat(my_label, ", ") or label_for(w)
-        items[#items + 1] = { text = t, button = w,
-                              checkbox = isa(w, CHECKBOX) }
+        local item = { button = w, checkbox = isa(w, CHECKBOX), editable = my_label.editable }
+        if #my_label > 0 then
+            item.text = table.concat(my_label, ", ")
+            local owner = owner_of(w)
+            if owner then
+                local props = { "IsButtonSelected", "IsSelected", "currentlyActive", "bIsSelected" }
+                -- Choice buttons (voice, difficulty, dormitory) mark the chosen one IsActive.
+                -- Screens use a field with the same name, so only trust it on button widgets.
+                if cls_name(owner):find("Button", 1, true) then props[#props + 1] = "IsActive" end
+                for _, prop in ipairs(props) do
+                    local ok, v = pcall(function() return owner[prop] end)
+                    if ok and v == true then item.chosen = true; break end
+                end
+            end
+        else
+            local t, meta = label_for(w)
+            item.text = t
+            for k, v in pairs(meta) do item[k] = v end
+        end
+        items[#items + 1] = item
     end
 end
 
 -- Climb from any widget to the top-level screen that owns it.
-local function top_of(w)
+top_of = function(w)
     local cur = w
     for _ = 1, 24 do
         local owner = owner_of(cur)
@@ -446,11 +553,101 @@ end
 
 local review_items, review_index, review_top = {}, 0, nil
 
+local logged_variants = {}
+local function finish_labels(items)
+    -- The heading above a tab bar names the current tab: remember it for later.
+    for i, it in ipairs(items) do
+        if it.tab and it.tab_index and it.text:find("current tab", 1, true) then
+            for j = i - 1, 1, -1 do
+                local h = items[j]
+                if not h.button and not h.action and #h.text > 2 then
+                    learned_tabs[it.tab_screen] = learned_tabs[it.tab_screen] or {}
+                    if not learned_tabs[it.tab_screen][it.tab_index] then
+                        learned_tabs[it.tab_screen][it.tab_index] = h.text
+                        if it.weak then it.text = h.text .. ", current tab"; it.weak = false end
+                    end
+                    break
+                end
+            end
+        end
+    end
+    -- Presets that come in variants (e.g. two body types) are numbered within each variant.
+    local variants = {}
+    for _, it in ipairs(items) do
+        if it.group and it.variant ~= nil then
+            variants[it.group] = variants[it.group] or {}
+            variants[it.group][tostring(it.variant)] = true
+        end
+    end
+    for g, vs in pairs(variants) do
+        local list = {}
+        for v in pairs(vs) do list[#list + 1] = v end
+        if not logged_variants[g] then
+            logged_variants[g] = true
+            log("variants for " .. g .. ": " .. table.concat(list, ","))
+        end
+        if #list > 1 then
+            for _, it in ipairs(items) do
+                if it.group == g then it.group = g .. "#" .. tostring(it.variant) end
+            end
+        end
+    end
+    local heading
+    for _, it in ipairs(items) do
+        if not it.button and not it.action then heading = it.text; break end
+    end
+    -- Tiles are numbered within the section heading above them ("Face Shape 3 of 15",
+    -- "Glasses 2 of 4"); sliders take their section's name too.
+    local section = nil
+    for _, it in ipairs(items) do
+        if not it.button and not it.action and #it.text > 2 then section = it.text end
+        it.section = section
+        if it.group then it.group = it.group .. "|" .. tostring(section) end
+        if it.slider then it.text = section and (section .. " slider") or "Slider" end
+    end
+    local totals, seen_n = {}, {}
+    for _, it in ipairs(items) do
+        if it.group then totals[it.group] = (totals[it.group] or 0) + 1 end
+    end
+    for _, it in ipairs(items) do
+        if it.group then
+            seen_n[it.group] = (seen_n[it.group] or 0) + 1
+            local base, variant = it.group:gsub("|.*$", ""):match("^(.-)#(.*)$")
+            base = base or it.group:gsub("|.*$", "")
+            local desc = nil
+            if base == "UI_BP_Creator_Presets_C" and heading == "Presets" and it.section == heading then
+                desc = PRESET_DESCRIPTIONS[seen_n[it.group]]
+            end
+            local noun = (it.section and it.section ~= heading) and it.section or group_noun(base)
+            it.text = noun .. " " .. seen_n[it.group] .. " of " .. totals[it.group] ..
+                      (variant and (", style " .. (tonumber(variant) and tonumber(variant) + 1 or variant)) or "") ..
+                      (desc and (": " .. desc) or "") ..
+                      (it.selected and ", selected" or "")
+        end
+    end
+    -- The tab bar draws its keys ("Q", "E") as lone letters beside the arrows.
+    local i = 1
+    while i <= #items do
+        local it = items[i]
+        if not it.button and not it.action and #it.text <= 2 then
+            local prev, nxt = items[i - 1], items[i + 1]
+            local arrow = (nxt and nxt.navarrow) and nxt or ((prev and prev.navarrow) and prev or nil)
+            if arrow then
+                arrow.text = arrow.text .. ", " .. it.text .. " key"
+                table.remove(items, i)
+                i = i - 1
+            end
+        end
+        i = i + 1
+    end
+end
+
 local function refresh()
     local tops, top = current_tops()
     if #tops == 0 then review_items = {}; return false end
     local items = {}
     for _, t in ipairs(tops) do walk(t, items, nil, 0) end
+    finish_labels(items)
     if addr(top) ~= addr(review_top) then
         -- Keep the user's place if the same item is still there under the new screen set.
         local prev = review_items[review_index]
@@ -475,6 +672,12 @@ local function describe(item)
     if item.action then
         return item.text .. ", shortcut" .. (item.hold > 0 and ", hold" or "")
     end
+    if item.editable then
+        local v = ""
+        pcall(function() v = item.editable:GetText():ToString() end)
+        return item.text .. ", edit field, " .. (v ~= "" and v or "empty")
+    end
+    if item.button and item.chosen then return item.text .. ", selected, button" end
     return item.button and (item.text .. ", button") or item.text
 end
 
@@ -498,12 +701,23 @@ local function hover(item)
 end
 
 local function select_item(i, edge)
+    editing = nil   -- moving the review cursor ends typing echo
     review_index = i
     local item = review_items[i]
     hover_details = {}
     capture_until = os.clock() + 0.8
     hover(item)
     speak(describe(item) .. (edge and (", " .. edge) or ""))
+    if item.weak then
+        ExecuteWithDelay(300, function()
+            ExecuteInGameThread(function()
+                if review_items[review_index] ~= item then return end
+                for _, t in ipairs(hover_details) do
+                    if t ~= "" and not t:find(item.text, 1, true) then speak(t, true); return end
+                end
+            end)
+        end)
+    end
 end
 
 -- Description / hover text for the current item: what the game showed when we hovered it,
@@ -593,6 +807,52 @@ local function send_action(action, hold)
     return true
 end
 
+-- Typing echo for edit fields: poll the field and speak what changed, like a screen reader.
+local edit_text, edit_name = "", ""
+start_editing = function(item)
+    editing, edit_name = item.editable, item.text
+    edit_text = ""
+    pcall(function() edit_text = item.editable:GetText():ToString() end)
+    speak("Editing " .. item.text .. ". Type, then press Enter when you're done.")
+end
+LoopAsync(150, function()
+    if not editing then return false end
+    ExecuteInGameThread(function()
+        local w = editing
+        if not w then return end
+        local v
+        local ok = pcall(function() v = w:GetText():ToString() end)
+        if not ok or v == nil then editing = nil; return end
+        if v == edit_text then return end
+        if #v > #edit_text and v:sub(1, #edit_text) == edit_text then
+            speak(v:sub(#edit_text + 1))                       -- typed characters
+        elseif #v < #edit_text and edit_text:sub(1, #v) == v then
+            speak(edit_text:sub(#v + 1))                       -- deleted characters
+        else
+            speak(v ~= "" and v or "empty")
+        end
+        edit_text = v
+    end)
+    return false
+end)
+
+local ACTION_TAB_LEFT, ACTION_TAB_RIGHT = 57, 58
+local function switch_tab(item)
+    local steps, action = 1, item.navarrow == "prev" and ACTION_TAB_LEFT or ACTION_TAB_RIGHT
+    if item.tab then
+        local cur
+        pcall(function() cur = item.navbar.CurCategoryIndex end)
+        if type(cur) ~= "number" then return false end
+        local delta = (item.tab_index - 1) - cur
+        if delta == 0 then speak(item.text); return true end
+        steps, action = math.abs(delta), delta < 0 and ACTION_TAB_LEFT or ACTION_TAB_RIGHT
+    end
+    for i = 0, steps - 1 do
+        ExecuteWithDelay(i * 250, function() ExecuteInGameThread(function() send_action(action) end) end)
+    end
+    return true
+end
+
 local function click_current()
     local item = review_items[review_index]
     if not item then speak("Nothing selected. Use the bracket keys to pick an item first."); return end
@@ -601,11 +861,15 @@ local function click_current()
         return
     end
     if not item.button then speak("That is text, not a button"); return end
+    if (item.tab or item.navarrow) and item.navbar then
+        if switch_tab(item) then return end
+    end
     if item.checkbox then
         local ok = pcall(function() item.button:SetIsChecked(not item.button:IsChecked()) end)
         speak(ok and describe(item) or "Could not change that checkbox")
         return
     end
+    if item.editable then start_editing(item) end
     local owner = owner_of(item.button)
     local fn = owner and click_handler(owner, item.button)
     if not fn then
@@ -691,7 +955,23 @@ bind(Key.OEM_SIX,   { ModifierKey.CONTROL }, function()                  -- Ctrl
     if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
     select_item(#review_items, "bottom")
 end)
-bind(Key.OEM_FIVE,  nil, function() refresh(); click_current() end)                                   -- \
+-- Never act on a stale selection: if the screen changed since the item was picked, say so
+-- instead of pressing whatever now sits at that position.
+local function press_current()
+    local before, prev = addr(review_top), review_items[review_index]
+    refresh()
+    local item = review_items[review_index]
+    if addr(review_top) ~= before and not (item and prev and item.text == prev.text) then
+        review_index = 0
+        local first = review_items[1] and describe(review_items[1]) or "nothing readable yet"
+        speak("The screen has changed, so I didn't press anything. It starts with: " .. first ..
+              ". Use the bracket keys to look around.")
+        return
+    end
+    click_current()
+end
+
+bind(Key.OEM_FIVE,  nil, press_current)                                   -- \
 bind(Key.OEM_FIVE,  { ModifierKey.SHIFT }, function()                     -- |
     if not send_action(ACTION_BACK) then speak("Could not go back") end
 end)
@@ -747,7 +1027,40 @@ local function repeat_last()
     if t then speech.say(t) end
 end
 
+-- Developer aid (Ctrl+Shift+;): log the current item's widget chain with its true/false and
+-- number fields, to find where a game keeps state like "selected". Reads only simple types.
+local function dump_current()
+    local item = review_items[review_index]
+    if not (item and item.button) then speak("Nothing to dump"); return end
+    local o, depth = item.button, 0
+    while o and depth < 4 do
+        local line = {}
+        pcall(function()
+            local cls = o:GetClass()
+            while cls and cls:IsValid() do
+                cls:ForEachProperty(function(p)
+                    local t = ""
+                    pcall(function() t = p:GetClass():GetFName():ToString() end)
+                    if t == "BoolProperty" or t == "IntProperty" or t == "ByteProperty" or t == "EnumProperty" then
+                        local n = p:GetFName():ToString()
+                        local ok, v = pcall(function() return o[n] end)
+                        if ok and (type(v) == "boolean" or type(v) == "number") then
+                            line[#line + 1] = n .. "=" .. tostring(v)
+                        end
+                    end
+                end)
+                cls = cls:GetSuperStruct()
+            end
+        end)
+        log("dump " .. item.text .. " [" .. depth .. "] " .. cls_name(o) .. " " .. fname(o) .. ": " .. table.concat(line, " "))
+        o = owner_of(o)
+        depth = depth + 1
+    end
+    speak("Dumped to the log")
+end
+
 bind(Key.OEM_ONE,   nil, contextual_help)                                 -- ;
+bind(Key.OEM_ONE,   { ModifierKey.CONTROL, ModifierKey.SHIFT }, dump_current)
 bind(Key.OEM_ONE,   { ModifierKey.CONTROL }, repeat_last)                 -- Ctrl+;
 bind(Key.OEM_FIVE,  { ModifierKey.CONTROL }, function() speech.toggle_mute() end)  -- Ctrl+\
 bind(Key.OEM_ONE,   { ModifierKey.SHIFT }, read_details)                  -- :

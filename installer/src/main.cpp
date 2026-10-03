@@ -32,7 +32,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr char kVersion[] = "0.1.0";
+constexpr char kVersion[] = "0.2.0";
 constexpr char kSteamAppId[] = "990080";
 const fs::path kBinRel = fs::path("Phoenix") / "Binaries" / "Win64";
 const fs::path kBackupDir = "Wandsong-backup";

@@ -1,0 +1,14 @@
+# Dev helper: press keys in the game, then print what the mod said and which screens opened.
+# Usage: drive.ps1 -Keys "f","rbr" [-Wait 2500] [-Lines 8]
+param([string[]]$Keys, [int]$Wait = 2500, [int]$Lines = 8)
+
+$log = "C:\Program Files (x86)\Steam\steamapps\common\Hogwarts Legacy\Phoenix\Binaries\Win64\UE4SS.log"
+$before = (Get-Content $log -Encoding UTF8).Count
+foreach ($k in $Keys) {
+    $out = & "$PSScriptRoot\sendkeys.ps1" -Keys $k -DelayMs $Wait
+    if ($LASTEXITCODE -eq 2) { Write-Output $out; Write-Output "Run stopped."; exit 2 }
+}
+Get-Content $log -Encoding UTF8 | Select-Object -Skip $before |
+    Where-Object { $_ -match '\[Wandsong\] (say|ReadMenu .*\[open\]|click|unlabelled)|Fatal|error' } |
+    Select-Object -Last $Lines |
+    ForEach-Object { $t = $_.Substring([Math]::Min(22, $_.Length)); $t.Substring(0, [Math]::Min(260, $t.Length)) }

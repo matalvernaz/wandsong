@@ -15,6 +15,12 @@ Early, but playable through the menus. Working now:
 - Every menu screen is read when it opens, including key hints and descriptions.
 - A review cursor steps through all text, buttons, checkboxes and shortcuts on screen.
 - You can press any button, toggle any checkbox, and adjust sliders and choices.
+- Choice buttons say which one is selected (voice, difficulty, dormitory and so on).
+- Text boxes, such as your character's name, read their contents and echo what you type.
+- The character creator is fully labelled: real tab names, every option numbered within
+  its section (Face Shape 3 of 15, Hairstyle 12 of 50), named sliders, and a short
+  description of each of the 30 preset faces.
+- Text-heavy screens, like your Hogwarts acceptance letter, are read in full.
 - Shortcuts shown on screen (like "F, Continue") can be triggered from the review cursor,
   even when the game ignores the key.
 - The first-launch accessibility screen unlocks itself, with spoken instructions.
@@ -70,7 +76,8 @@ Reading the screen:
 
 Doing things:
 
-- Backslash: press the current button, toggle a checkbox, or use a shortcut.
+- Backslash: press the current button, toggle a checkbox, switch to a tab, or use a
+  shortcut. On a text box, it starts typing: type, then press Enter.
 - Shift backslash: go back.
 - Minus and equals: decrease and increase a slider or choice. Hold shift for bigger steps.
 

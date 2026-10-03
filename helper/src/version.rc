@@ -1,8 +1,8 @@
 #include <winver.h>
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION 0,2,0,0
+ PRODUCTVERSION 0,2,0,0
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
 BEGIN
@@ -12,11 +12,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Wandsong contributors"
       VALUE "FileDescription", "Wandsong speech helper"
-      VALUE "FileVersion", "0.1.0"
+      VALUE "FileVersion", "0.2.0"
       VALUE "InternalName", "wandsong_helper"
       VALUE "OriginalFilename", "wandsong_helper.exe"
       VALUE "ProductName", "Wandsong"
-      VALUE "ProductVersion", "0.1.0"
+      VALUE "ProductVersion", "0.2.0"
     END
   END
   BLOCK "VarFileInfo"

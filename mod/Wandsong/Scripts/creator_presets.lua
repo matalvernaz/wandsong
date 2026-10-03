@@ -1,0 +1,37 @@
+-- Descriptions of the character creator's preset faces, in the order the game shows them
+-- on the Presets page (left to right, top to bottom). The tiles are pictures with no text,
+-- so these were written by looking at each preset. Gender is left out on purpose: the
+-- player picks witch or wizard separately, on the Finalise Character page.
+
+return {
+    [1]  = "light skin, auburn hair in a low bun",
+    [2]  = "light tan skin, short tousled dark brown hair",
+    [3]  = "dark brown skin, full black curly hair",
+    [4]  = "light skin, straight dark brown hair with a side-swept fringe",
+    [5]  = "medium brown skin, black hair pulled back in a low bun",
+    [6]  = "dark skin, short black afro",
+    [7]  = "light skin, short sandy blond hair, swept back with short sides",
+    [8]  = "light tan skin, wavy dark brown hair to the collar",
+    [9]  = "light tan skin, long straight black hair",
+    [10] = "light tan skin, short black hair combed back",
+    [11] = "medium skin, dark brown hair in a loose low bun with strands framing the face",
+    [12] = "fair skin, straight dark blond hair parted at the side",
+    [13] = "dark skin, black curly hair in a high puff with a grey headband",
+    [14] = "light tan skin, long dark brown hair loosely tied back",
+    [15] = "medium skin, long wavy black hair worn loose",
+    [16] = "light tan skin, short dark brown curls",
+    [17] = "medium skin, dark hair pulled up into a top bun",
+    [18] = "dark brown skin, very short close-cropped black hair",
+    [19] = "light skin, shoulder-length wavy brown hair",
+    [20] = "light tan skin, short dark brown hair with a fringe",
+    [21] = "medium skin, dark brown hair pulled back with loose waves at the front",
+    [22] = "light tan skin, short spiky black hair",
+    [23] = "fair skin, chin-length wavy light brown hair",
+    [24] = "dark brown skin, short black curls with faded sides",
+    [25] = "dark brown skin, short cropped black hair",
+    [26] = "medium skin, short wavy black hair",
+    [27] = "light tan skin with rosy cheeks, black chin-length bob",
+    [28] = "medium brown skin, black curly hair to the ears",
+    [29] = "light tan skin, dark brown hair in a short bob tucked behind the ears",
+    [30] = "light tan skin, black hair swept back to the ears",
+}

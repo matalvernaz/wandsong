@@ -85,8 +85,10 @@ end
 
 --- Speak text. queue=true waits for current speech instead of interrupting it.
 function M.say(text, queue)
-    if text == nil or text == "" then return end
+    if text == nil then return end
     text = one_line(text)
+    -- Nothing audible (blank, or only zero-width/format characters): say nothing.
+    if text:gsub("\226\128[\139-\143]", ""):match("^%s*$") then return end
     table.insert(history, 1, text)
     if #history > HISTORY_SIZE then table.remove(history) end
     -- Flight recorder: every utterance lands in UE4SS.log, which makes bug reports easy.
