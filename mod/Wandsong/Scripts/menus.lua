@@ -106,6 +106,7 @@ local last_screen_time = -10
 local capture_until, hover_details = -10, {}
 local quiet_class, quiet_until = nil, -10
 local current_screen, current_cls, last_item = nil, "?", ""
+local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 
 RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     local widget = ctx:get()
@@ -192,13 +193,18 @@ LoopAsync(200, function()
         local okV, valid = pcall(function() return w:IsValid() end)
         if not okV or not valid then current_screen = nil; return end
         local item = clean(table.concat(gather(w, 1) or {}, ", "))
-        if item ~= "" and item ~= last_item then
-            last_item = item
-            -- Focus moved because the mod hovered something: the user already heard it.
-            if os.clock() < capture_until then return end
-            log("focus " .. current_cls .. " -> " .. item)
-            speak(item)
-        end
+        if item == "" or item == last_item then pending_item = nil; return end
+        -- Only announce a change that holds for two polls in a row: mid-transition reads
+        -- mix the new page's title with the old page's sections.
+        if item ~= pending_item then pending_item = item; return end
+        pending_item = nil
+        last_item = item
+        -- Focus moved because the mod hovered something: the user already heard it.
+        if os.clock() < capture_until then return end
+        -- While typing in a text box, only the typed letters are spoken.
+        if editing then return end
+        log("focus " .. current_cls .. " -> " .. item)
+        speak(item)
     end)
     return false
 end)
@@ -821,9 +827,9 @@ local function send_action(action, hold)
 end
 
 -- Typing echo for edit fields: poll the field and speak what changed, like a screen reader.
-local edit_text, edit_name = "", ""
+local edit_text, edit_name, edit_unfocused, edit_seen_focus = "", "", 0, false
 start_editing = function(item)
-    editing, edit_name = item.editable, item.text
+    editing, edit_name, edit_unfocused, edit_seen_focus = item.editable, item.text, 0, false
     edit_text = ""
     pcall(function() edit_text = item.editable:GetText():ToString() end)
     speak("Editing " .. item.text .. ". Type, then press Enter when you're done.")
@@ -836,6 +842,21 @@ LoopAsync(150, function()
         local v
         local ok = pcall(function() v = w:GetText():ToString() end)
         if not ok or v == nil then editing = nil; return end
+        -- Enter (or clicking elsewhere) takes keyboard focus away: typing is finished.
+        -- Only trust "not focused" once the box has been seen focused, in case this widget
+        -- never reports keyboard focus at all.
+        local okf, focused = pcall(function() return w:HasKeyboardFocus() end)
+        if okf and focused == true then edit_seen_focus = true end
+        if okf and focused == false and edit_seen_focus then
+            edit_unfocused = edit_unfocused + 1
+            if edit_unfocused >= 3 then
+                editing = nil
+                speak(edit_name .. ": " .. (v ~= "" and v or "empty"))
+                return
+            end
+        else
+            edit_unfocused = 0
+        end
         if v == edit_text then return end
         if #v > #edit_text and v:sub(1, #edit_text) == edit_text then
             speak(v:sub(#edit_text + 1))                       -- typed characters
