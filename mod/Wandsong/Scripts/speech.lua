@@ -12,6 +12,8 @@
 
 local M = {}
 
+local dispatch = require("dispatch")
+
 local PIPE = [[\\.\pipe\wandsong]]
 local RETRY_SECONDS = 1.0
 local MAX_PENDING = 20
@@ -153,13 +155,10 @@ function M.start()
         local name = "?"
         pcall(function() name = native.detect() or "?" end)
         log("speech: in-process Prism bridge, speaking through " .. name)
-        LoopAsync(REFRESH_MS, function()
-            ExecuteInGameThread(function()
-                local before = native.detect and native.detect()
-                local after = native.refresh and native.refresh()
-                if after and after ~= before then log("speech: now speaking through " .. after) end
-            end)
-            return false
+        dispatch.every(REFRESH_MS, function()
+            local before = native.detect and native.detect()
+            local after = native.refresh and native.refresh()
+            if after and after ~= before then log("speech: now speaking through " .. after) end
         end)
         return
     end
@@ -175,9 +174,8 @@ function M.start()
     end
     -- Retry on the game thread, where every other write happens, so the pipe is never
     -- written from two threads at once.
-    LoopAsync(500, function()
-        if #pending > 0 then ExecuteInGameThread(flush_pending) end
-        return false
+    dispatch.every(500, function()
+        if #pending > 0 then flush_pending() end
     end)
 end
 

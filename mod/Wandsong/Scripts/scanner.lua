@@ -55,6 +55,7 @@ local CATEGORIES = {
 local SCAN_KEY_CANDIDATES = { "F9" }  -- F10 is the game's Settings key; numpad is NVDA's
 
 local speech = require("speech")
+local dispatch = require("dispatch")
 local function write_speak(text) speech.say(text) end
 
 local function bearing_to_clock(dx, dy, player_yaw_deg)
@@ -94,8 +95,8 @@ local function player_pawn()
     return nil
 end
 
-local function scan()
-    ExecuteInGameThread(function()
+local function scan_now()
+    do
         local pawn = player_pawn()
         if not pawn then
             print("[Wandsong scanner] no player pawn (in a menu / loading?)\n")
@@ -194,8 +195,11 @@ local function scan()
                 "%s, %d metres, %d o'clock", h.label, math.floor(h.m + 0.5), h.clock)
         end
         write_speak(table.concat(parts, ". "))
-    end)
+    end
 end
+
+-- The key bind fires on UE4SS's input thread: queue the scan for the game thread.
+local function scan() dispatch.run(scan_now) end
 
 for _, key_name in ipairs(SCAN_KEY_CANDIDATES) do
     local key = Key[key_name]

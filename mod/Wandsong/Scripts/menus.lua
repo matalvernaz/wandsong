@@ -7,6 +7,7 @@
 -- ReadMenu, gather the strings ourselves and hand them to the speech module.
 
 local speech = require("speech")
+local dispatch = require("dispatch")
 local ok_presets, PRESET_DESCRIPTIONS = pcall(require, "creator_presets")
 if not ok_presets then PRESET_DESCRIPTIONS = {} end
 
@@ -72,9 +73,9 @@ local function clean(t)
     end)
     -- Mouse prompts become the mod's own key: Backslash clicks the reviewed item.
     t = t:gsub('<img%s+src="cbi_Mouse_LeftClick"%s*/>', "Backslash")
-    t = t:gsub('<img%s+src="cbi_Mouse_([^"]+)"%s*/>', function(k)
-        return "mouse " .. (k:gsub("_", " "))
-    end)
+    -- Other mouse buttons have no keyboard meaning for the player; the action they trigger
+    -- is still reachable as a shortcut item in the review list.
+    t = t:gsub('<img%s+src="cbi_Mouse_[^"]+"%s*/>%s*,?%s*', "")
     t = t:gsub('<img%s+src="([^"]+)"%s*/>', function(k)
         return (k:gsub("^cbi_", ""):gsub("_", " "))
     end)
@@ -93,9 +94,7 @@ local function send_action_early(action)
     local mgr = FindFirstOf("UMGInputManager")
     if not (mgr and mgr:IsValid()) then return false end
     local ok = pcall(function() mgr:OnInputAction(action, 0) end)
-    ExecuteWithDelay(50, function()
-        ExecuteInGameThread(function() pcall(function() mgr:OnInputAction(action, 1) end) end)
-    end)
+    dispatch.later(50, function() pcall(function() mgr:OnInputAction(action, 1) end) end)
     return ok
 end
 local label_for
@@ -108,8 +107,10 @@ local quiet_class, quiet_until = nil, -10
 local current_screen, current_cls, last_item = nil, "?", ""
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 
-RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
-    local widget = ctx:get()
+-- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
+local function on_read_menu(widget)
+    local okv, alive = pcall(function() return widget:IsValid() end)
+    if not (okv and alive) then return end
     local key, cls = "?", "?"
     pcall(function() key = widget:GetFullName() end)
     pcall(function() cls = widget:GetClass():GetFName():ToString() end)
@@ -129,9 +130,7 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     -- toggle is pressed. Press it for the player and tell them where they are.
     if cls == "UI_BP_FirstFlowAccessibility_C" and text:find("Menu Reader, Off", 1, true) then
         log("first-launch accessibility screen: enabling menu reader for the player")
-        ExecuteWithDelay(300, function()
-            ExecuteInGameThread(function() send_action_early(70) end)
-        end)
+        dispatch.later(300, function() send_action_early(70) end)
         quiet_class, quiet_until = cls, os.clock() + 3
         speak("Welcome to Hogwarts Legacy, with Wandsong. This is the first-time Accessibility " ..
               "Options screen; I've switched the game's menu reader on for you so it unlocks. " ..
@@ -153,22 +152,29 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
             speak(text)
             -- If the screen shows much more prose than the game's reader gives us (a letter,
             -- a long notice), read that too, after the summary.
-            ExecuteWithDelay(400, function()
-                ExecuteInGameThread(function()
-                    local ok_v, still = pcall(function() return widget:IsValid() and widget:IsInViewport() end)
-                    if not (ok_v and still) then return end
-                    local items = {}
-                    walk(widget, items, nil, 0)
-                    local prose, buttons = {}, 0
-                    for _, it in ipairs(items) do
-                        if it.button then buttons = buttons + 1
-                        elseif not it.action and #it.text > 1 and not text:find(it.text, 1, true) then
-                            prose[#prose + 1] = it.text
-                        end
+            dispatch.later(400, function()
+                local ok_v, still = pcall(function() return widget:IsValid() and widget:IsInViewport() end)
+                if not (ok_v and still) then return end
+                local items = {}
+                walk(widget, items, nil, 0)
+                local prose, buttons = {}, 0
+                for _, it in ipairs(items) do
+                    if it.button then buttons = buttons + 1
+                    elseif not it.action and #it.text > 1 and not text:find(it.text, 1, true) then
+                        prose[#prose + 1] = it.text
                     end
-                    local body = table.concat(prose, " ")
-                    if #body > 200 and buttons < 8 then speak(body, true) end
-                end)
+                end
+                local body = table.concat(prose, " ")
+                if #body > 200 and buttons < 8 then speak(body, true) end
+                -- The game's own announcement says little (e.g. the main menu only names its
+                -- Settings shortcut): follow it with the buttons on screen.
+                if #text < 60 and buttons > 0 and buttons <= 12 then
+                    local labels = {}
+                    for _, it in ipairs(items) do
+                        if it.button and it.text ~= "unlabelled" then labels[#labels + 1] = it.text end
+                    end
+                    if #labels > 0 then speak(table.concat(labels, ", "), true) end
+                end
             end)
         else
             speak(text, os.clock() - last_screen_time < 2.0)
@@ -182,31 +188,35 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
         current_screen, current_cls = widget, cls
         last_item = clean(table.concat(gather(widget, 1) or {}, ", "))
     end
+end
+
+-- The hook itself only records the widget; all reading happens on the next dispatcher tick.
+-- (Doing work inside UI hooks has crashed this game for other projects.)
+RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
+    local widget = ctx:get()
+    dispatch.run(function() on_read_menu(widget) end)
 end)
 
 -- Not every screen calls ReadMenu when focus moves, so also poll the most recently read
 -- screen: its depth-1 strings are the focused item + hint, and change as focus moves.
-LoopAsync(200, function()
-    ExecuteInGameThread(function()
-        local w = current_screen
-        if not w then return end
-        local okV, valid = pcall(function() return w:IsValid() end)
-        if not okV or not valid then current_screen = nil; return end
-        local item = clean(table.concat(gather(w, 1) or {}, ", "))
-        if item == "" or item == last_item then pending_item = nil; return end
-        -- Only announce a change that holds for two polls in a row: mid-transition reads
-        -- mix the new page's title with the old page's sections.
-        if item ~= pending_item then pending_item = item; return end
-        pending_item = nil
-        last_item = item
-        -- Focus moved because the mod hovered something: the user already heard it.
-        if os.clock() < capture_until then return end
-        -- While typing in a text box, only the typed letters are spoken.
-        if editing then return end
-        log("focus " .. current_cls .. " -> " .. item)
-        speak(item)
-    end)
-    return false
+dispatch.every(200, function()
+    local w = current_screen
+    if not w then return end
+    local okV, valid = pcall(function() return w:IsValid() end)
+    if not okV or not valid then current_screen = nil; return end
+    local item = clean(table.concat(gather(w, 1) or {}, ", "))
+    if item == "" or item == last_item then pending_item = nil; return end
+    -- Only announce a change that holds for two polls in a row: mid-transition reads
+    -- mix the new page's title with the old page's sections.
+    if item ~= pending_item then pending_item = item; return end
+    pending_item = nil
+    last_item = item
+    -- Focus moved because the mod hovered something: the user already heard it.
+    if os.clock() < capture_until then return end
+    -- While typing in a text box, only the typed letters are spoken.
+    if editing then return end
+    log("focus " .. current_cls .. " -> " .. item)
+    speak(item)
 end)
 
 -- The game only calls ReadMenu while its own Menu Reader is on, so turn it on with the
@@ -233,11 +243,9 @@ local function silence_native_reader()
 end
 
 local tries = 0
-LoopAsync(2000, function()
+dispatch.every(2000, function()
     tries = tries + 1
-    local done = false
-    ExecuteInGameThread(function() done = silence_native_reader() end)
-    return done or tries >= 5
+    return silence_native_reader() or tries >= 5
 end)
 
 -- ===== Screen review and clicking =========================================================
@@ -728,13 +736,11 @@ local function select_item(i, edge)
     hover(item)
     speak(describe(item) .. (edge and (", " .. edge) or ""))
     if item.weak then
-        ExecuteWithDelay(300, function()
-            ExecuteInGameThread(function()
-                if review_items[review_index] ~= item then return end
-                for _, t in ipairs(hover_details) do
-                    if t ~= "" and not t:find(item.text, 1, true) then speak(t, true); return end
-                end
-            end)
+        dispatch.later(300, function()
+            if review_items[review_index] ~= item then return end
+            for _, t in ipairs(hover_details) do
+                if t ~= "" and not t:find(item.text, 1, true) then speak(t, true); return end
+            end
         end)
     end
 end
@@ -813,14 +819,12 @@ local function send_action(action, hold)
     local ok, err = pcall(function() mgr:OnInputAction(action, IE_PRESSED) end)
     if not ok then log("OnInputAction failed: " .. tostring(err)); return false end
     local function release()
-        ExecuteInGameThread(function()
-            pcall(function() mgr:OnInputAction(action, IE_RELEASED) end)
-        end)
+        pcall(function() mgr:OnInputAction(action, IE_RELEASED) end)
     end
     if hold and hold > 0 then
-        ExecuteWithDelay(math.floor(hold * 1000) + 150, release)
+        dispatch.later(math.floor(hold * 1000) + 150, release)
     else
-        ExecuteWithDelay(50, release)
+        dispatch.later(50, release)
     end
     log("sent action " .. tostring(action) .. (hold and hold > 0 and " (hold)" or ""))
     return true
@@ -834,40 +838,36 @@ start_editing = function(item)
     pcall(function() edit_text = item.editable:GetText():ToString() end)
     speak("Editing " .. item.text .. ". Type, then press Enter when you're done.")
 end
-LoopAsync(150, function()
-    if not editing then return false end
-    ExecuteInGameThread(function()
-        local w = editing
-        if not w then return end
-        local v
-        local ok = pcall(function() v = w:GetText():ToString() end)
-        if not ok or v == nil then editing = nil; return end
-        -- Enter (or clicking elsewhere) takes keyboard focus away: typing is finished.
-        -- Only trust "not focused" once the box has been seen focused, in case this widget
-        -- never reports keyboard focus at all.
-        local okf, focused = pcall(function() return w:HasKeyboardFocus() end)
-        if okf and focused == true then edit_seen_focus = true end
-        if okf and focused == false and edit_seen_focus then
-            edit_unfocused = edit_unfocused + 1
-            if edit_unfocused >= 3 then
-                editing = nil
-                speak(edit_name .. ": " .. (v ~= "" and v or "empty"))
-                return
-            end
-        else
-            edit_unfocused = 0
+dispatch.every(150, function()
+    local w = editing
+    if not w then return end
+    local v
+    local ok = pcall(function() v = w:GetText():ToString() end)
+    if not ok or v == nil then editing = nil; return end
+    -- Enter (or clicking elsewhere) takes keyboard focus away: typing is finished.
+    -- Only trust "not focused" once the box has been seen focused, in case this widget
+    -- never reports keyboard focus at all.
+    local okf, focused = pcall(function() return w:HasKeyboardFocus() end)
+    if okf and focused == true then edit_seen_focus = true end
+    if okf and focused == false and edit_seen_focus then
+        edit_unfocused = edit_unfocused + 1
+        if edit_unfocused >= 3 then
+            editing = nil
+            speak(edit_name .. ": " .. (v ~= "" and v or "empty"))
+            return
         end
-        if v == edit_text then return end
-        if #v > #edit_text and v:sub(1, #edit_text) == edit_text then
-            speak(v:sub(#edit_text + 1))                       -- typed characters
-        elseif #v < #edit_text and edit_text:sub(1, #v) == v then
-            speak(edit_text:sub(#v + 1))                       -- deleted characters
-        else
-            speak(v ~= "" and v or "empty")
-        end
-        edit_text = v
-    end)
-    return false
+    else
+        edit_unfocused = 0
+    end
+    if v == edit_text then return end
+    if #v > #edit_text and v:sub(1, #edit_text) == edit_text then
+        speak(v:sub(#edit_text + 1))                       -- typed characters
+    elseif #v < #edit_text and edit_text:sub(1, #v) == v then
+        speak(edit_text:sub(#v + 1))                       -- deleted characters
+    else
+        speak(v ~= "" and v or "empty")
+    end
+    edit_text = v
 end)
 
 local ACTION_TAB_LEFT, ACTION_TAB_RIGHT = 57, 58
@@ -882,7 +882,7 @@ local function switch_tab(item)
         steps, action = math.abs(delta), delta < 0 and ACTION_TAB_LEFT or ACTION_TAB_RIGHT
     end
     for i = 0, steps - 1 do
-        ExecuteWithDelay(i * 250, function() ExecuteInGameThread(function() send_action(action) end) end)
+        dispatch.later(i * 250, function() send_action(action) end)
     end
     return true
 end
@@ -940,16 +940,14 @@ local function adjust(delta)
     if not send_action(action) then speak("Can't adjust that"); return end
     -- Big steps: repeat the nudge (sliders move 1% per step).
     for i = 1, steps - 1 do
-        ExecuteWithDelay(i * STEP_MS, function() ExecuteInGameThread(function() send_action(action) end) end)
+        dispatch.later(i * STEP_MS, function() send_action(action) end)
     end
     local before = item.text
-    ExecuteWithDelay(250 + steps * STEP_MS, function()
-        ExecuteInGameThread(function()
-            refresh()
-            local now = review_items[review_index]
-            if now and now.text ~= before then speak(describe(now))
-            else speak(describe(item) .. ", unchanged") end
-        end)
+    dispatch.later(250 + steps * STEP_MS, function()
+        refresh()
+        local now = review_items[review_index]
+        if now and now.text ~= before then speak(describe(now))
+        else speak(describe(item) .. ", unchanged") end
     end)
 end
 
@@ -962,7 +960,8 @@ local HELP = "Wandsong keys. Left and right bracket: previous and next item on s
              "Shift semicolon: description of the current item. Control semicolon: repeat what was last said, " ..
              "press again to go further back. Control backslash: turn Wandsong speech off or on."
 
-local function on_key(fn) return function() ExecuteInGameThread(fn) end end
+-- Key binds fire on UE4SS's input thread: only queue the work for the game thread.
+local function on_key(fn) return function() dispatch.run(fn) end end
 local function bind(key, mods, fn)
     local ok, err
     if mods then ok, err = pcall(RegisterKeyBind, key, mods, on_key(fn))
