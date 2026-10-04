@@ -6,6 +6,7 @@ speech.start()
 
 require("menus")
 require("scanner")
+require("world")
 
 speech.say("Wandsong ready. Semicolon for help.")
 print("[Wandsong] loaded\n")

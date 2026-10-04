@@ -24,3 +24,13 @@ set_target_properties(prism_bridge PROPERTIES C_STANDARD 17)
 # Clicks: broadcasts UButton.OnClicked through functions UE4SS.dll exports.
 add_library(click_bridge SHARED click_bridge.cpp)
 target_link_libraries(click_bridge PRIVATE lua54)
+
+# Positioned sound: XAudio2 + X3DAudio (both in Windows 10's xaudio2_9.dll).
+add_library(audio_bridge SHARED audio_bridge.cpp)
+target_link_libraries(audio_bridge PRIVATE lua54 xaudio2 ole32)
+target_compile_features(audio_bridge PRIVATE cxx_std_17)
+target_compile_definitions(audio_bridge PRIVATE NOMINMAX)
+
+# Test host: runs a Lua script against the modules outside the game (dev only, not shipped).
+add_executable(luahost luahost.c)
+target_link_libraries(luahost PRIVATE lua54)
