@@ -348,6 +348,9 @@ local function ambient()
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) > n.range then return end
                 audio.play(n.sound, x, y, z + 60, 0.7, n.pitch)
+                local names = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
+                                collect = "Collectible", door = "Door" }
+                state.cue((names[n.kind] or n.kind) .. " " .. state.where(px, py, yaw_now, x, y))
                 played = played + 1
             end)
             if not ok then nearby[key] = nil; claimed_by[key] = nil end

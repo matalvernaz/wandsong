@@ -18,6 +18,9 @@
 local dispatch = require("dispatch")
 local diag = require("diag")
 local world = require("world")
+local state = require("state")
+local keys = require("keys")
+local speech = require("speech")
 
 local M = {}
 
@@ -33,6 +36,9 @@ local TICK_MS = 100
 local WALL_MS = 200
 local STRIDE_CM = 75           -- one footstep per this much walking
 local CHEST_CM = 30            -- rays start this far above the capsule centre
+-- Drop-off cues are off until they're reliable: in the first test the downward ray missed
+-- real floors and the cue fired every second. The ray still runs and logs what it finds.
+local LEDGE_CUES = false
 
 -- Ray directions relative to the camera, and how far each one listens for walls.
 local RAYS = {
@@ -136,8 +142,10 @@ local wall_on = {}       -- ray index -> true while its loop plays
 local was_wall = {}      -- ray index -> consecutive samples with a wall
 local was_clear = {}     -- ray index -> consecutive samples without
 local next_ledge = 0
+local wall_at = {}        -- ray index -> { d, ang } from the latest sample
 
 local function stop_walls()
+    wall_at = {}
     if not audio then return end
     for i in pairs(wall_on) do pcall(audio.stop, "wall" .. i) end
     wall_on = {}
@@ -159,6 +167,7 @@ local function walls()
         local a = math.rad(yaw + r.ang)
         local ex, ey = px + math.cos(a) * r.range, py + math.sin(a) * r.range
         local d, hx, hy, hz = ray(k, pawn, px, py, sz, ex, ey, sz)
+        wall_at[i] = d and { d = d, ang = r.ang } or nil
         if d then
             was_wall[i], was_clear[i] = (was_wall[i] or 0) + 1, 0
             local near = 1 - math.min(1, d / r.range)
@@ -174,6 +183,7 @@ local function walls()
             -- A side wall that has ended while walking: an opening on that side.
             if (r.ang == 90 or r.ang == -90) and was_clear[i] == 2 and (was_wall[i] or 0) >= 3 and moving then
                 audio.play("opening", px + math.cos(a) * 150, py + math.sin(a) * 150, sz, 0.8, 1.0)
+                state.cue("Opening on your " .. (r.ang > 0 and "right" or "left"))
                 diag.trace("opening " .. (r.ang > 0 and "right" or "left"))
             end
             if was_clear[i] >= 2 then was_wall[i] = 0 end
@@ -195,14 +205,44 @@ local function walls()
     diag.trace("walls: ledge ray")
     local d, _, _, hz = ray(k, pawn, ax, ay, sz, ax, ay, feet - 600)
     local drop = d and (feet - hz) or 600
-    if drop > 180 then
+    next_ledge = now + 0.8
+    diag.event("ledge", string.format("%s: pawn z %.0f, half height %.0f, ray from %.0f, hit %s",
+        drop > 180 and "drop" or "floor", pz, half, sz, d and string.format("%.0f cm down at z %.0f", d, hz) or "nothing"))
+    if LEDGE_CUES and drop > 180 then
         audio.play("ledge", ax, ay, feet, 0.8, drop > 500 and 0.8 or 1.0)
-        next_ledge = now + 0.8
-        diag.event("ledge", string.format("drop of %.1f m ahead", drop / 100))
-    else
-        diag.event("ledge", "none")
+        state.cue(string.format("Drop-off ahead, about %d metres", math.floor(drop / 100 + 0.5)))
     end
 end
+
+-- --- "What was that?" -------------------------------------------------------------------
+
+local WALL_SIDES = { [0] = "ahead", [45] = "ahead right", [-45] = "ahead left", [90] = "right",
+                     [-90] = "left", [135] = "behind right", [-135] = "behind left", [180] = "behind" }
+
+local function what_was_that()
+    local parts = {}
+    local now = os.clock()
+    for _, c in ipairs(state.cues) do
+        if now - c.at <= 6 and #parts < 3 then parts[#parts + 1] = c.text end
+    end
+    if #parts == 0 then parts[1] = "No sounds in the last few seconds" end
+    local walls_list = {}
+    for i, r in ipairs(RAYS) do
+        local w = wall_at[i]
+        if w then
+            local m = math.floor(w.d / 100 + 0.5)
+            walls_list[#walls_list + 1] = WALL_SIDES[r.ang] .. (m <= 1 and " close" or (" " .. m .. " metres"))
+        end
+    end
+    local s = table.concat(parts, ". ") .. ". "
+    s = s .. (#walls_list > 0 and ("Walls: " .. table.concat(walls_list, ", ")) or "No walls near")
+    speech.say(s)
+end
+
+keys.action{
+    id = "what_was_that", name = "What was that sound? Names recent sounds and nearby walls",
+    group = "In the world", default = "`", run = what_was_that,
+}
 
 -- --- Status -----------------------------------------------------------------------------
 

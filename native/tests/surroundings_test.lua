@@ -7,6 +7,9 @@ package.cpath = here .. "/../build/Release/?.dll;" .. package.cpath
 local loop
 LoopAsync = function(ms, fn) loop = fn end
 ExecuteInGameThread = function(fn) fn() end
+Key = { OEM_THREE = 192 }
+ModifierKey = { CONTROL = 1, SHIFT = 2 }
+RegisterKeyBind = function() end
 
 -- Silent audio stand-in that records what was played.
 local played = {}
@@ -65,5 +68,7 @@ print(table.concat(keys, " "))
 assert(counts.step and counts.step > 3, "footsteps")
 assert(counts["loop:wall4"], "right wall loop")
 assert(counts.opening == 1, "one opening when the right wall ends")
-assert(counts.ledge and counts.ledge >= 1, "drop-off ahead")
+assert(not counts.ledge, "drop-off cue stays off until reliable")
+local st = require("state")
+assert(st.cues[1] and st.cues[1].text:find("Opening on your right"), "opening named for what-was-that")
 print("surroundings test passed")
