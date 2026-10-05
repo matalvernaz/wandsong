@@ -11,3 +11,4 @@ third_party/
 # Native build output
 native/build/
 symbols/
+sdk/

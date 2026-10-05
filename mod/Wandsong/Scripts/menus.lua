@@ -262,6 +262,10 @@ end, "loading screen watch", true)
 dispatch.every(200, function()
     -- The previous screen is being torn down during a load: leave it alone.
     if state.loading() then current_screen = nil; return end
+    -- In gameplay there's no menu to follow, and the last screen read (a tutorial prompt,
+    -- a closed menu) may already be freed: polling it crashed the game while standing still.
+    -- Menus opened from gameplay announce themselves through ReadMenu.
+    if require("world").in_game() then current_screen = nil; return end
     local w = resolve(current_screen)
     if not w then current_screen = nil; return end
     local item = clean(table.concat(gather(w, 1) or {}, ", "))
