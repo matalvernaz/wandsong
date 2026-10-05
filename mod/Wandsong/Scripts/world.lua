@@ -10,6 +10,7 @@
 
 local dispatch = require("dispatch")
 local speech = require("speech")
+local state = require("state")
 
 local M = {}
 
@@ -43,7 +44,7 @@ local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merc
 local SCAN_EVERY_MS = 600      -- one class query per this interval (~30 ms each)
 local LISTENER_MS = 100
 local GATE_MS = 1000
-local GATE_STABLE = 3
+local GATE_STABLE = 5
 
 -- --- Gameplay gate --------------------------------------------------------------------
 
@@ -103,18 +104,39 @@ local function find_live(cls)
     return nil
 end
 
+local function close_gate(why)
+    stable = 0
+    if in_game then
+        in_game = false
+        log("gate closed (" .. why .. ")")
+        if audio then pcall(audio.stop_all) end
+    end
+end
+
 local function gate_check()
+    -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
+    if state.loading() then
+        if in_game or pawn_path then log("loading: pausing the world layer") end
+        close_gate("loading")
+        clear_world()
+        pawn_path = nil
+        return
+    end
+    -- Ask the long-lived UI manager first; only look at the player once it says "playing".
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
-    local pawn = resolve(pawn_path)
-    if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
-    local blocked = not (valid(ui_manager) and valid(pawn))
-    if not blocked then
-        for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
-                              "GetInMenuTransition", "InPauseMode" }) do
-            if call_bool(ui_manager, fn) == true then blocked = true; break end
+    if not ui_manager then close_gate("no UI manager"); return end
+    for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
+                          "GetInMenuTransition", "InPauseMode" }) do
+        if call_bool(ui_manager, fn) == true then
+            if fn == "IsAsyncScreenLoadInProgress" then state.mark_loading(5) end
+            close_gate(fn)
+            return
         end
     end
+    local pawn = resolve(pawn_path)
+    if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
+    local blocked = not valid(pawn)
     -- A new player object means a new world (level load, fast travel): drop everything held.
     local key
     pcall(function() key = pawn:GetAddress() end)
@@ -142,7 +164,7 @@ function M.in_game() return in_game end
 
 local px, py, pz = 0, 0, 0
 local function update_listener()
-    if not in_game or not audio then return end
+    if not in_game or not audio or state.loading() then return end
     local pawn = resolve(pawn_path)
     if not pawn then return end
     local ok = pcall(function()
@@ -181,7 +203,7 @@ local function friendly(cls_name)
 end
 
 local function scan_step()
-    if not in_game then return end
+    if not in_game or state.loading() then return end
     scan_i = scan_i % #scan_list + 1
     local entry = scan_list[scan_i]
     local t0 = os.clock()
@@ -221,7 +243,7 @@ end
 
 local MAX_PER_TICK = 3
 local function ambient()
-    if not in_game or not audio or speech.is_muted() then return end
+    if not in_game or not audio or speech.is_muted() or state.loading() then return end
     local now = os.clock()
     local played = 0
     for key, n in pairs(nearby) do

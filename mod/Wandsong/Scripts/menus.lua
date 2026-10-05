@@ -8,6 +8,7 @@
 
 local speech = require("speech")
 local dispatch = require("dispatch")
+local state = require("state")
 local keys = require("keys")
 
 -- Spoken name of whatever key an action is bound to right now, e.g. key_name("press").
@@ -125,6 +126,7 @@ local function resolve(path)
     return nil
 end
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
+local loading_screen = nil -- path of a loading screen while one is up
 
 -- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
 local function on_read_menu(widget)
@@ -133,6 +135,12 @@ local function on_read_menu(widget)
     local key, cls = "?", "?"
     pcall(function() key = widget:GetFullName() end)
     pcall(function() cls = widget:GetClass():GetFName():ToString() end)
+
+    -- Loading screens tell the world layer to keep its hands off until the load is over.
+    if cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C" then
+        state.mark_loading(6)
+        loading_screen = path_of(widget)
+    end
 
     local first = not seen[key]
     seen[key] = true
@@ -222,9 +230,20 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     end) end
 end)
 
+-- While a loading screen is still up, keep the "loading" flag raised; it lapses a few
+-- seconds after the screen goes.
+dispatch.every(1000, function()
+    if not loading_screen then return end
+    local w = resolve(loading_screen)
+    local ok, up = pcall(function() return w and w:IsInViewport() end)
+    if ok and up then state.mark_loading(4) else loading_screen = nil end
+end)
+
 -- Not every screen calls ReadMenu when focus moves, so also poll the most recently read
 -- screen: its depth-1 strings are the focused item + hint, and change as focus moves.
 dispatch.every(200, function()
+    -- The previous screen is being torn down during a load: leave it alone.
+    if state.loading() then current_screen = nil; return end
     local w = resolve(current_screen)
     if not w then current_screen = nil; return end
     local item = clean(table.concat(gather(w, 1) or {}, ", "))
