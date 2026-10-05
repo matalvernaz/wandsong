@@ -31,6 +31,10 @@ target_link_libraries(audio_bridge PRIVATE lua54 xaudio2 ole32)
 target_compile_features(audio_bridge PRIVATE cxx_std_17)
 target_compile_definitions(audio_bridge PRIVATE NOMINMAX)
 
+# Autowalk: holds the forward key while the game window has focus.
+add_library(input_bridge SHARED input_bridge.c)
+target_link_libraries(input_bridge PRIVATE lua54 user32)
+
 # Test host: runs a Lua script against the modules outside the game (dev only, not shipped).
 add_executable(luahost luahost.c)
 target_link_libraries(luahost PRIVATE lua54)

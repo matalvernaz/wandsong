@@ -40,12 +40,14 @@ local CHEST_CM = 30            -- rays start this far above the capsule centre
 -- real floors and the cue fired every second. The ray still runs and logs what it finds.
 local LEDGE_CUES = false
 
--- Ray directions relative to the camera, and how far each one listens for walls.
-local RAYS = {
-    { ang = 0,    range = 450 }, { ang = 45,   range = 300 }, { ang = -45, range = 300 },
-    { ang = 90,   range = 220 }, { ang = -90,  range = 220 },
-    { ang = 135,  range = 150 }, { ang = -135, range = 150 }, { ang = 180, range = 150 },
-}
+-- Sixteen rays around the camera's facing. Each listens furthest straight ahead and least
+-- behind; neighbouring hits are grouped into at most four wall regions (after another access mod's
+-- radar), so a corridor is two sounds, not eight.
+local RAYS = {}
+for i = 0, 15 do
+    local ang = (i * 22.5 + 180) % 360 - 180
+    RAYS[#RAYS + 1] = { ang = ang, range = 170 + 280 * math.max(0, math.cos(math.rad(ang))) }
+end
 
 local kismet_path = "/Script/Engine.Default__KismetSystemLibrary"
 local no_color = { R = 0, G = 0, B = 0, A = 0 }
@@ -138,17 +140,75 @@ end
 
 -- --- Walls, openings, drop-offs ---------------------------------------------------------
 
-local wall_on = {}       -- ray index -> true while its loop plays
-local was_wall = {}      -- ray index -> consecutive samples with a wall
-local was_clear = {}     -- ray index -> consecutive samples without
+local wall_regions = {}  -- current audible wall regions: { ang, d, x, y, z, misses }
+local side_wall = {}     -- side ray (90 / -90) -> consecutive samples with a wall
+local side_clear = {}    -- side ray -> consecutive samples without
 local next_ledge = 0
-local wall_at = {}        -- ray index -> { d, ang } from the latest sample
+local MAX_REGIONS = 4
+local MISS_TOLERANCE = 2
 
 local function stop_walls()
-    wall_at = {}
-    if not audio then return end
-    for i in pairs(wall_on) do pcall(audio.stop, "wall" .. i) end
-    wall_on = {}
+    if audio then for i = 1, MAX_REGIONS do pcall(audio.stop, "wall" .. i) end end
+    wall_regions = {}
+end
+
+local function norm(a) return (a + 180) % 360 - 180 end
+
+-- Neighbouring rays that all hit become one wall region: its direction is the hits'
+-- distance-weighted average and its distance the nearest hit.
+local function cluster(hits)
+    local n = #RAYS
+    local first_gap
+    for i = 1, n do if not hits[i] then first_gap = i; break end end
+    local groups, group = {}, {}
+    local function close_group()
+        if #group == 0 then return end
+        local sx, sy, wsum, best = 0, 0, 0, nil
+        for _, h in ipairs(group) do
+            local w = 1 / math.max(h.d, 1)
+            local r = math.rad(h.ang)
+            sx, sy, wsum = sx + math.cos(r) * w, sy + math.sin(r) * w, wsum + w
+            if not best or h.d < best.d then best = h end
+        end
+        groups[#groups + 1] = { ang = math.deg(math.atan(sy, sx)), d = best.d, x = best.x, y = best.y, z = best.z,
+                                width = #group, misses = 0 }
+        group = {}
+    end
+    if not first_gap then
+        for i = 1, n do group[#group + 1] = hits[i] end
+        close_group()
+        return groups
+    end
+    for k = 1, n do
+        local i = (first_gap - 1 + k) % n + 1
+        if hits[i] then group[#group + 1] = hits[i] else close_group() end
+    end
+    close_group()
+    return groups
+end
+
+-- Match new regions to the previous ones (same side within 45 degrees) so a region keeps
+-- its sound; a region that vanishes is kept for a couple of samples so walls don't flicker.
+local function stabilise(regions)
+    local out, used = {}, {}
+    for _, r in ipairs(regions) do
+        local best, diff = nil, 46
+        for j, old in ipairs(wall_regions) do
+            local dd = math.abs(norm(r.ang - old.ang))
+            if not used[j] and dd < diff then best, diff = j, dd end
+        end
+        if best then used[best] = true end
+        out[#out + 1] = r
+    end
+    for j, old in ipairs(wall_regions) do
+        if not used[j] and old.misses < MISS_TOLERANCE then
+            old.misses = old.misses + 1
+            out[#out + 1] = old
+        end
+    end
+    table.sort(out, function(a, b) return a.d < b.d end)
+    while #out > MAX_REGIONS do table.remove(out) end
+    return out
 end
 
 local function walls()
@@ -163,30 +223,39 @@ local function walls()
     local sz = pz + CHEST_CM
 
     diag.trace("walls: rays")
+    local hits = {}
     for i, r in ipairs(RAYS) do
         local a = math.rad(yaw + r.ang)
         local ex, ey = px + math.cos(a) * r.range, py + math.sin(a) * r.range
         local d, hx, hy, hz = ray(k, pawn, px, py, sz, ex, ey, sz)
-        wall_at[i] = d and { d = d, ang = r.ang } or nil
-        if d then
-            was_wall[i], was_clear[i] = (was_wall[i] or 0) + 1, 0
-            local near = 1 - math.min(1, d / r.range)
-            audio.loop("wall" .. i, "wall", hx, hy, hz, 0.12 + 0.55 * near * near, 1.0)
-            wall_on[i] = true
+        if d then hits[i] = { ang = r.ang, d = d, range = r.range, x = hx, y = hy, z = hz } end
+
+        -- A side wall that has ended while walking: an opening on that side.
+        if r.ang == 90 or r.ang == -90 then
+            if d then
+                side_wall[i], side_clear[i] = (side_wall[i] or 0) + 1, 0
+            else
+                side_clear[i] = (side_clear[i] or 0) + 1
+                if side_clear[i] == 2 and (side_wall[i] or 0) >= 3 and moving then
+                    audio.play("opening", px + math.cos(a) * 150, py + math.sin(a) * 150, sz, 0.8, 1.0)
+                    state.cue("Opening on your " .. (r.ang > 0 and "right" or "left"))
+                    diag.trace("opening " .. (r.ang > 0 and "right" or "left"))
+                end
+                if side_clear[i] >= 2 then side_wall[i] = 0 end
+            end
+        end
+    end
+
+    wall_regions = stabilise(cluster(hits))
+    for i = 1, MAX_REGIONS do
+        local w = wall_regions[i]
+        if w then
+            local range = 450
+            for _, r in ipairs(RAYS) do if math.abs(norm(r.ang - w.ang)) <= 12 then range = r.range end end
+            local near = 1 - math.min(1, w.d / range)
+            audio.loop("wall" .. i, "wall", w.x, w.y, w.z, 0.12 + 0.55 * near * near, 1.0)
         else
-            was_clear[i] = (was_clear[i] or 0) + 1
-            -- Keep a wall through one missed sample so it doesn't flicker.
-            if wall_on[i] and was_clear[i] >= 2 then
-                pcall(audio.stop, "wall" .. i)
-                wall_on[i] = nil
-            end
-            -- A side wall that has ended while walking: an opening on that side.
-            if (r.ang == 90 or r.ang == -90) and was_clear[i] == 2 and (was_wall[i] or 0) >= 3 and moving then
-                audio.play("opening", px + math.cos(a) * 150, py + math.sin(a) * 150, sz, 0.8, 1.0)
-                state.cue("Opening on your " .. (r.ang > 0 and "right" or "left"))
-                diag.trace("opening " .. (r.ang > 0 and "right" or "left"))
-            end
-            if was_clear[i] >= 2 then was_wall[i] = 0 end
+            pcall(audio.stop, "wall" .. i)
         end
     end
 
@@ -216,9 +285,6 @@ end
 
 -- --- "What was that?" -------------------------------------------------------------------
 
-local WALL_SIDES = { [0] = "ahead", [45] = "ahead right", [-45] = "ahead left", [90] = "right",
-                     [-90] = "left", [135] = "behind right", [-135] = "behind left", [180] = "behind" }
-
 local function what_was_that()
     local parts = {}
     local now = os.clock()
@@ -227,12 +293,12 @@ local function what_was_that()
     end
     if #parts == 0 then parts[1] = "No sounds in the last few seconds" end
     local walls_list = {}
-    for i, r in ipairs(RAYS) do
-        local w = wall_at[i]
-        if w then
-            local m = math.floor(w.d / 100 + 0.5)
-            walls_list[#walls_list + 1] = WALL_SIDES[r.ang] .. (m <= 1 and " close" or (" " .. m .. " metres"))
-        end
+    for _, w in ipairs(wall_regions) do
+        local a = (w.ang + 360) % 360
+        local side = ({ "ahead", "ahead right", "right", "behind right", "behind", "behind left", "left", "ahead left" })
+                     [math.floor((a + 22.5) / 45) % 8 + 1]
+        local m = math.floor(w.d / 100 + 0.5)
+        walls_list[#walls_list + 1] = side .. (m <= 1 and " close" or (" " .. m .. " metres"))
     end
     local s = table.concat(parts, ". ") .. ". "
     s = s .. (#walls_list > 0 and ("Walls: " .. table.concat(walls_list, ", ")) or "No walls near")
@@ -247,8 +313,7 @@ keys.action{
 -- --- Status -----------------------------------------------------------------------------
 
 local function status()
-    local n = 0
-    for _ in pairs(wall_on) do n = n + 1 end
+    local n = #wall_regions
     log(string.format("speed %.0f, input %.0f, walls %d, moving %s", stats.speed, stats.accel, n, tostring(moving)))
 end
 

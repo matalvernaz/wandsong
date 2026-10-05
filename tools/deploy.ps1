@@ -33,7 +33,7 @@ if (-not (Test-Path $scripts)) { throw "UE4SS mod folder missing: $scripts (run 
 Copy-Item (Join-Path $root "mod\Wandsong\Scripts\*.lua") $scripts -Force
 Write-Host "scripts -> $scripts"
 if ($Native) {
-    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll") {
+    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
         Copy-Item (Join-Path $root "native\build\Release\$dll") $scripts -Force
     }
     Write-Host "native modules -> $scripts"

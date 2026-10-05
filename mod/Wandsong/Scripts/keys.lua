@@ -175,6 +175,11 @@ end
 
 local capture = nil   -- function(combo_string) while capturing
 
+-- Observers see every key press (combo string and UE4SS key name) before actions run. They
+-- run on UE4SS's key thread: set a flag, never touch game objects.
+local observers = {}
+function M.observe(fn) observers[#observers + 1] = fn end
+
 function M.capture_next(fn) capture = fn end
 function M.cancel_capture() capture = nil end
 
@@ -183,6 +188,7 @@ function M.cancel_capture() capture = nil end
 local function on_press(ctrl, shift, key)
     local short = SHORT[key] or key:lower()
     local combo = (ctrl and "ctrl+" or "") .. (shift and "shift+" or "") .. short
+    for _, f in ipairs(observers) do pcall(f, combo, key) end
     if capture then
         local fn = capture
         capture = nil

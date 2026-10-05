@@ -320,6 +320,7 @@ local function scan_step()
                 nearby[key] = n
             end
             n.path, n.kind, n.sound, n.every, n.range, n.pitch = path_of(a), cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
+            n.dist = d
             found = found + 1
         end)
     end
@@ -330,13 +331,19 @@ end
 
 -- --- Ambient sounds ---------------------------------------------------------------------
 
-local MAX_PER_TICK = 3
+-- Only the nearest few things make sounds, one at a time (after another access mod):
+-- overlapping cues from everything in range were hard to tell apart.
+local MAX_AUDIBLE = 8
 local function ambient()
     if not in_game or not audio or speech.is_muted() or state.loading() then return end
     local now = os.clock()
+    local order = {}
+    for key, n in pairs(nearby) do order[#order + 1] = key end
+    table.sort(order, function(a, b) return (nearby[a].dist or 1e9) < (nearby[b].dist or 1e9) end)
     local played = 0
-    for key, n in pairs(nearby) do
-        if played >= MAX_PER_TICK then break end
+    for rank, key in ipairs(order) do
+        local n = nearby[key]
+        if rank > MAX_AUDIBLE or played >= 1 then break end
         if now >= n.next_at then
             n.next_at = now + n.every
             diag.trace("ambient " .. n.kind .. " " .. tostring(n.path))

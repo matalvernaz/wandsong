@@ -66,7 +66,7 @@ for k, v in pairs(counts) do keys[#keys + 1] = k .. "=" .. v end
 table.sort(keys)
 print(table.concat(keys, " "))
 assert(counts.step and counts.step > 3, "footsteps")
-assert(counts["loop:wall4"], "right wall loop")
+assert(counts["loop:wall1"], "a wall region loop")
 assert(counts.opening == 1, "one opening when the right wall ends")
 assert(not counts.ledge, "drop-off cue stays off until reliable")
 local st = require("state")

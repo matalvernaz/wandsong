@@ -9,6 +9,8 @@ require("menus")
 require("scanner")
 require("world")
 require("surroundings")
+require("path")
+require("gamecues")
 
 -- Diagnostics mark: the player says "something odd just happened"; the log records the
 -- moment, with what was spoken just before, so it's easy to find afterwards.
