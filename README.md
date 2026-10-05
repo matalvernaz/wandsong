@@ -61,8 +61,16 @@ can't be used until its own menu reader is switched on. Wandsong switches it on 
 
 ## Keys
 
-These keys were chosen so they don't clash with NVDA, JAWS or the game. Insert, Caps Lock and
-the number pad are left alone.
+These are the defaults, chosen so they don't clash with NVDA, JAWS or the game. Insert, Caps
+Lock and the number pad are left alone.
+
+Every control, the game's and the mod's, lives in one accessible Controls menu: press
+Control apostrophe. Entries are grouped by situation (On foot, Spells and combat, Riding and
+flying, ... then Wandsong's own groups) and read like "Basic cast: slash, left mouse
+button". Press the press key on one, then the key you want; clashes with other controls or
+your screen reader are named first. Game keys take effect the next time the game starts.
+The first entry applies a no-mouse preset for laptops: slash casts, right shift aims, 9 and
+0 change spell sets, delete skips cutscenes. Mouse buttons keep working.
 
 Reading the screen:
 

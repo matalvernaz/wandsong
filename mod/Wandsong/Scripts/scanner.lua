@@ -52,7 +52,6 @@ local CATEGORIES = {
     { label = "interactable", classes = { "SimpleInteractObject", "InteractiveObjectActor" } },
 }
 
-local SCAN_KEY_CANDIDATES = { "F9" }  -- F10 is the game's Settings key; numpad is NVDA's
 
 local speech = require("speech")
 local dispatch = require("dispatch")
@@ -198,16 +197,9 @@ local function scan_now()
     end
 end
 
--- The key bind fires on UE4SS's input thread: queue the scan for the game thread.
-local function scan() dispatch.run(scan_now) end
-
-for _, key_name in ipairs(SCAN_KEY_CANDIDATES) do
-    local key = Key[key_name]
-    if key ~= nil then
-        local ok = pcall(RegisterKeyBind, key, scan)
-        print(string.format("[Wandsong scanner] bind %s ok=%s\n", key_name, tostring(ok)))
-    end
-end
-
+require("keys").action{
+    id = "scan", name = "What's around me, with distances and directions", group = "In the world",
+    default = "f9", run = scan_now,
+}
 
 print("[Wandsong scanner] loaded. Press F9 in the world.\n")

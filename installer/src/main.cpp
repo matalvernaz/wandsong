@@ -1,4 +1,4 @@
-﻿// Wandsong installer.
+// Wandsong installer.
 //
 // A plain console program, so screen readers read it naturally. When no screen reader is
 // running it also speaks each line itself (through Prism's system voices), so a blind

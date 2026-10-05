@@ -8,6 +8,10 @@
 
 local speech = require("speech")
 local dispatch = require("dispatch")
+local keys = require("keys")
+
+-- Spoken name of whatever key an action is bound to right now, e.g. key_name("press").
+local function key_name(id) return keys.describe_combo(keys.combo_of(id)) end
 local ok_presets, PRESET_DESCRIPTIONS = pcall(require, "creator_presets")
 if not ok_presets then PRESET_DESCRIPTIONS = {} end
 
@@ -71,8 +75,8 @@ local function clean(t)
     t = t:gsub('<img%s+src="cbi_Keyboard_([^"]+)"%s*/>', function(k)
         return (k:gsub("_", " "))
     end)
-    -- Mouse prompts become the mod's own key: Backslash clicks the reviewed item.
-    t = t:gsub('<img%s+src="cbi_Mouse_LeftClick"%s*/>', "Backslash")
+    -- Mouse prompts become the mod's own key: the "press" action clicks the reviewed item.
+    t = t:gsub('<img%s+src="cbi_Mouse_LeftClick"%s*/>', function() return key_name("press") end)
     -- Other mouse buttons have no keyboard meaning for the player; the action they trigger
     -- is still reachable as a shortcut item in the review list.
     t = t:gsub('<img%s+src="cbi_Mouse_[^"]+"%s*/>%s*,?%s*', "")
@@ -149,8 +153,9 @@ local function on_read_menu(widget)
         quiet_class, quiet_until = cls, os.clock() + 3
         speak("Welcome to Hogwarts Legacy, with Wandsong. This is the first-time Accessibility " ..
               "Options screen; I've switched the game's menu reader on for you so it unlocks. " ..
-              "Use the bracket keys to look through the settings, backslash to change one, " ..
-              "and F to continue. Semicolon for help at any time.")
+              "Use " .. key_name("review_prev") .. " and " .. key_name("review_next") ..
+              " to look through the settings, " .. key_name("press") .. " to change one, " ..
+              "and F to continue. " .. key_name("help") .. " for help at any time.")
         return
     end
     -- Right after the welcome, the unlocked screen re-reads itself: don't talk over it.
@@ -691,7 +696,18 @@ local function finish_labels(items)
     end
 end
 
+-- A screen made by the mod itself (e.g. the Controls menu) takes over the review keys while
+-- it is open: { title = "...", items = function() return { {text=, button=, on_press=}, ... } end }
+local virtual = nil
+
 local function refresh()
+    if virtual then
+        local items = virtual.items()
+        if review_top ~= virtual then review_index = 0 end
+        review_top, review_items = virtual, items
+        if review_index > #items then review_index = #items end
+        return true
+    end
     local tops, top = current_tops()
     if #tops == 0 then review_items = {}; return false end
     local items = {}
@@ -911,7 +927,8 @@ end
 
 local function click_current()
     local item = review_items[review_index]
-    if not item then speak("Nothing selected. Use the bracket keys to pick an item first."); return end
+    if not item then speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first."); return end
+    if item.on_press then item.on_press(); return end
     if item.action then
         if not send_action(item.action, item.hold) then speak("Could not use " .. item.text) end
         return
@@ -952,7 +969,7 @@ local ACTION_LEFT, ACTION_RIGHT = 4, 5
 local function adjust(delta)
     refresh()
     local item = review_items[review_index]
-    if not item then speak("Nothing selected. Use the bracket keys to pick an item first."); return end
+    if not item then speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first."); return end
     local steps = math.abs(delta)
     local STEP_MS = 120   -- each nudge is a press and release; the game needs them apart
     -- The game re-reads the item as it changes; we announce the result ourselves.
@@ -973,22 +990,22 @@ local function adjust(delta)
     end)
 end
 
-local HELP = "Wandsong keys. Left and right bracket: previous and next item on screen. " ..
-             "Shift with left and right bracket: previous and next button or shortcut. Backslash: press the current item. " ..
-             "Shift backslash: go back. Control with left and right bracket: first and last item. " ..
-             "Minus and equals: decrease and increase a slider or choice; add shift for bigger steps. " ..
-             "Apostrophe: read the whole screen. Shift apostrophe: copy the screen text to the clipboard. " ..
-             "F9: scan your surroundings, when in the world. Semicolon: help for this screen, twice for this list. " ..
-             "Shift semicolon: description of the current item. Control semicolon: repeat what was last said, " ..
-             "press again to go further back. Control backslash: turn Wandsong speech off or on."
+local function full_help()
+    local groups, order = {}, {}
+    for _, a in ipairs(keys.actions()) do
+        if not a.id:find("^dev_") then
+            if not groups[a.group] then groups[a.group] = {}; order[#order + 1] = a.group end
+            table.insert(groups[a.group], keys.describe_combo(a.combo) .. ": " .. a.name)
+        end
+    end
+    local t = {}
+    for _, g in ipairs(order) do t[#t + 1] = g .. ". " .. table.concat(groups[g], ". ") end
+    return "Wandsong keys. " .. table.concat(t, ". ") .. ". Change any key from the Controls menu."
+end
 
--- Key binds fire on UE4SS's input thread: only queue the work for the game thread.
-local function on_key(fn) return function() dispatch.run(fn) end end
-local function bind(key, mods, fn)
-    local ok, err
-    if mods then ok, err = pcall(RegisterKeyBind, key, mods, on_key(fn))
-    else ok, err = pcall(RegisterKeyBind, key, on_key(fn)) end
-    if not ok then log("bind failed: " .. tostring(err)) end
+-- Mod actions are declared with keys.action (rebindable; keys.lua runs them on the game thread).
+local function act(id, name, default, run)
+    keys.action{ id = id, name = name, group = "Menus and screens", default = default, run = run }
 end
 
 local function read_all()
@@ -1006,15 +1023,15 @@ local function copy_all()
     speak("Screen text copied")
 end
 
-bind(Key.OEM_FOUR,  nil, function() step(-1, false) end)                  -- [
-bind(Key.OEM_SIX,   nil, function() step(1, false) end)                   -- ]
-bind(Key.OEM_FOUR,  { ModifierKey.SHIFT }, function() step(-1, true) end) -- {
-bind(Key.OEM_SIX,   { ModifierKey.SHIFT }, function() step(1, true) end)  -- }
-bind(Key.OEM_FOUR,  { ModifierKey.CONTROL }, function()                  -- Ctrl+[
+act("review_prev", "Previous item on screen", "[", function() step(-1, false) end)
+act("review_next", "Next item on screen", "]", function() step(1, false) end)
+act("review_prev_button", "Previous button or shortcut", "shift+[", function() step(-1, true) end)
+act("review_next_button", "Next button or shortcut", "shift+]", function() step(1, true) end)
+act("review_first", "First item on screen", "ctrl+[", function()
     if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
     select_item(1, "top")
 end)
-bind(Key.OEM_SIX,   { ModifierKey.CONTROL }, function()                  -- Ctrl+]
+act("review_last", "Last item on screen", "ctrl+]", function()
     if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
     select_item(#review_items, "bottom")
 end)
@@ -1028,22 +1045,37 @@ local function press_current()
         review_index = 0
         local first = review_items[1] and describe(review_items[1]) or "nothing readable yet"
         speak("The screen has changed, so I didn't press anything. It starts with: " .. first ..
-              ". Use the bracket keys to look around.")
+              ". Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to look around.")
         return
     end
     click_current()
 end
 
-bind(Key.OEM_FIVE,  nil, press_current)                                   -- \
-bind(Key.OEM_FIVE,  { ModifierKey.SHIFT }, function()                     -- |
+act("press", "Press, toggle or use the current item", "\\", press_current)
+act("back", "Go back", "shift+\\", function()
+    if virtual then
+        speak("Closed " .. virtual.title .. ".")
+        virtual = nil
+        review_index = 0
+        return
+    end
     if not send_action(ACTION_BACK) then speak("Could not go back") end
 end)
-bind(Key.OEM_MINUS, nil, function() adjust(-1) end)                       -- -
-bind(Key.OEM_PLUS,  nil, function() adjust(1) end)                        -- =
-bind(Key.OEM_MINUS, { ModifierKey.SHIFT }, function() adjust(-10) end)    -- _
-bind(Key.OEM_PLUS,  { ModifierKey.SHIFT }, function() adjust(10) end)     -- +
-bind(Key.OEM_SEVEN, nil, read_all)                                        -- '
-bind(Key.OEM_SEVEN, { ModifierKey.SHIFT }, copy_all)                      -- "
+
+local controls = require("controls")
+act("controls", "Open the Controls menu (game and mod keys)", "ctrl+'", function()
+    virtual = controls
+    review_index = 0
+    refresh()
+    speak("Controls, " .. #review_items .. " entries. " .. key_name("review_next") .. " to go through them, " ..
+          key_name("press") .. " to change one, " .. key_name("back") .. " to close.")
+end)
+act("decrease", "Decrease a slider or choice", "-", function() adjust(-1) end)
+act("increase", "Increase a slider or choice", "=", function() adjust(1) end)
+act("decrease_big", "Decrease a slider a lot", "shift+-", function() adjust(-10) end)
+act("increase_big", "Increase a slider a lot", "shift+=", function() adjust(10) end)
+act("read_all", "Read the whole screen", "'", read_all)
+act("copy_all", "Copy the screen text to the clipboard", "shift+'", copy_all)
 local last_help = -10
 local function screen_name()
     local top = review_top
@@ -1053,10 +1085,10 @@ local function screen_name()
 end
 
 local function contextual_help()
-    if os.clock() - last_help < 1.5 then last_help = -10; speak(HELP); return end
+    if os.clock() - last_help < 1.5 then last_help = -10; speak(full_help()); return end
     last_help = os.clock()
     if not refresh() or #review_items == 0 then
-        speak("Nothing readable on screen right now. Press semicolon twice for all keys.")
+        speak("Nothing readable on screen right now. Press " .. key_name("help") .. " twice for all keys.")
         return
     end
     local buttons, shortcuts = 0, {}
@@ -1069,14 +1101,14 @@ local function contextual_help()
     local item = review_items[review_index]
     if item then
         t[#t + 1] = "Current: " .. describe(item) .. "."
-        if item.action then t[#t + 1] = "Backslash uses this shortcut."
-        elseif item.checkbox then t[#t + 1] = "Backslash toggles it."
-        elseif item.button then t[#t + 1] = "Backslash presses it. Shift semicolon for its description."
+        if item.action then t[#t + 1] = key_name("press") .. " uses this shortcut."
+        elseif item.checkbox then t[#t + 1] = key_name("press") .. " toggles it."
+        elseif item.button then t[#t + 1] = key_name("press") .. " presses it. " .. key_name("details") .. " for its description."
         else t[#t + 1] = "This is text." end
     else
-        t[#t + 1] = "Use the bracket keys to move through the screen."
+        t[#t + 1] = key_name("review_prev") .. " and " .. key_name("review_next") .. " move through the screen."
     end
-    t[#t + 1] = "Shift backslash goes back. Press semicolon twice for all keys."
+    t[#t + 1] = key_name("back") .. " goes back. Press " .. key_name("help") .. " twice for all keys."
     speak(table.concat(t, " "))
 end
 
@@ -1122,11 +1154,11 @@ local function dump_current()
     speak("Dumped to the log")
 end
 
-bind(Key.OEM_ONE,   nil, contextual_help)                                 -- ;
-bind(Key.OEM_ONE,   { ModifierKey.CONTROL, ModifierKey.SHIFT }, dump_current)
-bind(Key.OEM_ONE,   { ModifierKey.CONTROL }, repeat_last)                 -- Ctrl+;
-bind(Key.OEM_FIVE,  { ModifierKey.CONTROL }, function() speech.toggle_mute() end)  -- Ctrl+\
-bind(Key.OEM_ONE,   { ModifierKey.SHIFT }, read_details)                  -- :
+act("help", "Help for this screen; twice for all keys", ";", contextual_help)
+act("dev_dump", "Developer: log the current item's fields", "ctrl+shift+;", dump_current)
+act("repeat", "Repeat what was said; again to go further back", "ctrl+;", repeat_last)
+act("mute", "Turn Wandsong speech and sounds off or on", "ctrl+\\", function() speech.toggle_mute() end)
+act("details", "Description of the current item", "shift+;", read_details)
 
 
 log("menus loaded")
