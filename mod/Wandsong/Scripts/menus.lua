@@ -104,7 +104,22 @@ local seen = {}
 local last_screen_time = -10
 local capture_until, hover_details = -10, {}
 local quiet_class, quiet_until = nil, -10
-local current_screen, current_cls, last_item = nil, "?", ""
+local current_screen, current_cls, last_item = nil, "?", ""   -- current_screen is a path
+
+-- Game objects aren't kept between ticks: keep the path, look the object up again.
+local function path_of(o)
+    local full
+    pcall(function() full = o:GetFullName() end)
+    return full and full:match("^%S+%s+(.+)$") or nil
+end
+local function resolve(path)
+    if not path then return nil end
+    local o
+    pcall(function() o = StaticFindObject(path) end)
+    local ok, alive = pcall(function() return o and o:IsValid() end)
+    if ok and alive then return o end
+    return nil
+end
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 
 -- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
@@ -152,8 +167,10 @@ local function on_read_menu(widget)
             speak(text)
             -- If the screen shows much more prose than the game's reader gives us (a letter,
             -- a long notice), read that too, after the summary.
+            local wpath = path_of(widget)
             dispatch.later(400, function()
-                local ok_v, still = pcall(function() return widget:IsValid() and widget:IsInViewport() end)
+                local widget = resolve(wpath)
+                local ok_v, still = pcall(function() return widget and widget:IsInViewport() end)
                 if not (ok_v and still) then return end
                 local items = {}
                 walk(widget, items, nil, 0)
@@ -185,7 +202,7 @@ local function on_read_menu(widget)
     -- Only whole screens are polled for focus changes; small widgets (description panels,
     -- single buttons) would just repeat themselves.
     if is_screen then
-        current_screen, current_cls = widget, cls
+        current_screen, current_cls = path_of(widget), cls
         last_item = clean(table.concat(gather(widget, 1) or {}, ", "))
     end
 end
@@ -193,17 +210,18 @@ end
 -- The hook itself only records the widget; all reading happens on the next dispatcher tick.
 -- (Doing work inside UI hooks has crashed this game for other projects.)
 RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
-    local widget = ctx:get()
-    dispatch.run(function() on_read_menu(widget) end)
+    local p = path_of(ctx:get())
+    if p then dispatch.run(function()
+        local widget = resolve(p)
+        if widget then on_read_menu(widget) end
+    end) end
 end)
 
 -- Not every screen calls ReadMenu when focus moves, so also poll the most recently read
 -- screen: its depth-1 strings are the focused item + hint, and change as focus moves.
 dispatch.every(200, function()
-    local w = current_screen
-    if not w then return end
-    local okV, valid = pcall(function() return w:IsValid() end)
-    if not okV or not valid then current_screen = nil; return end
+    local w = resolve(current_screen)
+    if not w then current_screen = nil; return end
     local item = clean(table.concat(gather(w, 1) or {}, ", "))
     if item == "" or item == last_item then pending_item = nil; return end
     -- Only announce a change that holds for two polls in a row: mid-transition reads
@@ -547,17 +565,21 @@ top_of = function(w)
     return cur
 end
 
-local screens = {}   -- most recent last
+-- Recently read screens, most recent last, kept as object paths: a closed screen may be
+-- freed by the game, and touching a freed object crashes inside UE4SS. Paths are resolved
+-- again (StaticFindObject) whenever a screen is needed.
+local screens = {}
 note_screen = function(w)
     local top = top_of(w)
     -- Only real screens count; a nested widget announcing itself must not reset review.
     local ok, live = pcall(function() return top:IsInViewport() end)
     if not (ok and live) then return end
-    local a = addr(top)
+    local p = path_of(top)
+    if not p then return end
     for i = #screens, 1, -1 do
-        if addr(screens[i]) == a then table.remove(screens, i) end
+        if screens[i] == p then table.remove(screens, i) end
     end
-    screens[#screens + 1] = top
+    screens[#screens + 1] = p
     if #screens > 12 then table.remove(screens, 1) end
 end
 
@@ -565,8 +587,8 @@ end
 -- reload), every top-level widget in the viewport.
 local function current_tops()
     for i = #screens, 1, -1 do
-        local s = screens[i]
-        local ok, live = pcall(function() return s:IsValid() and s:IsInViewport() end)
+        local s = resolve(screens[i])
+        local ok, live = pcall(function() return s and s:IsInViewport() end)
         if ok and live then return { s }, s end
         table.remove(screens, i)
     end

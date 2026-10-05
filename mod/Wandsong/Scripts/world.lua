@@ -40,20 +40,37 @@ local CATEGORIES = {
 -- Class-name fragments that mean "a person, not a foe" even under Enemy_Character.
 local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merchant" }
 
-local SCAN_EVERY_MS = 300      -- one class query per this interval
+local SCAN_EVERY_MS = 600      -- one class query per this interval (~30 ms each)
 local LISTENER_MS = 100
 local GATE_MS = 1000
 local GATE_STABLE = 3
 
 -- --- Gameplay gate --------------------------------------------------------------------
 
-local ui_manager, pawn, controller
+-- Game objects are never kept between ticks: touching one the game has since destroyed
+-- crashes inside UE4SS, where nothing can catch it. We keep each object's path and look it
+-- up again (StaticFindObject is a quick hash lookup) every time it's needed.
+local ui_path, pawn_path, ctrl_path
 local in_game, stable, world_key = false, 0, nil
 
 local function valid(o)
     if not o then return false end
     local ok, v = pcall(function() return o:IsValid() end)
     return ok and v
+end
+
+local function path_of(o)
+    local full
+    pcall(function() full = o:GetFullName() end)
+    return full and full:match("^%S+%s+(.+)$") or nil
+end
+
+local function resolve(path)
+    if not path then return nil end
+    local o
+    pcall(function() o = StaticFindObject(path) end)
+    if valid(o) then return o end
+    return nil
 end
 
 local function call_bool(o, fn)
@@ -66,7 +83,7 @@ local nearby = {}   -- key -> { obj, kind, sound, every, range, pitch, next_at }
 
 local function clear_world()
     nearby = {}
-    pawn, controller = nil, nil
+    ctrl_path = nil
     if audio then pcall(audio.stop_all) end
 end
 
@@ -87,8 +104,10 @@ local function find_live(cls)
 end
 
 local function gate_check()
-    if not valid(ui_manager) then ui_manager = find_live("UIManager") end
-    if not valid(pawn) then pawn = find_live("Biped_Player") end
+    local ui_manager = resolve(ui_path)
+    if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
+    local pawn = resolve(pawn_path)
+    if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
     local blocked = not (valid(ui_manager) and valid(pawn))
     if not blocked then
         for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
@@ -102,9 +121,7 @@ local function gate_check()
     if key and key ~= world_key then
         if world_key then log("player object changed: dropping cached objects") end
         world_key = key
-        local keep = pawn
         clear_world()
-        pawn = keep
     end
     if blocked then
         stable = 0
@@ -125,7 +142,9 @@ function M.in_game() return in_game end
 
 local px, py, pz = 0, 0, 0
 local function update_listener()
-    if not in_game or not audio or not valid(pawn) then return end
+    if not in_game or not audio then return end
+    local pawn = resolve(pawn_path)
+    if not pawn then return end
     local ok = pcall(function()
         local loc = pawn:K2_GetActorLocation()
         px, py, pz = loc.X, loc.Y, loc.Z
@@ -133,7 +152,11 @@ local function update_listener()
     if not ok then return end
     local yaw
     pcall(function()
-        if not valid(controller) then controller = pawn:GetController() end
+        local controller = resolve(ctrl_path)
+        if not controller then
+            controller = pawn:GetController()
+            ctrl_path = path_of(controller)
+        end
         yaw = controller:GetControlRotation().Yaw
     end)
     if yaw == nil then pcall(function() yaw = pawn:K2_GetActorRotation().Yaw end) end
@@ -186,7 +209,7 @@ local function scan_step()
                 n = { next_at = os.clock() + math.random() * cat.every }
                 nearby[key] = n
             end
-            n.obj, n.kind, n.sound, n.every, n.range, n.pitch = a, cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
+            n.path, n.kind, n.sound, n.every, n.range, n.pitch = path_of(a), cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
             found = found + 1
         end)
     end
@@ -206,8 +229,9 @@ local function ambient()
         if now >= n.next_at then
             n.next_at = now + n.every
             local ok = pcall(function()
-                if not n.obj:IsValid() then error("gone") end
-                local loc = n.obj:K2_GetActorLocation()
+                local obj = resolve(n.path)
+                if not obj then error("gone") end
+                local loc = obj:K2_GetActorLocation()
                 local dx, dy, dz = loc.X - px, loc.Y - py, loc.Z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) > n.range then return end
                 audio.play(n.sound, loc.X, loc.Y, loc.Z + 60, 0.7, n.pitch)
