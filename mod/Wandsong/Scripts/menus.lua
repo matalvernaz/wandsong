@@ -1081,13 +1081,23 @@ act("back", "Go back", "shift+\\", function()
     if not send_action(ACTION_BACK) then speak("Could not go back") end
 end)
 
-local controls = require("controls")
-act("controls", "Open the Controls menu (game and mod keys)", "ctrl+'", function()
-    virtual = controls
+-- Open a screen made by the mod (Controls, the sound legend) over whatever is showing.
+local function open_screen(provider, what)
+    virtual = provider
     review_index = 0
     refresh()
-    speak("Controls, " .. #review_items .. " entries. " .. key_name("review_next") .. " to go through them, " ..
-          key_name("press") .. " to change one, " .. key_name("back") .. " to close.")
+    speak(provider.title .. ", " .. #review_items .. " entries. " .. key_name("review_next") ..
+          " to go through them, " .. key_name("press") .. " to " .. what .. ", " .. key_name("back") .. " to close.")
+end
+state.open_screen = open_screen
+
+local controls = require("controls")
+local sounds = require("sounds")
+act("controls", "Open the Controls menu (game and mod keys)", "ctrl+'", function()
+    open_screen(controls, "change one")
+end)
+act("sounds", "Learn Wandsong's sounds", "ctrl+shift+'", function()
+    open_screen(sounds, "hear it")
 end)
 act("decrease", "Decrease a slider or choice", "-", function() adjust(-1) end)
 act("increase", "Increase a slider or choice", "=", function() adjust(1) end)

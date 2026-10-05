@@ -11,6 +11,7 @@
 local dispatch = require("dispatch")
 local speech = require("speech")
 local state = require("state")
+local keys = require("keys")
 
 local M = {}
 
@@ -104,16 +105,56 @@ local function find_live(cls)
     return nil
 end
 
+-- Crash fuse: a marker file exists exactly while world sounds are active in gameplay. If
+-- the game crashes then, the marker survives, and the next launch starts with world sounds
+-- off (and says so) instead of crashing again.
+local FUSE = (function()
+    local src = debug.getinfo(1, "S").source or ""
+    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
+    return dir .. "\\world_active.flag"
+end)()
+local enabled = true
+local fuse_blown = false
+do
+    local f = io.open(FUSE, "r")
+    if f then
+        f:close()
+        enabled, fuse_blown = false, true
+        log("crash fuse: the game stopped while world sounds were on last time; starting with them off")
+    end
+end
+local function fuse_set(on)
+    if on then
+        local f = io.open(FUSE, "w")
+        if f then f:write("world sounds active\n"); f:close() end
+    else
+        os.remove(FUSE)
+    end
+end
+
 local function close_gate(why)
     stable = 0
     if in_game then
         in_game = false
+        fuse_set(false)
         log("gate closed (" .. why .. ")")
         if audio then pcall(audio.stop_all) end
     end
 end
 
 local function gate_check()
+    if not enabled then
+        if fuse_blown and not state.loading() then
+            fuse_blown = false
+            dispatch.later(8000, function()
+                speech.say("Wandsong world sounds are off, because the game stopped while they " ..
+                           "were running last time. Press " .. keys.describe_combo(keys.combo_of("world_toggle")) ..
+                           " to turn them back on.", true)
+            end)
+        end
+        close_gate("switched off")
+        return
+    end
     -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
     if state.loading() then
         if in_game or pawn_path then log("loading: pausing the world layer") end
@@ -137,6 +178,10 @@ local function gate_check()
     local pawn = resolve(pawn_path)
     if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
     local blocked = not valid(pawn)
+    if not blocked then
+        local okc, cine = pcall(function() return pawn.InCinematic end)
+        if okc and cine == true then close_gate("cutscene"); return end
+    end
     -- A new player object means a new world (level load, fast travel): drop everything held.
     local key
     pcall(function() key = pawn:GetAddress() end)
@@ -152,6 +197,7 @@ local function gate_check()
         stable = stable + 1
         if not in_game and stable >= GATE_STABLE then
             in_game = true
+            fuse_set(true)
             log("gate open: in gameplay")
             if audio then audio.play_ui("chime", 0.4) end
         end
@@ -160,6 +206,22 @@ end
 
 function M.in_game() return in_game end
 
+-- --- Reading actors ---------------------------------------------------------------------
+-- Positions and rotations are read as plain reflected properties. Calling an actor's own
+-- functions (K2_GetActorLocation and friends go through ProcessEvent) on something the game
+-- is busy changing or destroying is what crashed the game three times.
+
+-- World position of an actor's root (characters, chests and doors use an unattached root, so
+-- its relative location is its world location).
+local function location(actor)
+    local ok, x, y, z = pcall(function()
+        local v = actor.RootComponent.RelativeLocation
+        return v.X, v.Y, v.Z
+    end)
+    if ok and type(x) == "number" then return x, y, z end
+    return nil
+end
+
 -- --- Listener (follows the camera) ----------------------------------------------------
 
 local px, py, pz = 0, 0, 0
@@ -167,21 +229,19 @@ local function update_listener()
     if not in_game or not audio or state.loading() then return end
     local pawn = resolve(pawn_path)
     if not pawn then return end
-    local ok = pcall(function()
-        local loc = pawn:K2_GetActorLocation()
-        px, py, pz = loc.X, loc.Y, loc.Z
-    end)
-    if not ok then return end
+    local x, y, z = location(pawn)
+    if not x then return end
+    px, py, pz = x, y, z
     local yaw
     pcall(function()
         local controller = resolve(ctrl_path)
         if not controller then
-            controller = pawn:GetController()
+            controller = pawn.Controller
             ctrl_path = path_of(controller)
         end
-        yaw = controller:GetControlRotation().Yaw
+        yaw = controller.ControlRotation.Yaw
     end)
-    if yaw == nil then pcall(function() yaw = pawn:K2_GetActorRotation().Yaw end) end
+    if yaw == nil then pcall(function() yaw = pawn.RootComponent.RelativeRotation.Yaw end) end
     local r = math.rad(yaw or 0)
     audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0)
 end
@@ -214,8 +274,9 @@ local function scan_step()
         pcall(function()
             if not a:IsValid() then return end
             local key = a:GetAddress()
-            local loc = a:K2_GetActorLocation()
-            local dx, dy, dz = loc.X - px, loc.Y - py, loc.Z - pz
+            local x, y, z = location(a)
+            if not x then return end
+            local dx, dy, dz = x - px, y - py, z - pz
             local d = math.sqrt(dx * dx + dy * dy + dz * dz)
             local cat = entry.cat
             if cat.kind == "enemy" and friendly(a:GetClass():GetFName():ToString()) then
@@ -253,16 +314,33 @@ local function ambient()
             local ok = pcall(function()
                 local obj = resolve(n.path)
                 if not obj then error("gone") end
-                local loc = obj:K2_GetActorLocation()
-                local dx, dy, dz = loc.X - px, loc.Y - py, loc.Z - pz
+                local x, y, z = location(obj)
+                if not x then error("no position") end
+                local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) > n.range then return end
-                audio.play(n.sound, loc.X, loc.Y, loc.Z + 60, 0.7, n.pitch)
+                audio.play(n.sound, x, y, z + 60, 0.7, n.pitch)
                 played = played + 1
             end)
             if not ok then nearby[key] = nil; claimed_by[key] = nil end
         end
     end
 end
+
+--- Play one of the world sounds centred, for the sound legend.
+function M.preview(name, pitch)
+    if audio then return audio.play_ui(name, 0.8, pitch or 1.0) end
+    return false
+end
+
+keys.action{
+    id = "world_toggle", name = "Turn world sounds off or on", group = "In the world",
+    default = "ctrl+shift+\\",
+    run = function()
+        enabled = not enabled
+        if not enabled then close_gate("switched off"); nearby = {} end
+        speech.say("World sounds " .. (enabled and "on" or "off"))
+    end,
+}
 
 dispatch.every(GATE_MS, gate_check)
 dispatch.every(LISTENER_MS, update_listener)

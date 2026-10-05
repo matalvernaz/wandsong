@@ -269,6 +269,8 @@ function M.items()
     local items = {}
     local function heading(t) items[#items + 1] = { text = t } end
 
+    items[#items + 1] = { text = "Learn Wandsong's sounds", button = true,
+                          on_press = function() require("state").open_screen(require("sounds"), "hear it") end }
     items[#items + 1] = { text = "Apply the no-mouse preset (keyboard keys for every mouse-only action)",
                           button = true, on_press = apply_no_mouse }
 
