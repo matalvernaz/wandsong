@@ -14,10 +14,13 @@ local LEGEND = {
     { "ping", "Objective beacon: where your current objective is. Coming soon." },
     { "tick", "Beacon tick: comes faster as you get closer. Coming soon." },
     { "arrive", "Arrived at your objective. Coming soon." },
+    { "step", "Footstep: one per stride while you walk. No steps means you're standing still." },
+    { "land", "Landing: you've come down from a jump or a fall." },
+    { "step_blocked", "Bump: you're pushing to move but something is in the way." },
+    { "wall_preview", "Wall: a soft rushing sound from each nearby wall, louder as you get closer. Silence means open space." },
+    { "opening", "Opening: a wall beside you has ended, like a doorway or a side passage. It comes from that side." },
+    { "ledge", "Drop-off: the ground falls away ahead of you. Lower means a bigger drop." },
     { "warn", "Incoming attack: block or dodge now. Coming soon." },
-    { "step_blocked", "Bumped into something you can't walk through. Coming soon." },
-    { "wall", "A wall close by on that side. Coming soon." },
-    { "opening", "An opening or doorway on that side. Coming soon." },
 }
 
 function M.items()

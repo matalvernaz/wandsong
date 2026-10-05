@@ -374,6 +374,15 @@ local function status()
         collectgarbage("count"), q, t))
 end
 
+--- The player's pawn, looked up fresh (nil outside gameplay). Use it within one task only.
+function M.pawn()
+    if not in_game or state.loading() then return nil end
+    return resolve(pawn_path)
+end
+
+--- Last known player position (cm) and camera yaw (degrees), as the listener uses them.
+function M.position() return px, py, pz, yaw_now end
+
 --- Play one of the world sounds centred, for the sound legend.
 function M.preview(name, pitch)
     if audio then return audio.play_ui(name, 0.8, pitch or 1.0) end

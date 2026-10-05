@@ -122,6 +122,22 @@ Sound noise_loop(float lowpass, float amp, float wobble_hz) {
     return s;
 }
 
+// One-shot noise burst: footsteps, landings, the rush of air at an opening.
+Sound noise_burst(float len, float lowpass, float amp, float attack, uint32_t seed) {
+    Sound s;
+    int n = static_cast<int>(len * kRate);
+    float y = 0;
+    for (int i = 0; i < n; ++i) {
+        seed = seed * 1664525u + 1013904223u;
+        float white = ((seed >> 9) & 0xFFFF) / 32768.0f - 1.0f;
+        y += lowpass * (white - y);
+        float t = static_cast<float>(i) / kRate;
+        float v = y * amp * envelope(t, len, attack, len * 0.7f);
+        s.pcm.push_back(static_cast<int16_t>(std::max(-1.0f, std::min(1.0f, v * 3.0f)) * 32000));
+    }
+    return s;
+}
+
 void build_sounds() {
     g_sounds["ping"] = tone({{880, 1}}, 0.07f, 0.6f);
     g_sounds["tick"] = tone({{1600, 1}}, 0.02f, 0.5f, 0);
@@ -134,7 +150,12 @@ void build_sounds() {
     g_sounds["warn"] = tone({{1200, 1}, {1500, 1}}, 0.06f, 0.7f, 0.5f);
     g_sounds["step_blocked"] = tone({{150, 1}}, 0.08f, 0.6f, 1.0f);
     g_sounds["wall"] = noise_loop(0.05f, 0.5f, 0.0f);
-    g_sounds["opening"] = noise_loop(0.25f, 0.25f, 2.0f);
+    g_sounds["wall_preview"] = noise_loop(0.05f, 0.5f, 0.0f);  // one second, not looping
+    g_sounds["wall_preview"].loops = false;
+    g_sounds["opening"] = noise_burst(0.35f, 0.35f, 0.35f, 0.12f, 777);
+    g_sounds["step"] = noise_burst(0.045f, 0.12f, 0.45f, 0.003f, 4242);
+    g_sounds["land"] = noise_burst(0.12f, 0.06f, 0.8f, 0.004f, 9001);
+    g_sounds["ledge"] = tone({{660, 1}, {440, 1}, {300, 1}}, 0.06f, 0.45f, 0.3f);
 }
 
 // --- Spatialisation --------------------------------------------------------------------
