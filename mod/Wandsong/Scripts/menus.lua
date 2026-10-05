@@ -138,7 +138,7 @@ local function on_read_menu(widget)
     pcall(function() cls = widget:GetClass():GetFName():ToString() end)
 
     -- Loading screens tell the world layer to keep its hands off until the load is over.
-    if cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C" then
+    if is_loading_class(cls) then
         state.mark_loading(6)
         loading_screen = path_of(widget)
     end
@@ -232,14 +232,48 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     end, "ReadMenu " .. (p:match("[^%.:]+$") or p)) end
 end)
 
+local function is_loading_class(cls)
+    return cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C"
+end
+
+-- Every widget the game creates passes through here, during its construction. Only its
+-- class name and path are read (nothing else is safe on a half-built object); a loading
+-- screen raises the loading flag at once, before the old world starts coming down.
+local ok_notify, notify_err = pcall(NotifyOnNewObject, "/Script/UMG.UserWidget", function(obj)
+    local cls = "?"
+    pcall(function() cls = obj:GetClass():GetFName():ToString() end)
+    diag.trace("widget created " .. cls)
+    if is_loading_class(cls) then
+        state.mark_loading(10)
+        loading_screen = path_of(obj)
+        diag.event("loading", "loading screen created: " .. cls)
+        if not state.loading_announced then
+            state.loading_announced = true
+            dispatch.run(function() speech.say("Loading") end, "say loading", true)
+        end
+    end
+end)
+log("widget watcher: " .. (ok_notify and "on" or ("unavailable: " .. tostring(notify_err))))
+
+-- A finished map load also counts as loading for a few seconds (the new world settles).
+pcall(RegisterLoadMapPostHook, function()
+    diag.trace("LoadMap finished")
+    state.mark_loading(6)
+    log("map loaded")
+end)
+
 -- While a loading screen is still up, keep the "loading" flag raised; it lapses a few
 -- seconds after the screen goes.
 dispatch.every(1000, function()
     if not loading_screen then return end
     local w = resolve(loading_screen)
     local ok, up = pcall(function() return w and w:IsInViewport() end)
-    if ok and up then state.mark_loading(4) else loading_screen = nil end
-end)
+    if ok and up then state.mark_loading(4) else
+        loading_screen = nil
+        diag.event("loading", "loading screen gone")
+        state.loading_announced = false
+    end
+end, "loading screen watch", true)
 
 -- Not every screen calls ReadMenu when focus moves, so also poll the most recently read
 -- screen: its depth-1 strings are the focused item + hint, and change as focus moves.
@@ -1187,6 +1221,21 @@ end
 
 act("help", "Help for this screen; twice for all keys", ";", contextual_help)
 act("dev_dump", "Developer: log the current item's fields", "ctrl+shift+;", dump_current)
+-- Writes every class, property and function in the game to files beside the game's exe
+-- (UE4SS_ObjectDump.txt and the CXXHeaderDump folder), for working out how to read things.
+-- The game freezes for a minute or so while it runs.
+act("dev_sdk", "Developer: dump all game classes and functions to files", "ctrl+shift+f12", function()
+    speech.say("Dumping the game's classes. The game will freeze for a minute or two.")
+    dispatch.later(1500, function()
+        local t0 = os.clock()
+        local ok1, e1 = pcall(DumpAllObjects)
+        log("DumpAllObjects ok=" .. tostring(ok1) .. (ok1 and "" or (" " .. tostring(e1))))
+        local ok2, e2 = pcall(GenerateSDK)
+        log("GenerateSDK ok=" .. tostring(ok2) .. (ok2 and "" or (" " .. tostring(e2))))
+        log(string.format("class dump took %.0f s", os.clock() - t0))
+        speech.say((ok1 and ok2) and "Class dump finished." or "Class dump failed; it's in the log.")
+    end, "class dump")
+end)
 act("repeat", "Repeat what was said; again to go further back", "ctrl+;", repeat_last)
 act("mute", "Turn Wandsong speech and sounds off or on", "ctrl+\\", function() speech.toggle_mute() end)
 act("details", "Description of the current item", "shift+;", read_details)

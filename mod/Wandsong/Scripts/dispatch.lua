@@ -12,6 +12,7 @@
 -- Every task runs inside pcall, so one failing task can't stop the others.
 
 local diag = require("diag")
+local state = require("state")
 
 local M = {}
 
@@ -33,16 +34,19 @@ end
 
 local SLOW_MS = 40
 
-function M.run(fn, label)
-    queue[#queue + 1] = { fn = fn, label = label or where(fn) }
+-- during_load = true lets a task run while the game is loading. Everything else waits until
+-- the load is over: touching game objects mid-load is what crashes.
+function M.run(fn, label, during_load)
+    queue[#queue + 1] = { fn = fn, label = label or where(fn), during_load = during_load }
 end
 
-function M.later(ms, fn, label)
-    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, label = label or where(fn) }
+function M.later(ms, fn, label, during_load)
+    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, label = label or where(fn), during_load = during_load }
 end
 
-function M.every(ms, fn, label)
-    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, every = ms, label = label or where(fn) }
+function M.every(ms, fn, label, during_load)
+    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, every = ms, label = label or where(fn),
+                            during_load = during_load }
 end
 
 function M.counts() return #queue, #timers end
@@ -59,15 +63,18 @@ end
 
 local function tick()
     -- Take what's queued now; anything queued while running waits for the next tick.
+    local loading = state.loading()
     local now_queue = queue
     queue = {}
-    for _, t in ipairs(now_queue) do call(t.fn, t.label) end
+    for _, t in ipairs(now_queue) do
+        if loading and not t.during_load then queue[#queue + 1] = t else call(t.fn, t.label) end
+    end
 
     local now = os.clock()
     local keep = {}
     local due = {}
     for _, t in ipairs(timers) do
-        if now >= t.due then due[#due + 1] = t else keep[#keep + 1] = t end
+        if now >= t.due and (t.during_load or not loading) then due[#due + 1] = t else keep[#keep + 1] = t end
     end
     timers = keep
     for _, t in ipairs(due) do

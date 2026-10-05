@@ -159,7 +159,7 @@ function M.start()
             local before = native.detect and native.detect()
             local after = native.refresh and native.refresh()
             if after and after ~= before then log("speech: now speaking through " .. after) end
-        end)
+        end, "speech refresh", true)
         return
     end
     log("speech: Prism bridge unavailable (" .. tostring(mod) .. "), using the helper program")
@@ -176,7 +176,7 @@ function M.start()
     -- written from two threads at once.
     dispatch.every(500, function()
         if #pending > 0 then flush_pending() end
-    end)
+    end, "speech pipe", true)
 end
 
 return M
