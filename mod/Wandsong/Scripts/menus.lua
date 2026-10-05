@@ -129,6 +129,11 @@ end
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 local loading_screen = nil -- path of a loading screen while one is up
 
+-- Loading-screen widget classes.
+local function is_loading_class(cls)
+    return cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C"
+end
+
 -- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
 local function on_read_menu(widget)
     local okv, alive = pcall(function() return widget:IsValid() end)
@@ -141,6 +146,7 @@ local function on_read_menu(widget)
     if is_loading_class(cls) then
         state.mark_loading(6)
         loading_screen = path_of(widget)
+        diag.event("loading", "loading screen: " .. cls)
     end
 
     local first = not seen[key]
@@ -232,29 +238,6 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     end, "ReadMenu " .. (p:match("[^%.:]+$") or p)) end
 end)
 
-local function is_loading_class(cls)
-    return cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C"
-end
-
--- Every widget the game creates passes through here, during its construction. Only its
--- class name and path are read (nothing else is safe on a half-built object); a loading
--- screen raises the loading flag at once, before the old world starts coming down.
-local ok_notify, notify_err = pcall(NotifyOnNewObject, "/Script/UMG.UserWidget", function(obj)
-    local cls = "?"
-    pcall(function() cls = obj:GetClass():GetFName():ToString() end)
-    diag.trace("widget created " .. cls)
-    if is_loading_class(cls) then
-        state.mark_loading(10)
-        loading_screen = path_of(obj)
-        diag.event("loading", "loading screen created: " .. cls)
-        if not state.loading_announced then
-            state.loading_announced = true
-            dispatch.run(function() speech.say("Loading") end, "say loading", true)
-        end
-    end
-end)
-log("widget watcher: " .. (ok_notify and "on" or ("unavailable: " .. tostring(notify_err))))
-
 -- A finished map load also counts as loading for a few seconds (the new world settles).
 pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
@@ -271,7 +254,6 @@ dispatch.every(1000, function()
     if ok and up then state.mark_loading(4) else
         loading_screen = nil
         diag.event("loading", "loading screen gone")
-        state.loading_announced = false
     end
 end, "loading screen watch", true)
 
