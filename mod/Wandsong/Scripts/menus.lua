@@ -8,6 +8,7 @@
 
 local speech = require("speech")
 local dispatch = require("dispatch")
+local diag = require("diag")
 local state = require("state")
 local keys = require("keys")
 
@@ -223,11 +224,12 @@ end
 -- The hook itself only records the widget; all reading happens on the next dispatcher tick.
 -- (Doing work inside UI hooks has crashed this game for other projects.)
 RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
+    diag.trace("hook ReadMenu")
     local p = path_of(ctx:get())
     if p then dispatch.run(function()
         local widget = resolve(p)
         if widget then on_read_menu(widget) end
-    end) end
+    end, "ReadMenu " .. (p:match("[^%.:]+$") or p)) end
 end)
 
 -- While a loading screen is still up, keep the "loading" flag raised; it lapses a few

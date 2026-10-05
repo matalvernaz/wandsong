@@ -12,6 +12,7 @@ local dispatch = require("dispatch")
 local speech = require("speech")
 local state = require("state")
 local keys = require("keys")
+local diag = require("diag")
 
 local M = {}
 
@@ -133,6 +134,7 @@ local function fuse_set(on)
 end
 
 local function close_gate(why)
+    diag.event("world gate", "closed: " .. why)
     stable = 0
     if in_game then
         in_game = false
@@ -164,6 +166,7 @@ local function gate_check()
         return
     end
     -- Ask the long-lived UI manager first; only look at the player once it says "playing".
+    diag.trace("gate: UI manager")
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
     if not ui_manager then close_gate("no UI manager"); return end
@@ -175,6 +178,7 @@ local function gate_check()
             return
         end
     end
+    diag.trace("gate: player")
     local pawn = resolve(pawn_path)
     if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
     local blocked = not valid(pawn)
@@ -191,10 +195,12 @@ local function gate_check()
         clear_world()
     end
     if blocked then
+        diag.event("world gate", "closed: no player")
         stable = 0
         if in_game then in_game = false; log("gate closed"); if audio then pcall(audio.stop_all) end end
     else
         stable = stable + 1
+        diag.event("world gate", in_game and "open" or ("settling " .. math.min(stable, GATE_STABLE)))
         if not in_game and stable >= GATE_STABLE then
             in_game = true
             fuse_set(true)
@@ -225,12 +231,30 @@ end
 -- --- Listener (follows the camera) ----------------------------------------------------
 
 local px, py, pz = 0, 0, 0
+local yaw_now = 0
+local MOVE_MODES = { [0] = "none", "walking", "navmesh walking", "falling", "swimming", "flying", "custom" }
+local function movement(pawn)
+    local mode, custom
+    pcall(function()
+        local cm = pawn.CharacterMovement
+        mode = cm.MovementMode
+        custom = cm.CustomMovementMode
+    end)
+    if mode == nil then return nil end
+    local s = MOVE_MODES[mode] or tostring(mode)
+    if s == "custom" then s = s .. " " .. tostring(custom) end
+    return s
+end
+
 local function update_listener()
     if not in_game or not audio or state.loading() then return end
+    diag.trace("listener")
     local pawn = resolve(pawn_path)
     if not pawn then return end
     local x, y, z = location(pawn)
     if not x then return end
+    local mv = movement(pawn)
+    if mv then diag.event("movement", mv) end
     px, py, pz = x, y, z
     local yaw
     pcall(function()
@@ -242,6 +266,7 @@ local function update_listener()
         yaw = controller.ControlRotation.Yaw
     end)
     if yaw == nil then pcall(function() yaw = pawn.RootComponent.RelativeRotation.Yaw end) end
+    yaw_now = yaw or 0
     local r = math.rad(yaw or 0)
     audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0)
 end
@@ -267,10 +292,12 @@ local function scan_step()
     scan_i = scan_i % #scan_list + 1
     local entry = scan_list[scan_i]
     local t0 = os.clock()
+    diag.trace("scan " .. entry.cls .. ": FindAllOf")
     local ok, actors = pcall(FindAllOf, entry.cls)
     if not ok or not actors then return end
+    diag.trace("scan " .. entry.cls .. ": reading " .. #actors)
     local found = 0
-    for _, a in ipairs(actors) do
+    for i, a in ipairs(actors) do
         pcall(function()
             if not a:IsValid() then return end
             local key = a:GetAddress()
@@ -296,6 +323,7 @@ local function scan_step()
             found = found + 1
         end)
     end
+    diag.trace("scan " .. entry.cls .. ": done")
     local ms = math.floor((os.clock() - t0) * 1000 + 0.5)
     if found > 0 or ms > 50 then log(string.format("scan %s: %d nearby (%d ms)", entry.cls, found, ms)) end
 end
@@ -311,6 +339,7 @@ local function ambient()
         if played >= MAX_PER_TICK then break end
         if now >= n.next_at then
             n.next_at = now + n.every
+            diag.trace("ambient " .. n.kind .. " " .. tostring(n.path))
             local ok = pcall(function()
                 local obj = resolve(n.path)
                 if not obj then error("gone") end
@@ -326,6 +355,25 @@ local function ambient()
     end
 end
 
+-- A snapshot every 10 seconds: where the player is and what the world layer is doing.
+local function status()
+    local counts = {}
+    local total = 0
+    for _, n in pairs(nearby) do
+        counts[n.kind or "?"] = (counts[n.kind or "?"] or 0) + 1
+        total = total + 1
+    end
+    local parts = {}
+    for k, v in pairs(counts) do parts[#parts + 1] = k .. "=" .. v end
+    table.sort(parts)
+    local q, t = dispatch.counts()
+    diag.log(string.format(
+        "status: world %s%s%s, at %.0f %.0f %.0f facing %.0f, tracking %d (%s), lua %.0f KB, tasks %d queued %d timers",
+        enabled and "on" or "OFF", in_game and " in game" or " gate shut", state.loading() and " loading" or "",
+        px / 100, py / 100, pz / 100, yaw_now, total, table.concat(parts, " "),
+        collectgarbage("count"), q, t))
+end
+
 --- Play one of the world sounds centred, for the sound legend.
 function M.preview(name, pitch)
     if audio then return audio.play_ui(name, 0.8, pitch or 1.0) end
@@ -338,14 +386,16 @@ keys.action{
     run = function()
         enabled = not enabled
         if not enabled then close_gate("switched off"); nearby = {} end
+        log("world sounds switched " .. (enabled and "on" or "off") .. " by the player")
         speech.say("World sounds " .. (enabled and "on" or "off"))
     end,
 }
 
-dispatch.every(GATE_MS, gate_check)
-dispatch.every(LISTENER_MS, update_listener)
-dispatch.every(SCAN_EVERY_MS, scan_step)
-dispatch.every(250, ambient)
+dispatch.every(GATE_MS, gate_check, "world gate")
+dispatch.every(LISTENER_MS, update_listener, "world listener")
+dispatch.every(SCAN_EVERY_MS, scan_step, "world scan")
+dispatch.every(250, ambient, "world ambient")
+dispatch.every(10000, status, "world status")
 
 log("loaded")
 return M

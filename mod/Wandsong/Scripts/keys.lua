@@ -13,6 +13,7 @@
 -- uses its default.
 
 local dispatch = require("dispatch")
+local diag = require("diag")
 
 local M = {}
 
@@ -185,14 +186,16 @@ local function on_press(ctrl, shift, key)
     if capture then
         local fn = capture
         capture = nil
-        dispatch.run(function() fn(combo, key) end)
+        diag.trace("key captured " .. combo)
+        dispatch.run(function() fn(combo, key) end, "key capture")
         return
     end
     local id = by_combo[combo_id(ctrl, shift, key)]
     if not id then return end
     local a = actions[id]
-    if a.when and not a.when() then return end
-    dispatch.run(a.run)
+    if a.when and not a.when() then diag.trace("key " .. combo .. " -> " .. id .. " (not now)"); return end
+    log("pressed " .. combo .. " -> " .. id)
+    dispatch.run(a.run, "action " .. id)
 end
 
 local registered = 0

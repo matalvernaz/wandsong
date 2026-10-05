@@ -11,6 +11,8 @@
 --
 -- Every task runs inside pcall, so one failing task can't stop the others.
 
+local diag = require("diag")
+
 local M = {}
 
 local TICK_MS = 50
@@ -20,21 +22,38 @@ local timers = {}    -- { due = clock, fn = f, every = ms|nil }
 
 local function log(s) print("[Wandsong] " .. s .. "\n") end
 
-function M.run(fn)
-    queue[#queue + 1] = fn
+-- Where a task was written ("world.lua:212"), for the trace and error messages.
+local function where(fn, depth)
+    local caller = debug.getinfo(depth or 3, "Sl")
+    local def = debug.getinfo(fn, "S")
+    local src = def and def.short_src or "?"
+    if src == "?" and caller then src = caller.short_src end
+    return (src:match("[^/\\]+$") or src) .. ":" .. tostring(def and def.linedefined or "?")
 end
 
-function M.later(ms, fn)
-    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn }
+local SLOW_MS = 40
+
+function M.run(fn, label)
+    queue[#queue + 1] = { fn = fn, label = label or where(fn) }
 end
 
-function M.every(ms, fn)
-    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, every = ms }
+function M.later(ms, fn, label)
+    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, label = label or where(fn) }
 end
+
+function M.every(ms, fn, label)
+    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, every = ms, label = label or where(fn) }
+end
+
+function M.counts() return #queue, #timers end
 
 local function call(fn, what)
-    local ok, err = pcall(fn)
+    diag.trace("run " .. what)
+    local t0 = os.clock()
+    local ok, err = xpcall(fn, debug.traceback)
+    local ms = (os.clock() - t0) * 1000
     if not ok then log("task failed (" .. what .. "): " .. tostring(err)) end
+    if ms > SLOW_MS then log(string.format("slow task %s: %.0f ms", what, ms)) end
     return ok and err
 end
 
@@ -42,7 +61,7 @@ local function tick()
     -- Take what's queued now; anything queued while running waits for the next tick.
     local now_queue = queue
     queue = {}
-    for _, fn in ipairs(now_queue) do call(fn, "queued") end
+    for _, t in ipairs(now_queue) do call(t.fn, t.label) end
 
     local now = os.clock()
     local keep = {}
@@ -52,7 +71,7 @@ local function tick()
     end
     timers = keep
     for _, t in ipairs(due) do
-        local stop = call(t.fn, t.every and "every" or "later")
+        local stop = call(t.fn, t.label)
         if t.every and stop ~= true then
             t.due = now + t.every / 1000
             timers[#timers + 1] = t
@@ -62,7 +81,10 @@ end
 
 LoopAsync(TICK_MS, function()
     if #queue > 0 or #timers > 0 then
-        ExecuteInGameThread(function() call(tick, "tick") end)
+        ExecuteInGameThread(function()
+            local ok, err = xpcall(tick, debug.traceback)
+            if not ok then log("tick failed: " .. tostring(err)) end
+        end)
     end
     return false
 end)
