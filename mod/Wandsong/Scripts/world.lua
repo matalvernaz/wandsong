@@ -235,6 +235,14 @@ local function gate_check()
 end
 
 function M.in_game() return in_game end
+
+--- True while the game is swapping screens (opening or closing a menu, loading one): widget
+--- trees are being torn down then, and reading them crashed the game (Oct 6, pause menu).
+function M.ui_busy()
+    local ui = resolve(ui_path)
+    if not ui then return false end
+    return call_bool(ui, "GetInMenuTransition") == true or call_bool(ui, "IsAsyncScreenLoadInProgress") == true
+end
 --- False while world sounds (and everything that needs the world) are switched off.
 function M.enabled() return enabled end
 --- What to tell the player when a world feature can't run right now.

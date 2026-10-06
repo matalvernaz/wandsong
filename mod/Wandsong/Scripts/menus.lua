@@ -860,6 +860,12 @@ end
 -- it is open: { title = "...", items = function() return { {text=, button=, on_press=}, ... } end }
 local virtual = nil
 
+local refresh_busy = false
+-- What a review key says when there's nothing to read: why, if the screen is mid-change.
+local function nothing_to_read(msg)
+    speak(refresh_busy and "The screen is changing. Try again in a moment." or msg)
+end
+
 local function refresh()
     if virtual then
         local items = virtual.items()
@@ -871,6 +877,13 @@ local function refresh()
     -- No widget walking while loading or in gameplay: old screens may be freed, and menus
     -- opened from gameplay close the world gate and announce themselves through ReadMenu.
     if state.loading() or require("world").in_game() then review_items = {}; return false end
+    -- Nor while a screen is opening or closing: its widgets are being torn down.
+    if require("world").ui_busy() then
+        review_items = {}
+        refresh_busy = true
+        return false
+    end
+    refresh_busy = false
     local tops, top = current_tops()
     if #tops == 0 then review_items = {}; return false end
     local items = {}
@@ -981,7 +994,7 @@ local function read_details()
 end
 
 local function step(delta, buttons_only)
-    if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     local i = review_index
     repeat
         i = i + delta
@@ -1184,14 +1197,14 @@ local function act(id, name, default, run)
 end
 
 local function read_all()
-    if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     local t = {}
     for _, it in ipairs(review_items) do t[#t + 1] = describe(it) end
     speak(table.concat(t, ". "))
 end
 
 local function copy_all()
-    if not refresh() or #review_items == 0 then speak("Nothing to copy"); return end
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to copy"); return end
     local t = {}
     for _, it in ipairs(review_items) do t[#t + 1] = it.text end
     speech.copy(table.concat(t, "\n"))
@@ -1203,11 +1216,11 @@ act("review_next", "Next item on screen", "]", function() step(1, false) end)
 act("review_prev_button", "Previous button or shortcut", "shift+[", function() step(-1, true) end)
 act("review_next_button", "Next button or shortcut", "shift+]", function() step(1, true) end)
 act("review_first", "First item on screen", "ctrl+[", function()
-    if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     select_item(1, "top")
 end)
 act("review_last", "Last item on screen", "ctrl+]", function()
-    if not refresh() or #review_items == 0 then speak("Nothing to read on this screen"); return end
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     select_item(#review_items, "bottom")
 end)
 -- Never act on a stale selection: if the screen changed since the item was picked, say so

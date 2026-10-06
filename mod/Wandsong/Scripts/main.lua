@@ -17,7 +17,8 @@ require("gamecues")
 local keys = require("keys")
 keys.action{
     id = "diag_mark", name = "Mark this moment in the diagnostic log", group = "Menus and screens",
-    default = "ctrl+shift+m",
+    -- F8: the game uses none of F5-F8. (Ctrl+Shift+M was also the game's M, which opens the map.)
+    default = "f8",
     run = function()
         local said = {}
         for i = 3, 1, -1 do
