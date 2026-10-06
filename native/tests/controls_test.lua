@@ -3,6 +3,12 @@
 --   set LOCALAPPDATA=<temp dir containing "Hogwarts Legacy\Saved\Config\WindowsNoEditor\Input.ini">
 --   luahost.exe controls_test.lua
 
+-- Never run against the player's real settings: this test rebinds keys and applies presets.
+if not (os.getenv("LOCALAPPDATA") or ""):lower():find("temp", 1, true) then
+    print("controls test skipped: point LOCALAPPDATA at a temp copy of the game's config first (see above)")
+    return
+end
+
 local scripts = "C:/claudeProjects/wandsong/mod/Wandsong/Scripts"
 package.path = scripts .. "/?.lua;" .. package.path
 

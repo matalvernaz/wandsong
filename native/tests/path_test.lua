@@ -142,4 +142,16 @@ walk()
 assert(said[#said]:find("nearest person"), "guide fallback announced: " .. tostring(said[#said]))
 run(4, true)
 assert(said[#said]:find("Caught up"), "reached the standing person: " .. tostring(said[#said]))
+
+-- Facing: the nearest enemy, behind and to the left, gets turned to with mouse moves.
+local face
+for _, a in pairs(actions) do if a.id == "face_target" then face = a.run end end
+assert(face, "face action registered")
+w.nearest = function(kind) if kind == "enemy" then return { px - 500, py + 500, 0 }, "/Game/Fake.Troll" end end
+w.locate = function() return { px - 500, py + 500, 0 } end
+yaw = 0
+face()
+assert(said[#said]:find("^Turning to the enemy"), "face announced: " .. tostring(said[#said]))
+run(2.5)
+assert(math.abs(((yaw - 135) + 180) % 360 - 180) < 6, "facing the enemy, yaw " .. yaw)
 print("path test passed")

@@ -264,6 +264,42 @@ local function apply_no_mouse()
                "They take effect the next time you start the game. Your mouse still works too.")
 end
 
+-- Game actions whose only keyboard keys belong to the screen reader (NVDA takes Caps Lock,
+-- Insert and the number pad for itself) move to a free key, automatically, once. Both keys
+-- were checked unused by the game and the mod.
+local SCREEN_READER_KEYS = { CapsLock = true, Insert = true }
+local SCREEN_READER_FIXES = {
+    { "LockOn", "Period", "Lock on" },
+}
+local function fix_screen_reader_keys()
+    local actions = read_game()
+    if not actions then return end
+    local moved = {}
+    for _, m in ipairs(SCREEN_READER_FIXES) do
+        local a = actions[m[1]]
+        local keyboard, taken = 0, 0
+        if a then
+            for _, k in ipairs(a.keys) do
+                if not k:find("Mouse") then
+                    keyboard = keyboard + 1
+                    if SCREEN_READER_KEYS[k] or k:find("^NumPad") then taken = taken + 1 end
+                end
+            end
+        end
+        if keyboard > 0 and taken == keyboard and write_game_key(m[1], m[2]) then
+            moved[#moved + 1] = m[3] .. " to " .. spoken_ue(m[2])
+            log("screen reader key fix: " .. m[1] .. " -> " .. m[2])
+        end
+    end
+    if #moved > 0 then
+        require("dispatch").later(4000, function()
+            speech.say("Moved " .. table.concat(moved, ", ") .. ", away from a key your screen reader uses. " ..
+                       "This takes effect the next time you start the game.", true)
+        end, "screen reader key notice", true)
+    end
+end
+pcall(fix_screen_reader_keys)
+
 --- Items for the review screen, grouped, with a press handler on each.
 function M.items()
     local items = {}

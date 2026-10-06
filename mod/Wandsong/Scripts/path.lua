@@ -477,6 +477,49 @@ local function toggle_walk()
     log("autowalk started, " .. #route .. " route points" .. (dest_is_person() and ", following" or ""))
 end
 
+-- --- Facing a target ---------------------------------------------------------------------
+-- One key turns the camera toward the nearest enemy (or creature, or else the objective), so
+-- the game's own spell targeting, which favours what's in front of you, picks it up. The
+-- turn happens over a few ticks with the same mouse turning autowalk uses.
+
+local face = nil                -- { path = actor path or nil, x, y, until_t, what }
+
+local function face_tick()
+    if not face or walking then return end
+    if not world.in_game() or not input or not input.focused() then face = nil; return end
+    if face.path then
+        local p = world.locate(face.path)
+        if p then face.x, face.y = p[1], p[2] end
+    end
+    local px, py = world.position()
+    local off = steer(math.deg(math.atan(face.y - py, face.x - px)))
+    if not off or math.abs(off) < 4 or os.clock() > face.until_t then
+        log(string.format("facing %s: %s", face.what, off and string.format("%.0f degrees off", off) or "couldn't turn"))
+        face = nil
+    end
+end
+
+local function face_nearest()
+    if not world.in_game() then speech.say("Facing works in the world, not in menus.") return end
+    if not (input and input.mouse_move) then speech.say("Can't turn: the input module is missing or out of date.") return end
+    local px, py, _, yaw = world.position()
+    local p, path, what = world.nearest("enemy", 3000)
+    what = "enemy"
+    if not p then p, path = world.nearest("beast", 3000); what = "creature" end
+    if not p and dest and not dest_is_guide then p, path, what = dest, nil, "objective" end
+    if not p then speech.say("No enemies or objective nearby to face.") return end
+    local metres = math.floor(dist2d(px, py, p) / 100 + 0.5)
+    local where = state.where(px, py, yaw, p[1], p[2]):gsub(",.*$", "")
+    speech.say(string.format("Turning to the %s, %s, %d metres.", what, where, metres))
+    last_dx, last_yaw = 0, nil
+    face = { path = path, x = p[1], y = p[2], until_t = os.clock() + 3, what = what }
+end
+
+keys.action{
+    id = "face_target", name = "Turn to face the nearest enemy (or creature, or the objective)",
+    group = "In the world", default = ",", run = face_nearest,
+}
+
 keys.action{
     id = "autowalk", name = "Walk to the objective or follow your guide, or stop walking", group = "In the world",
     default = "shift+`", run = toggle_walk,
@@ -490,7 +533,7 @@ keys.action{
 }
 
 dispatch.every(1000, function() if world.in_game() then refresh_route() end end, "route")
-dispatch.every(100, function() beacon(); walk_tick() end, "beacon and autowalk")
+dispatch.every(100, function() beacon(); walk_tick(); face_tick() end, "beacon and autowalk")
 -- If the game stops ticking the dispatcher mid-walk (a load), never leave the key held.
 dispatch.every(500, function()
     if walking and state.loading() then walking = false; log("autowalk stopped: loading") end

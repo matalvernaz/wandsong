@@ -75,7 +75,10 @@ end
 -- Rich-text cleanup: button icons arrive as <img src="cbi_Keyboard_Space"/>.
 local function clean(t)
     t = t:gsub('<img%s+src="cbi_Keyboard_([^"]+)"%s*/>', function(k)
-        return (k:gsub("_", " "))
+        k = k:gsub("_", " ")
+        -- "Slash" alone is easily heard as backslash, which is the mod's own press key.
+        if k == "Slash" then return "forward slash" end
+        return k
     end)
     -- Mouse prompts become the mod's own key: the "press" action clicks the reviewed item.
     t = t:gsub('<img%s+src="cbi_Mouse_LeftClick"%s*/>', function() return key_name("press") end)
@@ -782,6 +785,15 @@ local function refresh()
     return true
 end
 
+-- A review key pressed with nothing picked: in the world that's no menu at all.
+local function nothing_selected()
+    if require("world").in_game() then
+        speak("No menu is open. " .. key_name("press") .. " presses menu buttons.")
+    else
+        speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first.")
+    end
+end
+
 local function describe(item)
     if item.checkbox then
         local on = false
@@ -981,7 +993,7 @@ end
 
 local function click_current()
     local item = review_items[review_index]
-    if not item then speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first."); return end
+    if not item then nothing_selected(); return end
     if item.on_press then item.on_press(); return end
     if item.action then
         if not send_action(item.action, item.hold) then speak("Could not use " .. item.text) end
@@ -1023,7 +1035,7 @@ local ACTION_LEFT, ACTION_RIGHT = 4, 5
 local function adjust(delta)
     refresh()
     local item = review_items[review_index]
-    if not item then speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first."); return end
+    if not item then nothing_selected(); return end
     local steps = math.abs(delta)
     local STEP_MS = 120   -- each nudge is a press and release; the game needs them apart
     -- The game re-reads the item as it changes; we announce the result ourselves.
