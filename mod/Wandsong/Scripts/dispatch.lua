@@ -137,11 +137,24 @@ end
 -- One function object for every ExecuteInGameThread call: UE4SS 3.0.1 keeps a registry
 -- reference to each callback it's given, so a fresh closure per call would pin a new closure
 -- 20 times a second; the same function pins nothing new.
+-- Stall watch: the async loop notes when the game thread last ran our tick. A gap of more
+-- than 8 s (the game frozen, or a very long load) goes in the trace once, and so does the
+-- recovery, so a hang can be told apart from a crash and timed.
+local last_ran, stall_logged = os.clock(), false
 local function game_tick()
+    if stall_logged then
+        diag.trace(string.format("game thread running the mod again after %.0f s", os.clock() - last_ran))
+        stall_logged = false
+    end
+    last_ran = os.clock()
     local ok, err = xpcall(tick, debug.traceback)
     if not ok then log("tick failed: " .. tostring(err)) end
 end
 LoopAsync(TICK_MS, function()
+    if not stall_logged and os.clock() - last_ran > 8 then
+        stall_logged = true
+        diag.trace("game thread hasn't run the mod for 8 s (frozen, or a long load)")
+    end
     if #queue > 0 or #timers > 0 then ExecuteInGameThread(game_tick) end
     return false
 end)
