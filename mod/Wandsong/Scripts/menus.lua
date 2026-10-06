@@ -351,13 +351,36 @@ local EDITBOX    = "/Script/UMG.EditableTextBox"
 local USERWIDGET = "/Script/UMG.UserWidget"
 local WIDGETTREE = "/Script/UMG.WidgetTree"
 
+-- Widgets are read through their reflected properties wherever possible, not through game
+-- functions: calling a function on a widget the game has just freed crashed the game in the
+-- pause menu (Oct 6), while a property read is far more forgiving. Only text still comes
+-- from GetText, since a text block's Text property can be stale when its text is bound.
+-- ESlateVisibility: 0 Visible, 1 Collapsed, 2 Hidden, 3/4 hit-test invisible (still shown).
 local function shown(w)
-    local ok, vis = pcall(function() return w:IsValid() and w:IsVisible() end)
-    if not ok or not vis then return false end
-    local okO, op = pcall(function() return w:GetRenderOpacity() end)
+    local ok, vis = pcall(function() return w.Visibility end)
+    if not ok or type(vis) ~= "number" or vis == 1 or vis == 2 then return false end
+    local okO, op = pcall(function() return w.RenderOpacity end)
     if okO and type(op) == "number" and op < 0.05 then return false end
     return true
 end
+
+-- A panel's children, from its Slots array (each slot's Content), in order.
+local function children_of(w)
+    local out = {}
+    pcall(function()
+        w.Slots:ForEach(function(_, e)
+            local slot = e:get()
+            local c
+            pcall(function() c = slot.Content end)
+            if c then out[#out + 1] = c end
+        end)
+    end)
+    return out
+end
+
+-- Breadcrumbs for walks started by a key press (not the pollers): if a game function call
+-- ever crashes inside a walk again, the trace names the widget.
+local walk_trace = false
 
 -- The user widget that owns a widget (widget -> WidgetTree -> UserWidget).
 local function owner_of(w)
@@ -465,7 +488,7 @@ end
 
 label_for = function(button)
     local tip = ""
-    pcall(function() tip = clean(button:GetToolTipText():ToString()) end)
+    pcall(function() tip = clean(button.ToolTipText:ToString()) end)
     if tip ~= "" then return tip, {} end
 
     local o, chain = owner_of(button), {}
@@ -529,6 +552,7 @@ walk = function(w, items, label, depth)
 
     if isa(w, TEXTBLOCK) or isa(w, RICHTEXT) then
         local t = ""
+        if walk_trace then diag.trace("walk text " .. fname(w)) end
         pcall(function() t = clean(w:GetText():ToString()) end)
         if t ~= "" then
             if label then label[#label + 1] = t
@@ -570,17 +594,12 @@ walk = function(w, items, label, depth)
         pcall(function() root = w.WidgetTree.RootWidget end)
         if root then walk(root, items, my_label, depth + 1) end
     elseif isa(w, SWITCHER) then
-        local active
-        pcall(function() active = w:GetActiveWidget() end)
+        local idx = -1
+        pcall(function() idx = w.ActiveWidgetIndex end)
+        local active = children_of(w)[(tonumber(idx) or -1) + 1]
         if active then walk(active, items, my_label, depth + 1) end
     else
-        local n = 0
-        pcall(function() n = w:GetChildrenCount() end)
-        for i = 0, (n or 0) - 1 do
-            local c
-            pcall(function() c = w:GetChildAt(i) end)
-            if c then walk(c, items, my_label, depth + 1) end
-        end
+        for _, c in ipairs(children_of(w)) do walk(c, items, my_label, depth + 1) end
     end
 
     if is_button then
@@ -768,7 +787,10 @@ local function refresh()
     local tops, top = current_tops()
     if #tops == 0 then review_items = {}; return false end
     local items = {}
+    walk_trace = true
+    diag.trace("walk screen " .. fname(top))
     for _, t in ipairs(tops) do walk(t, items, nil, 0) end
+    walk_trace = false
     finish_labels(items)
     if addr(top) ~= addr(review_top) then
         -- Keep the user's place if the same item is still there under the new screen set.
@@ -797,7 +819,7 @@ end
 local function describe(item)
     if item.checkbox then
         local on = false
-        pcall(function() on = item.button:IsChecked() end)
+        pcall(function() on = item.button.CheckedState == 1 end)
         return item.text .. ", checkbox, " .. (on and "checked" or "not checked")
     end
     if item.action then
@@ -860,7 +882,7 @@ local function read_details()
     end
     if #out == 0 and item.button then
         local tip = ""
-        pcall(function() tip = clean(item.button:GetToolTipText():ToString()) end)
+        pcall(function() tip = clean(item.button.ToolTipText:ToString()) end)
         if tip ~= "" then out[1] = tip end
     end
     if #out == 0 and item.button then

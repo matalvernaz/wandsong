@@ -450,7 +450,7 @@ end
 
 local function toggle_walk()
     if walking then stop("") return end
-    if not world.in_game() then speech.say("Autowalk works in the world, not in menus.") return end
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then
         speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
         return
@@ -500,7 +500,7 @@ local function face_tick()
 end
 
 local function face_nearest()
-    if not world.in_game() then speech.say("Facing works in the world, not in menus.") return end
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then speech.say("Can't turn: the input module is missing or out of date.") return end
     local px, py, _, yaw = world.position()
     local p, path, what = world.nearest("enemy", 3000)

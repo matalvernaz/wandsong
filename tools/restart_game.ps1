@@ -14,6 +14,8 @@ if (-not $NoDeploy) {
 $before = (Get-Content $steamLog).Count
 if (Get-Process HogwartsLegacy -ErrorAction SilentlyContinue) {
     Stop-Process -Name HogwartsLegacy -Force -ErrorAction SilentlyContinue
+    # A deliberate kill isn't a crash: don't let the world layer's crash fuse trip.
+    Remove-Item (Join-Path $win64 "Mods\Wandsong\Scripts\world_active.flag") -ErrorAction SilentlyContinue
     $gone = $false
     for ($i = 0; $i -lt 180; $i++) {
         Start-Sleep 1

@@ -211,6 +211,16 @@ local function gate_check()
 end
 
 function M.in_game() return in_game end
+--- False while world sounds (and everything that needs the world) are switched off.
+function M.enabled() return enabled end
+--- What to tell the player when a world feature can't run right now.
+function M.not_ready_reason()
+    if not enabled then
+        return "World features are off, after the game stopped while they were running. Press " ..
+               keys.describe_combo(keys.combo_of("world_toggle")) .. " to turn them back on."
+    end
+    return "That works in the world, not in menus or scenes."
+end
 
 -- --- Reading actors ---------------------------------------------------------------------
 -- Positions and rotations are read as plain reflected properties. Calling an actor's own
