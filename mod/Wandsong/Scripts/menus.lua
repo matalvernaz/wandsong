@@ -94,6 +94,7 @@ end
 -- The hooked depth argument arrives as garbage, so pick our own: full context the first
 -- time a widget instance reads, the shorter item text after that.
 local note_screen   -- defined in the screen review section below
+local forget_screens -- likewise: drops every remembered screen (a map change frees them all)
 
 -- Feed a menu action into the game's UMG input manager (press then release).
 local function send_action_early(action)
@@ -243,6 +244,9 @@ pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
     state.mark_loading(6)
     log("map loaded")
+    -- Every screen read before the load belongs to the old map and may be freed: looking one
+    -- up again (the help key, right after loading a save) crashed in StaticFindObject.
+    dispatch.run(forget_screens, "forget screens", true)
 end)
 
 -- While a loading screen is still up, keep the "loading" flag raised; it lapses a few
@@ -648,6 +652,12 @@ end
 
 local review_items, review_index, review_top = {}, 0, nil
 
+forget_screens = function()
+    screens = {}
+    current_screen = nil
+    review_items, review_index, review_top = {}, 0, nil
+end
+
 local logged_variants = {}
 local function finish_labels(items)
     -- The heading above a tab bar names the current tab: remember it for later.
@@ -749,6 +759,9 @@ local function refresh()
         if review_index > #items then review_index = #items end
         return true
     end
+    -- No widget walking while loading or in gameplay: old screens may be freed, and menus
+    -- opened from gameplay close the world gate and announce themselves through ReadMenu.
+    if state.loading() or require("world").in_game() then review_items = {}; return false end
     local tops, top = current_tops()
     if #tops == 0 then review_items = {}; return false end
     local items = {}
@@ -1139,6 +1152,10 @@ local function contextual_help()
     if os.clock() - last_help < 1.5 then last_help = -10; speak(full_help()); return end
     last_help = os.clock()
     if not refresh() or #review_items == 0 then
+        if require("world").in_game() then
+            speak("Exploring. " .. key_name("help") .. " twice for all keys.")
+            return
+        end
         speak("Nothing readable on screen right now. Press " .. key_name("help") .. " twice for all keys.")
         return
     end
