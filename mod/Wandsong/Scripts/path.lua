@@ -577,6 +577,45 @@ function M.face_to(path, name)
     speech.say("Turning to " .. name)
 end
 
+-- The tracked quest and its current task, from the game's mission manager (a long-lived
+-- object, asked only on a key press). GetMissionLogDataBP returns every quest's log entry and
+-- the tracked one's index through an out parameter.
+local mm_path
+local function objective_text()
+    local mm
+    if mm_path then pcall(function() mm = StaticFindObject(mm_path) end) end
+    if not mm then
+        pcall(function()
+            for _, o in ipairs(FindAllOf("MissionManager") or {}) do
+                local n = o:GetFullName()
+                if not n:find("Default__", 1, true) then mm = o; mm_path = n:match("^%S+%s+(.+)$") end
+            end
+        end)
+    end
+    if not mm then return nil end
+    local out, arr = {}, nil
+    local ok = dispatch.call_out(function() arr = mm:GetMissionLogDataBP(out) end, out)
+    if not ok or not arr then return nil end
+    local text
+    pcall(function()
+        local idx = out.OutTrackedMissionIndex
+        local n = arr:GetArrayNum()
+        log("mission log: " .. tostring(n) .. " quests, tracked index " .. tostring(idx))
+        if type(idx) ~= "number" or idx < 0 or idx >= n then return end
+        local m = arr[idx + 1]
+        local title = m.MissionTitle:ToString()
+        local task
+        m.TaskStates:ForEach(function(_, e)
+            local t = e:get()
+            if not task and not t.IsComplete then task = t.DisplayName:ToString() end
+        end)
+        local step = m.StepJournal:ToString()
+        log("tracked quest: " .. title .. " | task: " .. tostring(task) .. " | step: " .. step)
+        text = "Quest: " .. title .. ((task and task ~= "") and (". " .. task) or ((step ~= "") and (". " .. step) or ""))
+    end)
+    return text
+end
+
 local function where_am_i()
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
     local now = facing()
@@ -586,6 +625,8 @@ local function where_am_i()
         local w = state.where(px, py, now or yaw, dest[1], dest[2])
         t[#t + 1] = (dest_is_person() and "Person you're following " or "Objective ") .. w
     end
+    local q = objective_text()
+    if q then t[#t + 1] = q end
     speech.say(table.concat(t, ". "))
 end
 
@@ -599,7 +640,7 @@ keys.action{ id = "turn_right_big", name = "Turn right 90 degrees", group = "In 
              run = function() turn_by(90) end }
 keys.action{ id = "turn_around", name = "Turn around", group = "In the world", default = "down_arrow",
              run = function() turn_by(180) end }
-keys.action{ id = "where_am_i", name = "Which way you're facing, and where the objective is", group = "In the world",
+keys.action{ id = "where_am_i", name = "Which way you're facing, where the objective is, and your current quest task", group = "In the world",
              default = "up_arrow", run = where_am_i }
 
 local function face_nearest()

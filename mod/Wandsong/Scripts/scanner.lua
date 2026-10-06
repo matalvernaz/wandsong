@@ -31,6 +31,7 @@ local CATEGORIES = {
     { kind = "chest", name = "Chests" },
     { kind = "collect", name = "Collectibles" },
     { kind = "door", name = "Doors" },
+    { kind = "usable", name = "Things to use" },
 }
 local REBUILD_AFTER = 3          -- seconds
 local REBUILD_MOVED_CM = 500

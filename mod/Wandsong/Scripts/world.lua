@@ -39,6 +39,10 @@ local CATEGORIES = {
     { kind = "collect", sound = "item",   every = 2.5, range = 1500, classes = { "FieldGuidePage", "CooldownPickup" } },
     { kind = "door",    sound = "door",   every = 3.5, range = 1200, classes = { "Door" } },
     { kind = "person",  sound = "person", every = 2.5, range = 1500, classes = { "NPC_Character" } },
+    -- Things to use: levers, pedestals, things to examine. Scanner only for now (no sound):
+    -- which classes really hold what the game prompts for still needs checking in the dumps.
+    { kind = "usable",  sound = nil,      every = 99,  range = 1500,
+      classes = { "InteractiveObjectActor", "SimpleInteractObject", "WorldInteractObject" } },
 }
 -- Class-name fragments that mean "a person, not a foe" even under Enemy_Character.
 local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merchant" }
@@ -323,7 +327,7 @@ end
 -- ("BP_OL_Chest_C" -> "Chest"), else the category's noun. Worked out once per actor, from
 -- property reads only, and logged with its source so missing names can be fixed.
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
-                    collect = "Collectible", door = "Door" }
+                    collect = "Collectible", door = "Door", usable = "Something to use" }
 local NOISE_WORDS = { BP = true, OL = true, C = true, Default = true, Base = true, Character = true,
                       Actor = true, Generic = true, NPC = true, Phoenix = true }
 
@@ -423,7 +427,7 @@ local function ambient()
     if not in_game or not audio or speech.is_muted() or state.loading() then return end
     local now = os.clock()
     local order = {}
-    for key, n in pairs(nearby) do order[#order + 1] = key end
+    for key, n in pairs(nearby) do if n.sound then order[#order + 1] = key end end   -- silent kinds: scanner only
     table.sort(order, function(a, b) return (nearby[a].dist or 1e9) < (nearby[b].dist or 1e9) end)
     local played = 0
     for rank, key in ipairs(order) do
