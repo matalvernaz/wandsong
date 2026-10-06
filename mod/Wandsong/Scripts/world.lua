@@ -568,7 +568,7 @@ end
 
 keys.action{
     id = "world_toggle", name = "Turn world sounds off or on", group = "In the world",
-    default = "ctrl+shift+\\",
+    default = "shift+f5",
     run = function()
         enabled = not enabled
         if not enabled then close_gate("switched off"); nearby = {} end

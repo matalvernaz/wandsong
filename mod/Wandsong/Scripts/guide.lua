@@ -26,9 +26,9 @@ local function sections()
         { "What's around you: the scanner",
           k("scan_next") .. " and " .. k("scan_prev") .. " go through the things around you, nearest first, " ..
           "with their name, distance and direction. " .. k("scan_repeat") .. " says the current one again, freshly. " ..
-          k("scan_cat_next") .. " and " .. k("scan_cat_prev") .. " pick a category: people, enemies, creatures, " ..
-          "chests, collectibles or doors. " .. k("scan_walk") .. " walks you to the current one, and " ..
-          k("scan_face") .. " turns you to face it." },
+          k("scan_cat_next") .. " and " .. k("scan_cat_prev") .. " pick a category: the quest objective, " ..
+          "people, enemies, creatures, chests, collectibles, doors or things to use; empty ones are skipped. " ..
+          k("scan_repeat") .. " also turns you to face it, and " .. k("scan_walk") .. " walks you there." },
         { "Getting where you're going",
           k("autowalk") .. " walks you along the game's route to your objective, or follows the person " ..
           "leading you when there is one; any movement key stops it. W A S D move you yourself. " ..
@@ -58,6 +58,24 @@ function M.items()
     for _, s in ipairs(sections()) do
         items[#items + 1] = { text = s[1] .. ". " .. s[2] }
     end
+    -- Every key, grouped, as currently bound (a key glossary, as other access mods have).
+    local keys = require("keys")
+    local groups, order = {}, {}
+    for _, a in ipairs(keys.actions()) do
+        if not a.id:find("^dev_") and not a.id:find("dump") then
+            if not groups[a.group] then groups[a.group] = {}; order[#order + 1] = a.group end
+            table.insert(groups[a.group], keys.describe_combo(a.combo) .. ": " .. a.name)
+        end
+    end
+    for _, g in ipairs(order) do
+        items[#items + 1] = { text = "Keys, " .. g .. ". " .. table.concat(groups[g], ". ") .. "." }
+    end
+    items[#items + 1] = { text = "Open the Controls menu, to change any key", button = true, on_press = function()
+        require("state").open_screen(require("controls"), "change one")
+    end }
+    items[#items + 1] = { text = "Learn the sounds", button = true, on_press = function()
+        require("state").open_screen(require("sounds"), "hear it")
+    end }
     items[#items + 1] = { text = "Play the first-time tips again", button = true, on_press = function()
         tips.reset()
         require("speech").say("The first-time tips will play again as things come up.")
@@ -69,7 +87,7 @@ end
 function M.welcome()
     return "Welcome to the world. Wandsong describes it with sound as you play. " ..
            k("scan_next") .. " tells you what's around you, " .. k("autowalk") .. " walks you to your objective, " ..
-           "and the arrow keys turn you. Press " .. k("help") .. " any time for the full guide."
+           "and the arrow keys turn you. Press " .. k("guide") .. " any time for the full guide and every key."
 end
 
 return M

@@ -1,11 +1,12 @@
 -- Scanner: what's around me, by name, nearest first.
 --
 --   Page Down / Page Up      next / previous thing ("Professor Fig, 4 metres, ahead left, 1 of 6")
---   Home                     the current thing again, with a fresh distance and direction
---   Ctrl+Page Down / Up      next / previous category (everything, people, enemies, ...)
+--   Home                     the current thing again, freshly, and turn to face it
+--   Shift+Page Down / Up     next / previous category, empty ones skipped (everything, quest
+--                            objective, people, enemies, ...)
 --   Shift+Home               walk to the current thing (autowalk)
---   Ctrl+Home                turn to face the current thing
---   F9                       developer: write everything tracked to scan_dump.txt
+--   Shift+F9                 developer: write everything tracked to scan_dump.txt
+-- Keys and categories follow the reference access mod's scanner.
 --
 -- It reads the world layer's background scan (one class per tick, nothing extra), so a key
 -- press costs only a fresh position read per entry. Entries are kept by object path, never
@@ -25,6 +26,8 @@ local function log(s) print("[Wandsong scanner] " .. s .. "\n") end
 
 local CATEGORIES = {
     { kind = nil, name = "Everything" },
+    -- Its own category, as in other access mods, so the objective doesn't crowd the list.
+    { kind = "objective", name = "Quest objective" },
     { kind = "person", name = "People" },
     { kind = "enemy", name = "Enemies" },
     { kind = "beast", name = "Creatures" },
@@ -49,6 +52,16 @@ local function build()
     local px, py, pz = world.position()
     local kind = CATEGORIES[cat_i].kind
     local out = {}
+    if kind == "objective" then
+        local o = require("path").objective()
+        if o then
+            out[1] = { path = "objective", name = o.name, kind = "objective", x = o.x, y = o.y, z = o.z,
+                       point = true, floor = true,
+                       d = math.sqrt((o.x - px) ^ 2 + (o.y - py) ^ 2 + (o.z - pz) ^ 2) }
+        end
+        list, built_at, built_x, built_y = out, os.clock(), px, py
+        return
+    end
     for _, e in ipairs(world.entries()) do
         if not kind or e.kind == kind then
             local p = world.locate(e.path)
@@ -84,7 +97,7 @@ end
 -- thing has gone.
 local function describe(i)
     local e = list[i]
-    local p = world.locate(e.path)
+    local p = e.point and { e.x, e.y, e.z } or world.locate(e.path)
     if not p then return false end
     local px, py, pz, yaw = world.position()
     local d = math.sqrt((p[1] - px) ^ 2 + (p[2] - py) ^ 2 + (p[3] - pz) ^ 2)
@@ -131,14 +144,22 @@ local function current()
         i = selected and index_of(selected)
     end
     if not i then step(1) return end
-    if not describe(i) then speech.say(list[i].name .. " has gone"); selected = nil end
+    if not describe(i) then speech.say(list[i].name .. " has gone"); selected = nil; return end
+    -- As in other access mods, Home also turns you to face it.
+    local e = list[i]
+    if e.point then require("path").face_point(e.x, e.y, e.name)
+    else require("path").face_to(e.path, e.name, true) end
 end
 
 local function category(dir)
     if not ready() then return end
-    cat_i = (cat_i - 1 + dir) % #CATEGORIES + 1
-    selected = nil
-    build()
+    -- Empty categories are skipped (everything is always offered).
+    for _ = 1, #CATEGORIES do
+        cat_i = (cat_i - 1 + dir) % #CATEGORIES + 1
+        selected = nil
+        build()
+        if #list > 0 or cat_i == 1 then break end
+    end
     local c = CATEGORIES[cat_i]
     speech.say(c.name .. ", " .. (#list == 0 and "none nearby" or (#list .. " nearby")))
     if #list > 0 then
@@ -158,16 +179,16 @@ keys.action{ id = "scan_next", name = "Next thing around you", group = "Scanner"
              run = function() step(1) end }
 keys.action{ id = "scan_prev", name = "Previous thing around you", group = "Scanner", default = "pageup",
              run = function() step(-1) end }
-keys.action{ id = "scan_repeat", name = "Current thing again, with fresh distance and direction", group = "Scanner",
+keys.action{ id = "scan_repeat", name = "Current thing again, and turn to face it", group = "Scanner",
              default = "home", run = current }
-keys.action{ id = "scan_cat_next", name = "Next scanner category", group = "Scanner", default = "ctrl+pagedown",
+keys.action{ id = "scan_cat_next", name = "Next scanner category", group = "Scanner", default = "shift+pagedown",
              run = function() category(1) end }
-keys.action{ id = "scan_cat_prev", name = "Previous scanner category", group = "Scanner", default = "ctrl+pageup",
+keys.action{ id = "scan_cat_prev", name = "Previous scanner category", group = "Scanner", default = "shift+pageup",
              run = function() category(-1) end }
 keys.action{ id = "scan_walk", name = "Walk to the current thing", group = "Scanner", default = "shift+home",
-             run = function() with_selected(function(e) require("path").walk_to(e.path, e.name) end) end }
-keys.action{ id = "scan_face", name = "Turn to face the current thing", group = "Scanner", default = "ctrl+home",
-             run = function() with_selected(function(e) require("path").face_to(e.path, e.name) end) end }
+             run = function() with_selected(function(e)
+                 if e.point then require("path").walk_objective() else require("path").walk_to(e.path, e.name) end
+             end) end }
 
 -- Developer: everything the world scan is tracking, with name sources and positions.
 local DUMP = (function()
@@ -176,7 +197,7 @@ local DUMP = (function()
     return dir .. "\\..\\scan_dump.txt"
 end)()
 keys.action{ id = "scan_dump", name = "Developer: write what the scanner sees to a file", group = "Scanner",
-             default = "f9", run = function()
+             default = "shift+f9", run = function()
     if not ready() then speech.say(world.not_ready_reason()) return end
     local px, py, pz, yaw = world.position()
     local f = io.open(DUMP, "a")

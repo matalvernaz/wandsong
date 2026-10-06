@@ -1374,8 +1374,11 @@ act("dev_sdk", "Developer: dump all game classes and functions to files", "ctrl+
         speech.say((ok1 and ok2) and "Class dump finished." or "Class dump failed; it's in the log.")
     end, "class dump")
 end)
-act("repeat", "Repeat what was said; again to go further back", "ctrl+;", repeat_last)
-act("mute", "Turn Wandsong speech and sounds off or on", "ctrl+\\", function() speech.toggle_mute() end)
+-- F keys, not Ctrl: the game ignores modifiers and Left Ctrl is its Dodge. F1-F4 are the
+-- game's spell sets; F5-F9 are free.
+act("repeat", "Repeat what was said; again to go further back", "f7", repeat_last)
+act("mute", "Turn Wandsong speech and sounds off or on", "f9", function() speech.toggle_mute() end)
+act("guide", "The Wandsong guide and every key", "f6", function() open_screen(require("guide"), "use it") end)
 act("details", "Description of the current item", "shift+;", read_details)
 
 

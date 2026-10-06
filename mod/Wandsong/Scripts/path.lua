@@ -146,6 +146,7 @@ local guide_path = nil
 local source = nil              -- "route", "mission" or "guide": a change starts a fresh trail
 
 local chosen = nil              -- { path, name }: a scanner entry the player asked to walk to
+local last_objective = nil      -- the current task, as the game words it (when it does)
 
 -- --- The engine's own pathfinding, when the game gives no route ---------------------------
 -- Some objectives come with a destination but no route (PathTS empty). Then the engine's
@@ -624,21 +625,42 @@ local function turn_by(degrees)
     if audio then audio.play_ui("tick", 0.5) end
 end
 
---- Turn to face a scanner entry (by object path).
-function M.face_to(path, name)
+--- Turn to face a scanner entry (by object path). quiet: the caller has already spoken.
+function M.face_to(path, name, quiet)
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then speech.say("Can't turn: the input module is missing or out of date.") return end
     local p = world.locate(path)
     if not p then speech.say(name .. " has gone.") return end
     last_dx, last_yaw = 0, nil
     face = { path = path, x = p[1], y = p[2], until_t = os.clock() + 3, what = name }
-    speech.say("Turning to " .. name)
+    if not quiet then speech.say("Turning to " .. name) end
+end
+
+--- Turn to face a fixed point (the objective).
+function M.face_point(x, y, name)
+    if not world.in_game() or not (input and input.mouse_move) then return end
+    last_dx, last_yaw = 0, nil
+    face = { x = x, y = y, until_t = os.clock() + 3, what = name }
+end
+
+--- The current objective as a scanner entry: { x, y, z, name }, or nil. Not the
+--- nearest-person fallback or a scanner walk target: only what the game points at.
+function M.objective()
+    if not dest or dest_is_guide or chosen then return nil end
+    return { x = dest[1], y = dest[2], z = dest[3],
+             name = (last_objective and ("Objective: " .. last_objective)) or "Quest objective" }
+end
+
+--- Start autowalk to the objective (scanner: walk to the quest objective entry).
+function M.walk_objective()
+    if not walking then toggle_walk() end
 end
 
 -- The tracked quest and its current task, from the game's mission manager (a long-lived
 -- object, asked only on a key press). GetMissionLogDataBP returns every quest's log entry and
 -- the tracked one's index through an out parameter.
 local mm_path
+local last_quest_line = nil
 local function objective_text()
     local mm
     if mm_path then pcall(function() mm = StaticFindObject(mm_path) end) end
@@ -673,6 +695,22 @@ local function objective_text()
     end)
     return text
 end
+
+-- New objectives are announced as the game changes them (checked every 4 s in the world; a
+-- call on the long-lived mission manager). Only text that reads as words is spoken: if the
+-- game hands back localisation keys, they're logged instead.
+local function looks_like_words(t) return t and t:find(" ", 1, true) and not t:find("_", 1, true) end
+dispatch.every(4000, function()
+    if not world.in_game() or state.loading() then return end
+    local q = objective_text()
+    if not q or q == last_quest_line then return end
+    local first = last_quest_line == nil
+    last_quest_line = q
+    local task = q:match("^Quest: .-%. (.+)$") or q:gsub("^Quest: ", "")
+    if not looks_like_words(task) then log("objective text not spoken (not words?): " .. q) return end
+    last_objective = task
+    if not first then speech.say("New objective: " .. task, true) end
+end, "objective watch")
 
 local function where_am_i()
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
@@ -728,7 +766,7 @@ keys.action{
 }
 keys.action{
     id = "beacon_toggle", name = "Turn the objective beacon off or on", group = "In the world",
-    default = "ctrl+`", run = function()
+    default = "f5", run = function()
         beacon_on = not beacon_on
         speech.say("Objective beacon " .. (beacon_on and "on" or "off"))
     end,
