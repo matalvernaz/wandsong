@@ -366,6 +366,7 @@ local function ambient()
 end
 
 -- A snapshot every 10 seconds: where the player is and what the world layer is doing.
+local status_n = 0
 local function status()
     local counts = {}
     local total = 0
@@ -382,6 +383,17 @@ local function status()
         enabled and "on" or "OFF", in_game and " in game" or " gate shut", state.loading() and " loading" or "",
         px / 100, py / 100, pz / 100, yaw_now, total, table.concat(parts, " "),
         collectgarbage("count"), q, t))
+    -- Every 30 s: a full collection, to tell garbage from memory that's really held, plus the
+    -- Lua registry size (UE4SS keeps references to game objects there) and who allocated what.
+    status_n = status_n + 1
+    if status_n % 3 == 0 then
+        local before, t0 = collectgarbage("count"), os.clock()
+        collectgarbage("collect")
+        local reg = 0
+        for _ in pairs(debug.getregistry()) do reg = reg + 1 end
+        diag.log(string.format("memory: %.0f KB before collect, %.0f KB live after (%.0f ms), registry %d; allocated KB by task: %s",
+            before, collectgarbage("count"), (os.clock() - t0) * 1000, reg, dispatch.alloc_report()))
+    end
 end
 
 --- The player's pawn, looked up fresh (nil outside gameplay). Use it within one task only.

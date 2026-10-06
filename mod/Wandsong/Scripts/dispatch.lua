@@ -51,10 +51,27 @@ end
 
 function M.counts() return #queue, #timers end
 
+-- Memory accounting: KB of Lua memory each task label allocated since the last report.
+-- (A garbage-collector step inside a task can make one reading negative: those count as 0.)
+local alloc = {}
+
+function M.alloc_report()
+    local list = {}
+    for label, kb in pairs(alloc) do list[#list + 1] = { label, kb } end
+    table.sort(list, function(a, b) return a[2] > b[2] end)
+    local parts = {}
+    for i = 1, math.min(8, #list) do parts[i] = string.format("%s %.0f", list[i][1], list[i][2]) end
+    alloc = {}
+    return table.concat(parts, ", ")
+end
+
 local function call(fn, what)
     diag.trace("run " .. what)
     local t0 = os.clock()
+    local kb0 = collectgarbage("count")
     local ok, err = xpcall(fn, debug.traceback)
+    local dkb = collectgarbage("count") - kb0
+    if dkb > 0 then alloc[what] = (alloc[what] or 0) + dkb end
     local ms = (os.clock() - t0) * 1000
     if not ok then log("task failed (" .. what .. "): " .. tostring(err)) end
     if ms > SLOW_MS then log(string.format("slow task %s: %.0f ms", what, ms)) end
