@@ -145,7 +145,24 @@ local GUIDE_RANGE_CM = 3000
 local guide_path = nil
 local source = nil              -- "route", "mission" or "guide": a change starts a fresh trail
 
+local chosen = nil              -- { path, name }: a scanner entry the player asked to walk to
+
 local function refresh_route()
+    if chosen then
+        -- Walking to something picked in the scanner: it's the destination (followed like a
+        -- person if it moves), whatever the quest says.
+        route, dest_is_guide = {}, true
+        local d = world.locate(chosen.path)
+        if not d then dest = nil; return end
+        if source ~= "chosen" then trail, dest_moved_at, source = {}, -100, "chosen" end
+        dest = d
+        note_dest(d)
+        if #trail > 1 then
+            for i, p in ipairs(trail) do route[i] = p end
+            if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
+        end
+        return
+    end
     local m = manager()
     diag.trace("path: read route")
     local pts = {}
@@ -301,6 +318,12 @@ local function stop(why, sound)
     walking, waiting = false, false
     release()
     log("autowalk stopped: " .. why)
+    local was = chosen
+    chosen = nil
+    if was and why == "caught up" then
+        speech.say("Arrived at " .. was.name .. ".")
+        return
+    end
     if sound and audio then audio.play_ui(sound, 0.6) end
     local said = (why == "you've arrived" and "Arrived at the objective.")
               or (why == "caught up" and "Caught up. You're beside them.")
@@ -381,7 +404,7 @@ local function walk_tick()
         return
     end
     local px, py, pz = world.position()
-    if not dest then stop("no objective to walk to"); return end
+    if not dest then stop(chosen and "it's gone" or "no objective to walk to"); return end
     local d = dist2d(px, py, dest)
     local person, moving = dest_is_person(), target_moving()
     if person and not moving then
@@ -477,12 +500,38 @@ local function toggle_walk()
     log("autowalk started, " .. #route .. " route points" .. (dest_is_person() and ", following" or ""))
 end
 
+--- Walk to a scanner entry (by object path).
+function M.walk_to(path, name)
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
+    if not (input and input.mouse_move) then
+        speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
+        return
+    end
+    if walking then stop("") end
+    chosen = { path = path, name = name }
+    refresh_route()
+    if not dest then chosen = nil; speech.say(name .. " has gone.") return end
+    local px, py = world.position()
+    walking, cancel, waiting, crumb = true, nil, false, nil
+    last_dx, last_yaw, turning_since = 0, nil, nil
+    started_at, jumps = os.clock(), 0
+    still_since, still_x, still_y = os.clock(), px, py
+    speech.say(string.format("Walking to %s, %d metres. Press any movement key or %s to stop.", name,
+        math.floor(dist2d(px, py, dest) / 100 + 0.5), keys.describe_combo(keys.combo_of("autowalk"))))
+    log("autowalk to " .. path)
+end
+
 -- --- Facing a target ---------------------------------------------------------------------
 -- One key turns the camera toward the nearest enemy (or creature, or else the objective), so
 -- the game's own spell targeting, which favours what's in front of you, picks it up. The
 -- turn happens over a few ticks with the same mouse turning autowalk uses.
 
 local face = nil                -- { path = actor path or nil, x, y, until_t, what }
+
+local COMPASS = { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" }
+-- World yaw as a compass word. The game's +X axis is called north (Unreal's convention); it
+-- stays consistent, which is what matters for finding your way.
+local function compass(yaw) return COMPASS[math.floor(((yaw % 360) + 22.5) / 45) % 8 + 1] end
 
 local function face_tick()
     if not face or walking then return end
@@ -492,12 +541,66 @@ local function face_tick()
         if p then face.x, face.y = p[1], p[2] end
     end
     local px, py = world.position()
-    local off = steer(math.deg(math.atan(face.y - py, face.x - px)))
+    local want = face.yaw or math.deg(math.atan(face.y - py, face.x - px))
+    local off = steer(want)
     if not off or math.abs(off) < 4 or os.clock() > face.until_t then
         log(string.format("facing %s: %s", face.what, off and string.format("%.0f degrees off", off) or "couldn't turn"))
+        if face.say_after then
+            local now = facing()
+            if now then speech.say("Facing " .. compass(now)) end
+        end
         face = nil
     end
 end
+
+local function turn_by(degrees)
+    if not world.in_game() then return end
+    if not (input and input.mouse_move) then return end
+    if walking then stop("you turned") end
+    local now = facing()
+    if not now then return end
+    last_dx, last_yaw = 0, nil
+    -- Snap to the nearest 45 degrees, so turns land on the compass points.
+    local target = math.floor((now + degrees) / 45 + 0.5) * 45
+    face = { yaw = wrap(target), until_t = os.clock() + 3, what = "a turn", say_after = true }
+    if audio then audio.play_ui("tick", 0.5) end
+end
+
+--- Turn to face a scanner entry (by object path).
+function M.face_to(path, name)
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
+    if not (input and input.mouse_move) then speech.say("Can't turn: the input module is missing or out of date.") return end
+    local p = world.locate(path)
+    if not p then speech.say(name .. " has gone.") return end
+    last_dx, last_yaw = 0, nil
+    face = { path = path, x = p[1], y = p[2], until_t = os.clock() + 3, what = name }
+    speech.say("Turning to " .. name)
+end
+
+local function where_am_i()
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
+    local now = facing()
+    local px, py, _, yaw = world.position()
+    local t = { "Facing " .. compass(now or yaw) }
+    if dest and not dest_is_guide then
+        local w = state.where(px, py, now or yaw, dest[1], dest[2])
+        t[#t + 1] = (dest_is_person() and "Person you're following " or "Objective ") .. w
+    end
+    speech.say(table.concat(t, ". "))
+end
+
+keys.action{ id = "turn_left", name = "Turn left 45 degrees", group = "In the world", default = "left_arrow",
+             run = function() turn_by(-45) end }
+keys.action{ id = "turn_right", name = "Turn right 45 degrees", group = "In the world", default = "right_arrow",
+             run = function() turn_by(45) end }
+keys.action{ id = "turn_left_big", name = "Turn left 90 degrees", group = "In the world", default = "shift+left_arrow",
+             run = function() turn_by(-90) end }
+keys.action{ id = "turn_right_big", name = "Turn right 90 degrees", group = "In the world", default = "shift+right_arrow",
+             run = function() turn_by(90) end }
+keys.action{ id = "turn_around", name = "Turn around", group = "In the world", default = "down_arrow",
+             run = function() turn_by(180) end }
+keys.action{ id = "where_am_i", name = "Which way you're facing, and where the objective is", group = "In the world",
+             default = "up_arrow", run = where_am_i }
 
 local function face_nearest()
     if not world.in_game() then speech.say(world.not_ready_reason()) return end

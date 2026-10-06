@@ -314,6 +314,53 @@ local function friendly(cls_name)
     return false
 end
 
+-- --- Names ------------------------------------------------------------------------------
+-- What the scanner calls each thing, from the first source with real words: a character's
+-- id (OverrideCharacterID, e.g. "ProfessorFig"), else its class name cleaned up
+-- ("BP_OL_Chest_C" -> "Chest"), else the category's noun. Worked out once per actor, from
+-- property reads only, and logged with its source so missing names can be fixed.
+local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
+                    collect = "Collectible", door = "Door" }
+local NOISE_WORDS = { BP = true, OL = true, C = true, Default = true, Base = true, Character = true,
+                      Actor = true, Generic = true, NPC = true, Phoenix = true }
+
+local function humanize(id)
+    local words = {}
+    id = id:gsub("_C$", ""):gsub("%d+", " "):gsub("_", " ")
+    id = id:gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")
+    for w in id:gmatch("%S+") do
+        if not NOISE_WORDS[w] then words[#words + 1] = w end
+    end
+    local out = table.concat(words, " ")
+    if out == "" then return nil end
+    return out:sub(1, 1):upper() .. out:sub(2)
+end
+
+local logged_names = {}
+local function name_of(actor, kind)
+    local name, src
+    pcall(function()
+        local id = actor.OverrideCharacterID:ToString()
+        if id and id ~= "" and id ~= "None" then name, src = humanize(id), "character id" end
+    end)
+    if not name then
+        local cls = "?"
+        pcall(function() cls = actor:GetClass():GetFName():ToString() end)
+        local h = humanize(cls)
+        -- A class name that only repeats the category ("Enemy") adds nothing.
+        if h and h:lower() ~= (KIND_NOUN[kind] or ""):lower() then name, src = h, "class " .. cls end
+    end
+    if not name then name, src = KIND_NOUN[kind] or "Something", "category" end
+    if not logged_names[name .. src] then
+        logged_names[name .. src] = true
+        log("name: " .. name .. " (from " .. src .. ")")
+    end
+    return name, src
+end
+
+-- Things are kept for the scanner up to this far, even when they're too far to make a sound.
+local KEEP_CM = 4000
+
 local function scan_step()
     if not in_game or state.loading() then return end
     scan_i = scan_i % #scan_list + 1
@@ -339,11 +386,12 @@ local function scan_step()
             -- Earlier (more specific) categories win; don't let a later one relabel.
             local prev = claimed_by[key]
             if prev and prev ~= cat.kind and prev ~= "person" then return end
-            if d > cat.range * 1.5 then nearby[key] = nil; return end
+            if d > math.max(cat.range * 1.5, KEEP_CM) then nearby[key] = nil; return end
             claimed_by[key] = cat.kind
             local n = nearby[key]
-            if not n then
+            if not n or n.kind ~= cat.kind then
                 n = { next_at = os.clock() + math.random() * cat.every }
+                n.name, n.name_src = name_of(a, cat.kind)
                 nearby[key] = n
             end
             n.path, n.kind, n.sound, n.every, n.range, n.pitch = path_of(a), cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
@@ -427,6 +475,20 @@ end
 function M.pawn()
     if not in_game or state.loading() then return nil end
     return resolve(pawn_path)
+end
+
+--- Everything the world scan is tracking, for the scanner: { key, path, kind, name,
+--- name_src, dist (at the last scan, cm) }. Positions must be looked up fresh (M.locate).
+function M.entries()
+    local out = {}
+    if not in_game or state.loading() then return out end
+    for key, n in pairs(nearby) do
+        if n.path then
+            out[#out + 1] = { key = tostring(key), path = n.path, kind = n.kind, name = n.name,
+                              name_src = n.name_src, dist = n.dist }
+        end
+    end
+    return out
 end
 
 --- Last known player position (cm) and camera yaw (degrees), as the listener uses them.

@@ -36,31 +36,54 @@ package.loaded["world"] = {
 }
 
 local step = 0
+local scenario = "drop"
+-- Feet are at z 10 (pawn centre 100, half height 90).
 local kismet = {
     LineTraceSingle = function(self, ctx, s, e, ch, cx, ign, dbg, hit)
-        -- Right side (positive Y) has a wall for the first 10 samples.
-        if e.Y > 100 and math.abs(e.X - s.X) < 1 and step < 10 then
-            hit.Distance = 150; hit.ImpactPoint = { X = s.X, Y = 150, Z = s.Z }; return true
+        local function hitat(d, z) hit.Distance = d; hit.ImpactPoint = { X = s.X + (e.X - s.X) * 0, Y = s.Y, Z = z or s.Z }; return true end
+        local down = e.Z < s.Z - 50
+        local forward = math.abs(e.Z - s.Z) < 1 and e.X > s.X + 50 and math.abs(e.Y - s.Y) < 1
+        if scenario == "drop" then
+            -- Right side (positive Y) has a wall for the first 10 samples.
+            if e.Y > 100 and math.abs(e.X - s.X) < 1 and step < 10 then
+                hit.Distance = 150; hit.ImpactPoint = { X = s.X, Y = 150, Z = s.Z }; return true
+            end
+            -- Downward ray: ground 4 m below the feet (a drop-off).
+            if down then hit.Distance = 520; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = 10 - 400 }; return true end
+            return false
+        elseif scenario == "hop" then
+            -- A 60 cm wall 80 cm ahead: knee ray (z 55) blocked, waist (z 120) clear.
+            if forward and s.Z < 70 then return hitat(80) end
+            if down then hit.Distance = s.Z - 70; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = 70 }; return true end
+            return false
+        elseif scenario == "climb" then
+            -- A 2 m ledge 80 cm ahead: knee and waist blocked, head height (z 340) clear.
+            if forward and s.Z < 210 then return hitat(80) end
+            if down then hit.Distance = s.Z - 210; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = 210 }; return true end
+            return false
         end
-        -- Downward ray: ground 4 m below the feet (a drop-off).
-        if e.Z < s.Z - 100 then
-            hit.Distance = 520; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = 10 - 400 }; return true
-        end
-        return false
     end,
 }
 StaticFindObject = function(p) return kismet end
 
 require("surroundings")
-local t0 = os.clock()
-while os.clock() - t0 < 3.5 do
-    x = x + 15            -- walking forward at 150 cm per 100 ms tick... roughly
-    step = math.floor((os.clock() - t0) / 0.2)
-    loop()
-    local t = os.clock() while os.clock() - t < 0.05 do end
+local function run(seconds, walk)
+    local t0 = os.clock()
+    while os.clock() - t0 < seconds do
+        if walk then x = x + 15 end
+        step = math.floor((os.clock() - t0) / 0.2)
+        loop()
+        local t = os.clock() while os.clock() - t < 0.05 do end
+    end
 end
-local counts = {}
-for _, n in ipairs(played) do counts[n] = (counts[n] or 0) + 1 end
+local function count()
+    local counts = {}
+    for _, n in ipairs(played) do counts[n] = (counts[n] or 0) + 1 end
+    return counts
+end
+
+run(3.5, true)
+local counts = count()
 local keys = {}
 for k, v in pairs(counts) do keys[#keys + 1] = k .. "=" .. v end
 table.sort(keys)
@@ -68,7 +91,27 @@ print(table.concat(keys, " "))
 assert(counts.step and counts.step > 3, "footsteps")
 assert(counts["loop:wall1"], "a wall region loop")
 assert(counts.opening == 1, "one opening when the right wall ends")
-assert(not counts.ledge, "drop-off cue stays off until reliable")
+assert(counts.ledge and counts.ledge <= 2, "a drop-off cue, at most one per 8 m of edge, got " .. tostring(counts.ledge))
 local st = require("state")
-assert(st.cues[1] and st.cues[1].text:find("Opening on your right"), "opening named for what-was-that")
+local found = {}
+for _, c in ipairs(st.cues) do found[#found + 1] = c.text end
+local all = table.concat(found, " | ")
+assert(all:find("Opening on your right"), "opening named for what-was-that: " .. all)
+assert(all:find("Drop%-off ahead, about 4 metres"), "drop named: " .. all)
+
+played = {}
+scenario = "hop"
+run(1.2, false)
+counts = count()
+assert(counts.hop == 1, "one hop cue, got " .. tostring(counts.hop))
+assert(st.cues[1].text:find("Low obstacle ahead, 60 centimetres"), "hop named: " .. st.cues[1].text)
+assert(counts.tick and counts.tick >= 1, "lined-up tick")
+
+played = {}
+scenario = "climb"
+x = x + 2000
+run(1.2, false)
+counts = count()
+assert(counts.climb == 1, "one climb cue, got " .. tostring(counts.climb))
+assert(st.cues[1].text:find("Ledge ahead, 2.0 metres up"), "climb named: " .. st.cues[1].text)
 print("surroundings test passed")

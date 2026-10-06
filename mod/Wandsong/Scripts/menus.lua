@@ -93,6 +93,63 @@ local function clean(t)
     return (t:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+-- --- Making the game's text meaningful without sight ---------------------------------------
+
+-- Button hints arrive key first ("backslash, Select, Esc, Back"); say them action first
+-- ("Select: backslash. Back: escape").
+local KEY_WORDS = {
+    ["backslash"] = true, ["forward slash"] = true, ["slash"] = true, ["esc"] = true, ["escape"] = true,
+    ["space"] = true, ["enter"] = true, ["tab"] = true, ["backspace"] = true, ["delete"] = true,
+    ["shift"] = true, ["left shift"] = true, ["right shift"] = true, ["ctrl"] = true, ["left ctrl"] = true,
+    ["left control"] = true, ["alt"] = true, ["up"] = true, ["down"] = true, ["left"] = true, ["right"] = true,
+    ["page up"] = true, ["page down"] = true, ["home"] = true, ["end"] = true, ["left bracket"] = true,
+    ["right bracket"] = true, ["semicolon"] = true, ["apostrophe"] = true, ["grave accent"] = true,
+    ["minus"] = true, ["equals"] = true, ["comma"] = true, ["period"] = true,
+}
+local function is_key_word(t)
+    local l = t:lower()
+    return KEY_WORDS[l] or t:match("^%u$") or t:match("^%d$") or t:match("^F%d%d?$")
+end
+local function legend_order(parts)
+    local out, i = {}, 1
+    while i <= #parts do
+        local a, b = parts[i], parts[i + 1]
+        if b and is_key_word(a) and not is_key_word(b) then
+            local k = a:lower() == "esc" and "escape" or a
+            out[#out + 1] = b .. ": " .. k
+            i = i + 2
+        else
+            out[#out + 1] = a
+            i = i + 1
+        end
+    end
+    return out
+end
+
+-- Instructions written for sight or the mouse, said in terms that work for the player.
+local REWRITES = {
+    { "^Mouse Look Around%.?$", function()
+        return "Look around: " .. key_name("turn_left") .. " and " .. key_name("turn_right") ..
+               " turn you, " .. key_name("where_am_i") .. " says which way you face." end },
+    { "Use your camera Mouse to select an active target%.?", function()
+        return "Turn toward an enemy to make it your target: " .. key_name("face_target") ..
+               " turns you to the nearest one, and period locks on." end },
+    { "A white outline indicates your active target.-precision%.", function(t)
+        return t .. " With Wandsong: " .. key_name("face_target") ..
+               " turns you to the nearest enemy, and period locks on to it." end },
+}
+local function rewrite(text)
+    for _, r in ipairs(REWRITES) do
+        local a, b = text:find(r[1])
+        if a then return text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end
+    end
+    return text
+end
+
+-- Loading screens repeat the same tip several times per load: read each tip once.
+local tips_heard = {}
+local loading_said = -100
+
 -- Depth 0 = whole screen (title + focused item + hint), 1 = focused item + hint.
 -- The hooked depth argument arrives as garbage, so pick our own: full context the first
 -- time a widget instance reads, the shorter item text after that.
@@ -161,8 +218,22 @@ local function on_read_menu(widget)
     seen[key] = true
     local parts = gather(widget, first and 0 or 1)
     if (not parts or #parts == 0) and not first then parts = gather(widget, 0) end
-    local text = clean(table.concat(parts or {}, ", "))
+    local cleaned = {}
+    for _, p in ipairs(parts or {}) do
+        local c = clean(p)
+        if c ~= "" then cleaned[#cleaned + 1] = c end
+    end
+    local text = rewrite(table.concat(legend_order(cleaned), ", "))
     log("ReadMenu " .. cls .. (first and " [open] " or " ") .. "-> " .. text)
+    if is_loading_class(cls) and text ~= "" then
+        if tips_heard[text] then
+            -- Heard before: just "Loading", and not again within the same load.
+            text = os.clock() - loading_said > 20 and "Loading" or ""
+            if text ~= "" then loading_said = os.clock() end
+        else
+            tips_heard[text] = true
+        end
+    end
     -- A whole screen interrupts; small widgets reading themselves right after a screen
     -- (often just whatever the parked mouse pointer is over) queue behind it.
     local is_screen = false
@@ -585,7 +656,7 @@ walk = function(w, items, label, depth)
             if d.PressAndHold then hold = d.HoldDuration end
         end)
         if #parts > 0 or action then
-            items[#items + 1] = { text = table.concat(parts, ", "), action = action, hold = hold }
+            items[#items + 1] = { text = table.concat(legend_order(parts), ", "), action = action, hold = hold }
         end
         return
     end
@@ -1283,3 +1354,6 @@ act("details", "Description of the current item", "shift+;", read_details)
 
 
 log("menus loaded")
+
+-- For the offline text test.
+return { legend_order = legend_order, rewrite = rewrite, clean = clean }

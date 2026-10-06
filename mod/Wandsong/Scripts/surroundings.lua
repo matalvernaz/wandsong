@@ -36,9 +36,10 @@ local TICK_MS = 100
 local WALL_MS = 200
 local STRIDE_CM = 75           -- one footstep per this much walking
 local CHEST_CM = 30            -- rays start this far above the capsule centre
--- Drop-off cues are off until they're reliable: in the first test the downward ray missed
--- real floors and the cue fired every second. The ray still runs and logs what it finds.
-local LEDGE_CUES = false
+-- Drop-off cues fire only when the ground ahead is missing on two checks in a row, by both
+-- the visibility and the camera channel (the first version used one ray and fired every
+-- second on real floors).
+local LEDGE_CUES = true
 
 -- Sixteen rays around the camera's facing. Each listens furthest straight ahead and least
 -- behind; neighbouring hits are grouped into at most four wall regions (after another access mod's
@@ -59,12 +60,13 @@ local function kismet()
 end
 
 -- One collision ray. Returns the hit distance and point, or nil when nothing is in the way.
-local function ray(k, pawn, sx, sy, sz, ex, ey, ez)
+-- channel: 0 = Visibility (default), 1 = Camera.
+local function ray(k, pawn, sx, sy, sz, ex, ey, ez, channel)
     local hit = {}
     -- call_out frees the registry reference UE4SS leaks for the hit table.
     local ok, blocked = dispatch.call_out(function()
         return k:LineTraceSingle(pawn, { X = sx, Y = sy, Z = sz }, { X = ex, Y = ey, Z = ez },
-                                 0, false, {}, 0, hit, true, no_color, no_color, 0.0)
+                                 channel or 0, false, {}, 0, hit, true, no_color, no_color, 0.0)
     end, hit)
     if not (ok and blocked) then return nil end
     local d, x, y, z
@@ -144,7 +146,7 @@ end
 local wall_regions = {}  -- current audible wall regions: { ang, d, x, y, z, misses }
 local side_wall = {}     -- side ray (90 / -90) -> consecutive samples with a wall
 local side_clear = {}    -- side ray -> consecutive samples without
-local next_ledge = 0
+local terrain   -- defined below
 local MAX_REGIONS = 4
 local MISS_TOLERANCE = 2
 
@@ -260,27 +262,89 @@ local function walls()
         end
     end
 
-    -- Drop-off ahead, in the direction of travel (or the camera's, standing still).
+    terrain(k, pawn, px, py, pz, yaw)
+end
+
+-- --- Jumps, climbs and drop-offs ahead ------------------------------------------------------
+-- Every 0.4 s, a few rays straight ahead (the way you're moving, or the camera's way when
+-- standing): knee, waist and head height 1.2 m out, and down from above whatever was hit.
+--   knee blocked, waist clear              -> something low: jump or vault (hop sound)
+--   knee and waist blocked, top 1.1-3 m up -> a ledge you can climb (rising notes)
+--   no ground ahead, twice in a row        -> a drop-off (falling notes)
+-- Each cue plays from where the thing is, and once per spot; a tick follows when it's
+-- within 15 degrees of where the camera faces, so you know you're lined up.
+local AHEAD_CM = 120
+local next_terrain = 0
+local last_cue = {}          -- kind -> { x, y, at }
+local drop_seen = 0
+
+local function cue_once(kind, x, y, z, sound, pitch, text, yaw, px, py)
+    local last = last_cue[kind]
+    -- Once per spot: walking along a cliff edge mustn't repeat the cue every couple of metres.
+    if last and os.clock() - last.at < 8 and math.sqrt((x - last.x) ^ 2 + (y - last.y) ^ 2) < 800 then return end
+    last_cue[kind] = { x = x, y = y, at = os.clock() }
+    audio.play(sound, x, y, z, 0.8, pitch or 1.0)
+    state.cue(text)
+    local off = math.abs(norm(math.deg(math.atan(y - py, x - px)) - yaw))
+    if off <= 15 then dispatch.later(250, function() audio.play_ui("tick", 0.35) end, "lined up tick") end
+    diag.event("terrain", text)
+end
+
+function terrain(k, pawn, px, py, pz, yaw)
     local now = os.clock()
-    if now < next_ledge then return end
+    if now < next_terrain then return end
+    next_terrain = now + 0.4
     local cm = pawn.CharacterMovement
     local vx, vy = vec(cm, "Velocity")
     local heading = math.rad(yaw)
     if vx and (vx * vx + vy * vy) > 40 * 40 then heading = math.atan(vy, vx) end
-    local ax, ay = px + math.cos(heading) * 150, py + math.sin(heading) * 150
-    if ray(k, pawn, px, py, sz, ax, ay, sz) then return end   -- a wall, not a ledge
+    local cx, cy = math.cos(heading), math.sin(heading)
+    local ax, ay = px + cx * AHEAD_CM, py + cy * AHEAD_CM
     local half = 90
     pcall(function() half = pawn.RootComponent.CapsuleHalfHeight end)
     local feet = pz - half
-    diag.trace("walls: ledge ray")
-    local d, _, _, hz = ray(k, pawn, ax, ay, sz, ax, ay, feet - 600)
+    diag.trace("terrain rays")
+
+    local knee = ray(k, pawn, px, py, feet + 45, ax, ay, feet + 45)
+    local waist = ray(k, pawn, px, py, feet + 110, ax, ay, feet + 110)
+    if knee and not waist then
+        local hx, hy = px + cx * knee, py + cy * knee
+        local top_d, _, _, top_z = ray(k, pawn, hx + cx * 30, hy + cy * 30, feet + 110, hx + cx * 30, hy + cy * 30, feet)
+        local h = top_z and (top_z - feet) or 50
+        cue_once("hop", hx, hy, feet + h, "hop", 1.0,
+                 string.format("Low obstacle ahead, %d centimetres high: space jumps over it", math.floor(h / 10 + 0.5) * 10),
+                 yaw, px, py)
+        drop_seen = 0
+        return
+    end
+    if knee and waist then
+        local d = math.min(knee, waist)
+        local hx, hy = px + cx * (d + 30), py + cy * (d + 30)
+        local head = ray(k, pawn, px, py, feet + 330, hx, hy, feet + 330)
+        if not head then
+            local top_d, _, _, top_z = ray(k, pawn, hx, hy, feet + 330, hx, hy, feet)
+            local h = top_d and top_z and (top_z - feet) or nil
+            if h and h > 100 and h <= 300 then
+                cue_once("climb", hx, hy, top_z, "climb", 1.0,
+                         string.format("Ledge ahead, %.1f metres up: walk into it and press space to climb", h / 100),
+                         yaw, px, py)
+            end
+        end
+        drop_seen = 0
+        return
+    end
+    -- Nothing in the way: is there ground ahead?
+    local d, _, _, hz = ray(k, pawn, ax, ay, feet + 50, ax, ay, feet - 600)
+    if not d then d, _, _, hz = ray(k, pawn, ax, ay, feet + 50, ax, ay, feet - 600, 1) end
     local drop = d and (feet - hz) or 600
-    next_ledge = now + 0.8
-    diag.event("ledge", string.format("%s: pawn z %.0f, half height %.0f, ray from %.0f, hit %s",
-        drop > 180 and "drop" or "floor", pz, half, sz, d and string.format("%.0f cm down at z %.0f", d, hz) or "nothing"))
-    if LEDGE_CUES and drop > 180 then
-        audio.play("ledge", ax, ay, feet, 0.8, drop > 500 and 0.8 or 1.0)
-        state.cue(string.format("Drop-off ahead, about %d metres", math.floor(drop / 100 + 0.5)))
+    if drop > 180 then drop_seen = drop_seen + 1 else drop_seen = 0 end
+    diag.event("ledge", string.format("%s: feet z %.0f, hit %s", drop > 180 and "drop" or "floor", feet,
+        d and string.format("%.0f cm down", feet - hz) or "nothing"))
+    if LEDGE_CUES and drop_seen >= 2 and moving then
+        cue_once("drop", ax, ay, feet, "ledge", drop > 500 and 0.8 or 1.0,
+                 drop >= 600 and "Big drop ahead, more than 6 metres"
+                             or string.format("Drop-off ahead, about %d metres", math.max(2, math.floor(drop / 100 + 0.5))),
+                 yaw, px, py)
     end
 end
 

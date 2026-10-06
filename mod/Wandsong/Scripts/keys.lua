@@ -24,7 +24,7 @@ local function log(s) print("[Wandsong keys] " .. s .. "\n") end
 -- Spoken names and combo-string names for UE4SS Key enum entries.
 local SPOKEN = {
     OEM_FOUR = "left bracket", OEM_SIX = "right bracket", OEM_FIVE = "backslash",
-    OEM_ONE = "semicolon", OEM_SEVEN = "apostrophe", OEM_TWO = "slash", OEM_PERIOD = "period",
+    OEM_ONE = "semicolon", OEM_SEVEN = "apostrophe", OEM_TWO = "forward slash", OEM_PERIOD = "period",
     OEM_COMMA = "comma", OEM_MINUS = "minus", OEM_PLUS = "equals", OEM_THREE = "grave accent",
     PAGE_UP = "page up", PAGE_DOWN = "page down", HOME = "home", END = "end",
     INS = "insert", DEL = "delete", RETURN = "enter", SPACE = "space", TAB = "tab",

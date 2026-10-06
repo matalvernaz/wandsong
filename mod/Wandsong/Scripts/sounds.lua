@@ -19,6 +19,9 @@ local LEGEND = {
     { "wall_preview", "Wall: a soft rushing sound from each nearby wall, louder as you get closer. Silence means open space." },
     { "opening", "Opening: a wall beside you has ended, like a doorway or a side passage. It comes from that side." },
     { "ledge", "Drop-off: the ground falls away ahead of you. Lower means a bigger drop." },
+    { "hop", "Low obstacle ahead: something knee-high you can jump or vault over with space." },
+    { "climb", "Climbable ledge ahead: walk into it and press space to climb up." },
+    { "tick", "Lined up: a soft tick right after an obstacle sound means it's straight ahead of you. Also plays when you turn with the arrow keys." },
     { "warn", "Incoming attack: block or dodge now. Coming soon." },
 }
 

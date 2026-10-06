@@ -19,7 +19,7 @@
 //   audio.sounds() -> { names }
 //
 // Built-in synthesized sounds: ping, tick, chime, arrive, wall, opening, door, person, item,
-// enemy, warn, step_blocked.
+// enemy, warn, step_blocked, ledge, hop, climb.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -156,6 +156,10 @@ void build_sounds() {
     g_sounds["step"] = noise_burst(0.045f, 0.12f, 0.45f, 0.003f, 4242);
     g_sounds["land"] = noise_burst(0.12f, 0.06f, 0.8f, 0.004f, 9001);
     g_sounds["ledge"] = tone({{660, 1}, {440, 1}, {300, 1}}, 0.06f, 0.45f, 0.3f);
+    // Something low to jump or vault over: a quick two-note hop up.
+    g_sounds["hop"] = tone({{520, 1}, {780, 1}}, 0.05f, 0.5f, 0.3f);
+    // A ledge you can climb: four rising notes.
+    g_sounds["climb"] = tone({{330, 1}, {440, 1}, {587, 1}, {784, 1}}, 0.05f, 0.45f, 0.3f);
 }
 
 // --- Spatialisation --------------------------------------------------------------------

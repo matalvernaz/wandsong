@@ -62,7 +62,7 @@ local UE_SPOKEN = {
     MouseScrollDown = "scroll down", SpaceBar = "space", LeftShift = "left shift",
     RightShift = "right shift", LeftControl = "left control", RightControl = "right control",
     LeftAlt = "left alt", RightAlt = "right alt", BackSpace = "backspace", CapsLock = "caps lock",
-    Slash = "slash", Period = "period", Comma = "comma", Semicolon = "semicolon",
+    Slash = "forward slash", Period = "period", Comma = "comma", Semicolon = "semicolon",
     Apostrophe = "apostrophe", LeftBracket = "left bracket", RightBracket = "right bracket",
     Backslash = "backslash", Hyphen = "minus", Equals = "equals", Tilde = "grave accent",
     PageUp = "page up", PageDown = "page down",
