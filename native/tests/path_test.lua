@@ -11,7 +11,7 @@ Key = { OEM_THREE = 192 }
 ModifierKey = { CONTROL = 1, SHIFT = 2 }
 RegisterKeyBind = function() end
 
-local played, keys_sent, yaws = {}, {}, {}
+local played, keys_sent, yaws, vks = {}, {}, {}, {}
 package.loaded["audio_bridge"] = {
     init = function() return true end,
     play = function(n, x, y) played[#played + 1] = { n = n, x = x, y = y }; return true end,
@@ -20,7 +20,7 @@ package.loaded["audio_bridge"] = {
 }
 package.loaded["input_bridge"] = {
     focused = function() return true end,
-    key = function(vk, down) keys_sent[#keys_sent + 1] = down; return true end,
+    key = function(vk, down) keys_sent[#keys_sent + 1] = down; vks[#vks + 1] = { vk = vk, down = down }; return true end,
 }
 
 -- Route: 20 m east, then 20 m north. The player walks along it as autowalk steers.
@@ -48,11 +48,12 @@ local walk
 for _, a in pairs(actions) do if a.id == "autowalk" then walk = a.run end end
 assert(walk, "autowalk action registered")
 
-local function run(seconds, move)
+local function run(seconds, move, each)
     local last = 0
     local t0 = os.clock()
     while os.clock() - t0 < seconds do
-        if move then
+        if each then each() end
+        if move and not (type(move) == "function" and not move()) then
             px = px + math.cos(math.rad(yaw)) * 40
             py = py + math.sin(math.rad(yaw)) * 40
         end
@@ -79,4 +80,36 @@ local arrived = false
 for _, p in ipairs(played) do if p.n == "arrive" then arrived = true end end
 assert(arrived, "arrived")
 print(string.format("pings %d, turns %d, end at %.0f %.0f", pings, #yaws, px, py))
+
+-- Escort: no route, the mission destination is a guide walking east ahead of the player.
+for i = #route, 1, -1 do route[i] = nil end
+local gx, gy, guide_walks = px + 1500, py, true
+mgr.GetMissionDestinationLocation = function() return { X = gx, Y = gy, Z = 0 } end
+local said = {}
+local speech = require("speech")
+local real_say = speech.say
+speech.say = function(t, ...) said[#said + 1] = t; return real_say(t, ...) end
+local function guide_step() if guide_walks then gx = gx + 6 end end   -- 3 m/s
+run(3, false, guide_step)                                            -- the trail builds up
+local holding = function() return vks[#vks] and vks[#vks].vk == 0x57 and vks[#vks].down end
+walk()
+assert(said[#said]:find("^Following"), "follow mode announced: " .. tostring(said[#said]))
+local waited = false
+run(4, holding, function() guide_step(); if not holding() and vks[#vks] and vks[#vks].vk == 0x57 then waited = true end end)
+assert(waited, "waited behind the guide")
+for _, t in ipairs(said) do assert(not t:find("Arrived"), "no arrival while following") end
+guide_walks = false
+run(8, holding)
+assert(said[#said]:find("Caught up"), "stops when the guide stops: " .. tostring(said[#said]))
+
+-- Blocked: forward held but the player doesn't move: jumps, then gives up.
+gx, gy = px + 3000, py
+route[1], route[2] = { X = px, Y = py, Z = 0 }, { X = px + 3000, Y = py, Z = 0 }
+run(1.2)
+walk()
+run(5.5)
+local jumps = 0
+for _, k in ipairs(vks) do if k.vk == 0x20 and k.down then jumps = jumps + 1 end end
+assert(jumps == 2, "two jumps when blocked, got " .. jumps)
+assert(said[#said]:find("stuck"), "gave up stuck: " .. tostring(said[#said]))
 print("path test passed")

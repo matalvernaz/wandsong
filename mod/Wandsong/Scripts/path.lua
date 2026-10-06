@@ -36,8 +36,13 @@ end
 local LOOK_AHEAD_CM = 800       -- beacon point distance along the route
 local WALK_AHEAD_CM = 300       -- autowalk steers toward a point this far along
 local ARRIVE_CM = 400
+local FOLLOW_WAIT_CM = 300      -- following someone: stop this close and wait for them
+local FOLLOW_RESUME_CM = 500    -- ...and walk on once they're this far ahead
 local PING_EVERY = 1.3
 local VK_W = 0x57               -- the game's default forward key
+local VK_SPACE = 0x20           -- jump / climb / vault
+local BLOCKED_AFTER = 1.0       -- holding forward this long without moving: try a jump
+local STUCK_AFTER = 4.0         -- ...and give up after this long
 
 local beacon_on = true
 local route = {}                -- { {x, y, z}, ... } latest route, player end first
@@ -89,25 +94,61 @@ local function read_points(arr)
     return pts
 end
 
-local next_dest_call = 0
+-- Escort scenes (the intro, "follow me" quests) have no route: the mission destination is the
+-- character leading you, and it moves. Its positions are kept as a trail, which is the way
+-- they actually walked, and the trail is followed like a route.
+local TRAIL_STEP_CM = 150       -- a new trail point every this far the target moves
+local TRAIL_JUMP_CM = 3000      -- a bigger jump is a new objective: start a fresh trail
+local MOVING_FOR = 6            -- seconds since the target last moved that still count as moving
+local trail = {}
+local dest_moved_at = -100
+
+local function dist3(a, b)
+    return math.sqrt((a[1] - b[1]) ^ 2 + (a[2] - b[2]) ^ 2 + (a[3] - b[3]) ^ 2)
+end
+
+local function note_dest(d)
+    local last = trail[#trail]
+    if last and dist3(last, d) > TRAIL_JUMP_CM then trail, dest_moved_at = {}, -100; last = nil end
+    if not last then trail[1] = d; return end
+    if dist3(last, d) >= TRAIL_STEP_CM then
+        trail[#trail + 1] = d
+        if #trail > 80 then table.remove(trail, 1) end
+        dest_moved_at = os.clock()
+    end
+end
+
+-- True while the destination is someone walking ahead of you.
+local function target_moving() return os.clock() - dest_moved_at < MOVING_FOR end
+
 local function refresh_route()
     local m = manager()
-    if not m then route, dest = {}, nil; return end
+    if not m then route, dest, trail = {}, nil, {}; return end
     diag.trace("path: read route")
     local pts = {}
     pcall(function() pts = read_points(m.PathTS) end)
     if #pts == 0 then pcall(function() pts = read_points(m.GuidePathPoints) end) end
     route = pts
     if #pts > 0 then
-        dest = pts[#pts]
-    elseif os.clock() >= next_dest_call then
-        next_dest_call = os.clock() + 3
+        dest, trail, dest_moved_at = pts[#pts], {}, -100
+    else
         diag.trace("path: mission destination")
         local d
         pcall(function() d = vec3(m:GetMissionDestinationLocation()) end)
-        if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then dest = d else dest = nil end
+        if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then
+            dest = d
+            note_dest(d)
+            -- The trail, ending exactly where the target is now.
+            if #trail > 1 then
+                for i, p in ipairs(trail) do route[i] = p end
+                if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
+            end
+        else
+            dest, trail = nil, {}
+        end
     end
-    diag.event("route", string.format("%d points, destination %s", #route,
+    diag.event("route", string.format("%d points%s, destination %s", #route,
+        target_moving() and " (following someone)" or "",
         dest and string.format("%.0f %.0f %.0f", dest[1] / 100, dest[2] / 100, dest[3] / 100) or "none"))
 end
 
@@ -150,7 +191,11 @@ local function beacon()
     if not audio or not world.in_game() then return end
     local px, py, pz, yaw = world.position()
     if not dest then return end
-    if dist2d(px, py, dest) < ARRIVE_CM then
+    if target_moving() then
+        -- Someone leading you: their own person sound says where they are once you're close;
+        -- the beacon only calls you along when you fall behind. No arrival chimes.
+        if dist2d(px, py, dest) < FOLLOW_RESUME_CM then return end
+    elseif dist2d(px, py, dest) < ARRIVE_CM then
         local key = string.format("%.0f,%.0f", dest[1] / 200, dest[2] / 200)
         if arrived_at ~= key then
             arrived_at = key
@@ -167,9 +212,10 @@ local function beacon()
     local pitch = math.max(0.7, math.min(1.4, 1 + dz / 800))
     audio.play("ping", p[1], p[2], p[3], 0.8, pitch)
     local full = math.floor(dist2d(px, py, dest) / 100 + 0.5)
-    state.cue("Objective path " .. state.where(px, py, yaw, p[1], p[2]):gsub(",.*$", "") ..
+    state.cue((target_moving() and "Path of the person you're following " or "Objective path ") ..
+              state.where(px, py, yaw, p[1], p[2]):gsub(",.*$", "") ..
               (dz > 150 and ", going up" or (dz < -150 and ", going down" or "")) ..
-              ", objective " .. full .. " metres away")
+              (target_moving() and ", they're " or ", objective ") .. full .. " metres away")
 end
 
 -- --- Autowalk -------------------------------------------------------------------------
@@ -177,8 +223,12 @@ end
 local walking = false
 local cancel = nil              -- reason, set from the key observer
 local key_down = false
-local progress_best, progress_at = math.huge, 0
 local started_at = 0
+local following = false         -- this walk is behind someone leading the way
+local waiting = false           -- following, close behind them: standing still
+local still_since, still_x, still_y = 0, 0, 0   -- where the player last made real progress
+local jumps = 0                 -- jumps tried at the current blocked spot
+local ignore_space_until = 0    -- our own jump presses must not cancel the walk
 
 local function release()
     if key_down and input then pcall(input.key, VK_W, false) end
@@ -187,19 +237,23 @@ end
 
 local function stop(why, sound)
     if not walking then return end
-    walking = false
+    walking, waiting = false, false
     release()
     log("autowalk stopped: " .. why)
     if sound and audio then audio.play_ui(sound, 0.6) end
-    speech.say(why == "you've arrived" and "Arrived at the objective."
-               or ("Autowalk stopped" .. (why ~= "" and (", " .. why) or "")))
+    local said = (why == "you've arrived" and "Arrived at the objective.")
+              or (why == "caught up" and "Caught up. They've stopped.")
+              or ("Autowalk stopped" .. (why ~= "" and (", " .. why) or ""))
+    speech.say(said)
 end
 
 -- Movement keys the player presses stop autowalk (not W: that's the key being held).
 local STOP_KEYS = { A = true, S = true, D = true, SPACE = true, ESCAPE = true, LEFT_ARROW = true,
                     RIGHT_ARROW = true, UP_ARROW = true, DOWN_ARROW = true }
 keys.observe(function(combo, key)
-    if walking and STOP_KEYS[key] and os.clock() - started_at > 0.3 then cancel = "you moved" end
+    if not walking or not STOP_KEYS[key] or os.clock() - started_at < 0.3 then return end
+    if key == "SPACE" and os.clock() < ignore_space_until then return end
+    cancel = "you moved"
 end)
 
 local function steer(yaw)
@@ -213,6 +267,14 @@ local function steer(yaw)
     return ok
 end
 
+-- A low wall, a fence or a gap in the way: tap the jump key, which also climbs and vaults.
+local function jump()
+    ignore_space_until = os.clock() + 0.6
+    if input.key(VK_SPACE, true) then
+        dispatch.later(80, function() pcall(input.key, VK_SPACE, false) end, "autowalk jump release", true)
+    end
+end
+
 local function walk_tick()
     if not walking then return end
     if cancel then local c = cancel; cancel = nil; stop(c); return end
@@ -223,19 +285,47 @@ local function walk_tick()
     end
     local px, py, pz = world.position()
     if not dest then stop("no objective to walk to"); return end
-    if dist2d(px, py, dest) < ARRIVE_CM then
+    local d = dist2d(px, py, dest)
+    if target_moving() then
+        following = true
+    elseif following and d < ARRIVE_CM then
+        stop("caught up")
+        return
+    elseif d < ARRIVE_CM then
         stop("you've arrived")   -- the beacon plays the arrival chime
         return
+    end
+    -- Following: wait close behind them, walk on when they've gone ahead.
+    if following then
+        if waiting and d > FOLLOW_RESUME_CM then waiting = false
+        elseif not waiting and d < FOLLOW_WAIT_CM then waiting = true end
+        if waiting then
+            release()
+            still_since, still_x, still_y, jumps = os.clock(), px, py, 0
+            return
+        end
     end
     local p = point_along(px, py, pz, WALK_AHEAD_CM)
     if not p then stop("lost the path"); return end
     local yaw = math.deg(math.atan(p[2] - py, p[1] - px))
     if not steer(yaw) then stop("couldn't turn the camera"); return end
-    if not key_down then key_down = input.key(VK_W, true) end
-    -- Stuck: no closer to the objective for four seconds.
-    local d = dist2d(px, py, dest)
-    if d < progress_best - 50 then progress_best, progress_at = d, os.clock()
-    elseif os.clock() - progress_at > 4 then stop("stuck", "step_blocked") end
+    if not key_down then
+        key_down = input.key(VK_W, true)
+        still_since, still_x, still_y = os.clock(), px, py
+    end
+    -- Blocked: hardly moved while holding forward. Jump (which climbs and vaults) a couple of
+    -- times, then give up.
+    if math.sqrt((px - still_x) ^ 2 + (py - still_y) ^ 2) > 60 then
+        still_since, still_x, still_y, jumps = os.clock(), px, py, 0
+    else
+        local t = os.clock() - still_since
+        if t > STUCK_AFTER then stop("stuck", "step_blocked")
+        elseif t > BLOCKED_AFTER * (jumps + 1) and jumps < 2 then
+            jumps = jumps + 1
+            log("autowalk blocked: jump " .. jumps)
+            jump()
+        end
+    end
 end
 
 local function toggle_walk()
@@ -245,15 +335,22 @@ local function toggle_walk()
     refresh_route()
     if not dest then speech.say("There's no objective to walk to. Track a quest first.") return end
     local px, py = world.position()
-    walking, cancel = true, nil
-    progress_best, progress_at, started_at = dist2d(px, py, dest), os.clock(), os.clock()
-    speech.say(string.format("Walking to the objective, %d metres. Press any movement key or %s to stop.",
-        math.floor(progress_best / 100 + 0.5), keys.describe_combo(keys.combo_of("autowalk"))))
-    log("autowalk started, " .. #route .. " route points")
+    walking, cancel, waiting = true, nil, false
+    following = target_moving()
+    started_at, jumps = os.clock(), 0
+    still_since, still_x, still_y = os.clock(), px, py
+    local stop_key = keys.describe_combo(keys.combo_of("autowalk"))
+    local metres = math.floor(dist2d(px, py, dest) / 100 + 0.5)
+    if following then
+        speech.say(string.format("Following, %d metres behind. Press any movement key or %s to stop.", metres, stop_key))
+    else
+        speech.say(string.format("Walking to the objective, %d metres. Press any movement key or %s to stop.", metres, stop_key))
+    end
+    log("autowalk started, " .. #route .. " route points" .. (following and ", following" or ""))
 end
 
 keys.action{
-    id = "autowalk", name = "Walk to the objective, or stop walking", group = "In the world",
+    id = "autowalk", name = "Walk to the objective or follow your guide, or stop walking", group = "In the world",
     default = "shift+`", run = toggle_walk,
 }
 keys.action{
