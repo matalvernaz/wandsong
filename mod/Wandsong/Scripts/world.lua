@@ -333,15 +333,16 @@ end
 -- property reads only, and logged with its source so missing names can be fixed.
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
                     collect = "Collectible", door = "Door", usable = "Something to use" }
-local NOISE_WORDS = { BP = true, OL = true, C = true, Default = true, Base = true, Character = true,
-                      Actor = true, Generic = true, NPC = true, Phoenix = true }
+local NOISE_WORDS = { Default = true, Base = true, Character = true, Actor = true, Generic = true,
+                      Phoenix = true, Int = true, Props = true, Prop = true, Items = true, Item = true }
 
 local function humanize(id)
     local words = {}
     id = id:gsub("_C$", ""):gsub("%d+", " "):gsub("_", " ")
     id = id:gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")
     for w in id:gmatch("%S+") do
-        if not NOISE_WORDS[w] then words[#words + 1] = w end
+        -- Developer codes: short all-capitals tokens (BP, OL, BC, W, NPC).
+        if not NOISE_WORDS[w] and not (w:match("^%u+$") and #w <= 3) then words[#words + 1] = w end
     end
     local out = table.concat(words, " ")
     if out == "" then return nil end
@@ -351,10 +352,20 @@ end
 local logged_names = {}
 local function name_of(actor, kind)
     local name, src
-    pcall(function()
-        local id = actor.OverrideCharacterID:ToString()
-        if id and id ~= "" and id ~= "None" then name, src = humanize(id), "character id" end
-    end)
+    local function try(label, fn)
+        if name then return end
+        pcall(function()
+            local id = fn()
+            if id and id ~= "" and id ~= "None" then name, src = humanize(id), label end
+        end)
+    end
+    try("character id", function() return actor.OverrideCharacterID:ToString() end)
+    try("world id", function() return actor.DefaultWorldID:ToString() end)
+    -- Characters keep their real identity (ProfessorFig) behind a getter. It's a call on the
+    -- actor, made once per character, right after FindAllOf handed it over this tick.
+    if kind == "person" or kind == "enemy" or kind == "beast" then
+        try("GetCharacterID", function() return actor:GetCharacterID():ToString() end)
+    end
     if not name then
         local cls = "?"
         pcall(function() cls = actor:GetClass():GetFName():ToString() end)
@@ -392,6 +403,8 @@ local function scan_step()
             local dx, dy, dz = x - px, y - py, z - pz
             local d = math.sqrt(dx * dx + dy * dy + dz * dz)
             local cat = entry.cat
+            -- Stations are spots characters stand at to act something out: not for the player.
+            if cat.kind == "usable" and a:GetClass():GetFName():ToString():find("Station", 1, true) then return end
             if cat.kind == "enemy" and friendly(a:GetClass():GetFName():ToString()) then
                 cat = CATEGORIES[1]   -- a student or ghost: a person
             end
