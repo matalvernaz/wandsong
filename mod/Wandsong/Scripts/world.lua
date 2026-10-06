@@ -243,6 +243,11 @@ function M.not_ready_reason()
         return "World features are off, after the game stopped while they were running. Press " ..
                keys.describe_combo(keys.combo_of("world_toggle")) .. " to turn them back on."
     end
+    if state.modal_since then
+        return "A tutorial is open. Hold space for a moment to continue, or find Continue with " ..
+               keys.describe_combo(keys.combo_of("review_next")) .. " and press " ..
+               keys.describe_combo(keys.combo_of("press")) .. "."
+    end
     return "That works in the world, not in menus or scenes."
 end
 

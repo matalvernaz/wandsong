@@ -30,4 +30,7 @@ eq(t.rewrite("Use your camera Mouse to select an active target., Continue: Space
    "Turn toward an enemy to make it your target: comma turns you to the nearest one, and period locks on., Continue: Space")
 assert(t.rewrite("A white outline indicates your active target. Aim Mode reveals additional secondary targets, and a reticle for greater targeting precision."):find("With Wandsong: comma turns you"), "reticle note")
 eq(t.clean('Tap <img src="cbi_Keyboard_Slash"/> to cast'), "Tap forward slash to cast")
+eq(t.rewrite("The Minimap shows your surroundings, with you Map PlayerBlip in the middle. This is your current objective. Press and hold V to toggle quest objective details., Continue: Space"),
+   "The minimap shows your surroundings to sighted players. With Wandsong, up arrow says your quest, its current task and which way the objective is. This is your current objective. Press and hold V to toggle quest objective details., To continue, hold space for a moment.")
+eq(t.rewrite("Something., Continue: Space"), "Something., To continue, hold space for a moment.")
 print("text test passed")

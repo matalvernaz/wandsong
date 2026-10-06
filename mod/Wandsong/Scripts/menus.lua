@@ -134,6 +134,11 @@ local REWRITES = {
     { "Use your camera Mouse to select an active target%.?", function()
         return "Turn toward an enemy to make it your target: " .. key_name("face_target") ..
                " turns you to the nearest one, and period locks on." end },
+    { "The Minimap shows your surroundings.-middle%.", function()
+        return "The minimap shows your surroundings to sighted players. With Wandsong, " ..
+               key_name("where_am_i") .. " says your quest, its current task and which way the objective is." end },
+    { "Continue: Space$", function()
+        return "To continue, hold space for a moment." end },
     { "W A S D to Move%.?", function(t)
         return t .. " With Wandsong, " .. key_name("autowalk") .. " walks you to your objective or follows " ..
                "your guide, the arrow keys turn you, and " .. key_name("scan_next") .. " says what's around you." end },
@@ -148,7 +153,7 @@ local REWRITES = {
 local function rewrite(text)
     for _, r in ipairs(REWRITES) do
         local a, b = text:find(r[1])
-        if a then return text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end
+        if a then text = text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end
     end
     return text
 end
