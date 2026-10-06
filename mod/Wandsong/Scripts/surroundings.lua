@@ -335,7 +335,7 @@ local function registry_size()
     for _ in pairs(debug.getregistry()) do n = n + 1 end
     return n
 end
-local shared_hit = {}
+local shared_hit, shared_ignore = {}, {}
 local PROBES = {
     { "floor ray, read result", function(k, pawn, px, py, pz)
         local hit = {}
@@ -356,6 +356,10 @@ local PROBES = {
     { "1 cm ray in the air, no hit", function(k, pawn, px, py, pz)
         k:LineTraceSingle(pawn, { X = px, Y = py, Z = pz + 400 }, { X = px, Y = py, Z = pz + 401 },
                           0, false, {}, 0, {}, true, no_color, no_color, 0.0)
+    end },
+    { "floor ray, shared result and ignore list", function(k, pawn, px, py, pz)
+        k:LineTraceSingle(pawn, { X = px, Y = py, Z = pz }, { X = px, Y = py, Z = pz - 600 },
+                          0, false, shared_ignore, 0, shared_hit, true, no_color, no_color, 0.0)
     end },
     { "pawn lookup only", function() end },
 }

@@ -240,6 +240,27 @@ local waiting = false           -- following, close behind them: standing still
 local still_since, still_x, still_y = 0, 0, 0   -- where the player last made real progress
 local jumps = 0                 -- jumps tried at the current blocked spot
 local ignore_space_until = 0    -- our own jump presses must not cancel the walk
+local crumb = nil               -- following: the trail point being walked to (a table in trail)
+local next_walk_log = 0
+
+-- Following: step through the guide's own footprints in order, so the walk takes exactly
+-- the way they went (round rocks and railings) rather than cutting toward the trail.
+local CRUMB_REACHED_CM = 120
+local function next_crumb(px, py)
+    if #trail < 2 then return nil end
+    local idx
+    for i, p in ipairs(trail) do if p == crumb then idx = i; break end end
+    if not idx then
+        -- Joining the trail: the latest point about as close as the closest one, so the walk
+        -- never heads back along it.
+        local best = math.huge
+        for _, p in ipairs(trail) do best = math.min(best, dist2d(px, py, p)) end
+        for i, p in ipairs(trail) do if dist2d(px, py, p) <= best + 100 then idx = i end end
+    end
+    while idx < #trail and dist2d(px, py, trail[idx]) < CRUMB_REACHED_CM do idx = idx + 1 end
+    crumb = trail[idx]
+    return crumb, idx
+end
 
 local function release()
     if key_down and input then pcall(input.key, VK_W, false) end
@@ -316,8 +337,19 @@ local function walk_tick()
             return
         end
     end
-    local p = point_along(px, py, pz, WALK_AHEAD_CM)
+    local p, ci
+    if following then p, ci = next_crumb(px, py) end
+    if not p then p = point_along(px, py, pz, WALK_AHEAD_CM) end
     if not p then stop("lost the path"); return end
+    if os.clock() >= next_walk_log then
+        next_walk_log = os.clock() + 1
+        local g = world.nearest("person", 3000)
+        log(string.format("walking: at %.1f %.1f %.1f, aim %.1f %.1f%s, destination %.1f %.1f%s",
+            px / 100, py / 100, pz / 100, p[1] / 100, p[2] / 100,
+            ci and string.format(" (footprint %d of %d)", ci, #trail) or "",
+            dest[1] / 100, dest[2] / 100,
+            g and string.format(", nearest person %.1f %.1f", g[1] / 100, g[2] / 100) or ""))
+    end
     local yaw = math.deg(math.atan(p[2] - py, p[1] - px))
     if not steer(yaw) then stop("couldn't turn the camera"); return end
     if not key_down then
@@ -349,7 +381,7 @@ local function toggle_walk()
         return
     end
     local px, py = world.position()
-    walking, cancel, waiting = true, nil, false
+    walking, cancel, waiting, crumb = true, nil, false, nil
     following = target_moving() or dest_is_guide
     started_at, jumps = os.clock(), 0
     still_since, still_x, still_y = os.clock(), px, py
