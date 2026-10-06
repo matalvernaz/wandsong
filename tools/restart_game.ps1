@@ -26,7 +26,7 @@ if (Get-Process HogwartsLegacy -ErrorAction SilentlyContinue) {
 # The game holds the native modules open while it runs: copy them once it has closed.
 if ($Native) {
     foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
-        Copy-Item (Join-Path $root "nativeuild\Release\$dll") (Join-Path $win64 "Mods\Wandsong\Scripts") -Force
+        Copy-Item (Join-Path $root "native\build\Release\$dll") (Join-Path $win64 "Mods\Wandsong\Scripts") -Force
     }
 }
 Start-Sleep 3
