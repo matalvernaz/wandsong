@@ -16,7 +16,10 @@ local state = require("state")
 
 local M = {}
 
-local TICK_MS = 50
+-- 100 ms, not faster: every ExecuteInGameThread call leaves a reference in the Lua registry
+-- that UE4SS never releases (about 36,000 an hour at this rate), and the registry is shared
+-- with UE4SS's async thread. Two game freezes on Oct 6 came with it at 32,000 and 70,000.
+local TICK_MS = 100
 
 local queue = {}     -- functions to run at the next tick
 local timers = {}    -- { due = clock, fn = f, every = ms|nil }
