@@ -223,6 +223,9 @@ local function gate_check()
             fuse_set(true)
             log("gate open: in gameplay")
             if audio then audio.play_ui("chime", 0.4) end
+            dispatch.later(2500, function()
+                require("tips").once("welcome", require("guide").welcome)
+            end, "welcome tip")
         end
     end
 end
@@ -393,6 +396,13 @@ local function scan_step()
                 n = { next_at = os.clock() + math.random() * cat.every }
                 n.name, n.name_src = name_of(a, cat.kind)
                 nearby[key] = n
+                if cat.kind == "enemy" then
+                    require("tips").once("enemy", function()
+                        local t = require("tips")
+                        return "An enemy is nearby: the low growl. " .. t.key("face_target") .. " turns you to face " ..
+                               "the nearest enemy, forward slash casts, period locks on, and Q blocks."
+                    end)
+                end
             end
             n.path, n.kind, n.sound, n.every, n.range, n.pitch = path_of(a), cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
             n.dist = d

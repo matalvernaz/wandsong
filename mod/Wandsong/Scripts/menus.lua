@@ -134,6 +134,13 @@ local REWRITES = {
     { "Use your camera Mouse to select an active target%.?", function()
         return "Turn toward an enemy to make it your target: " .. key_name("face_target") ..
                " turns you to the nearest one, and period locks on." end },
+    { "W A S D to Move%.?", function(t)
+        return t .. " With Wandsong, " .. key_name("autowalk") .. " walks you to your objective or follows " ..
+               "your guide, the arrow keys turn you, and " .. key_name("scan_next") .. " says what's around you." end },
+    { "Space to Jump / Climb%.?", function(t)
+        return t .. " A quick hop sound means something to jump over, and rising notes a ledge to climb." end },
+    { "to perform a Basic Cast[^,]*", function(t)
+        return t .. ". " .. key_name("face_target") .. " turns you to the nearest enemy first." end },
     { "A white outline indicates your active target.-precision%.", function(t)
         return t .. " With Wandsong: " .. key_name("face_target") ..
                " turns you to the nearest enemy, and period locks on to it." end },
@@ -1262,7 +1269,8 @@ local function contextual_help()
     last_help = os.clock()
     if not refresh() or #review_items == 0 then
         if require("world").in_game() then
-            speak("Exploring. " .. key_name("help") .. " twice for all keys.")
+            -- In the world the help key opens the guide to how the mod works.
+            open_screen(require("guide"), "use it")
             return
         end
         speak("Nothing readable on screen right now. Press " .. key_name("help") .. " twice for all keys.")

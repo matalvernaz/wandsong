@@ -12,3 +12,9 @@ third_party/
 native/build/
 symbols/
 sdk/
+
+# Written by the mod at run time
+tips_seen.txt
+scan_dump.txt
+world_active.flag
+keys.ini

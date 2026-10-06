@@ -285,6 +285,12 @@ local function cue_once(kind, x, y, z, sound, pitch, text, yaw, px, py)
     last_cue[kind] = { x = x, y = y, at = os.clock() }
     audio.play(sound, x, y, z, 0.8, pitch or 1.0)
     state.cue(text)
+    -- The first time each one comes up, say what it means.
+    require("tips").once("terrain_" .. kind, text .. ". " .. ({
+        hop = "That two-note hop means something low ahead you can jump over.",
+        climb = "Those rising notes mean a ledge you can climb.",
+        drop = "Those falling notes mean the ground drops away ahead.",
+    })[kind] .. " " .. require("tips").key("what_was_that") .. " names the last sounds.")
     local off = math.abs(norm(math.deg(math.atan(y - py, x - px)) - yaw))
     if off <= 15 then dispatch.later(250, function() audio.play_ui("tick", 0.35) end, "lined up tick") end
     diag.event("terrain", text)
