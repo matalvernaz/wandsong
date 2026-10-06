@@ -40,6 +40,7 @@ package.loaded["world"] = {
     in_game = function() return true end,
     pawn = function() return pawn end,
     position = function() return px, py, 0, yaw end,
+    nearest = function() return nil end,
 }
 
 require("path")
@@ -112,4 +113,21 @@ local jumps = 0
 for _, k in ipairs(vks) do if k.vk == 0x20 and k.down then jumps = jumps + 1 end end
 assert(jumps == 2, "two jumps when blocked, got " .. jumps)
 assert(said[#said]:find("stuck"), "gave up stuck: " .. tostring(said[#said]))
+
+-- No objective at all (start of the intro): autowalk follows the nearest person.
+for i = #route, 1, -1 do route[i] = nil end
+mgr.GetMissionDestinationLocation = function() return { X = 0, Y = 0, Z = 0 } end
+local w = package.loaded["world"]
+w.nearest = function() return { px + 1200, py, 0 } end
+local real_nearest = w.nearest
+run(1.2)   -- the route refresh picks up the change
+local n_played = #played
+run(1.5)
+for i = n_played + 1, #played do assert(played[i].n ~= "ping", "no beacon toward a passer-by") end
+w.nearest = function() return { gx, gy, 0 } end
+gx, gy = px + 1200, py
+walk()
+assert(said[#said]:find("nearest person"), "guide fallback announced: " .. tostring(said[#said]))
+run(4, true)
+assert(said[#said]:find("Caught up"), "reached the standing person: " .. tostring(said[#said]))
 print("path test passed")

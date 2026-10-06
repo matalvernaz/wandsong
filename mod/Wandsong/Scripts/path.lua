@@ -121,21 +121,32 @@ end
 -- True while the destination is someone walking ahead of you.
 local function target_moving() return os.clock() - dest_moved_at < MOVING_FOR end
 
+-- Parts of the intro have no objective at all, only someone leading the way: then autowalk
+-- (never the beacon, which would ping at any passer-by) follows the nearest person.
+local GUIDE_RANGE_CM = 3000
+local dest_is_guide = false
+
 local function refresh_route()
     local m = manager()
-    if not m then route, dest, trail = {}, nil, {}; return end
     diag.trace("path: read route")
     local pts = {}
-    pcall(function() pts = read_points(m.PathTS) end)
-    if #pts == 0 then pcall(function() pts = read_points(m.GuidePathPoints) end) end
+    if m then
+        pcall(function() pts = read_points(m.PathTS) end)
+        if #pts == 0 then pcall(function() pts = read_points(m.GuidePathPoints) end) end
+    end
     route = pts
+    dest_is_guide = false
     if #pts > 0 then
         dest, trail, dest_moved_at = pts[#pts], {}, -100
     else
         diag.trace("path: mission destination")
         local d
-        pcall(function() d = vec3(m:GetMissionDestinationLocation()) end)
-        if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then
+        if m then pcall(function() d = vec3(m:GetMissionDestinationLocation()) end) end
+        if not (d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1) then
+            d = world.nearest("person", GUIDE_RANGE_CM)
+            dest_is_guide = d ~= nil
+        end
+        if d then
             dest = d
             note_dest(d)
             -- The trail, ending exactly where the target is now.
@@ -148,7 +159,7 @@ local function refresh_route()
         end
     end
     diag.event("route", string.format("%d points%s, destination %s", #route,
-        target_moving() and " (following someone)" or "",
+        dest_is_guide and " (nearest person)" or (target_moving() and " (following someone)" or ""),
         dest and string.format("%.0f %.0f %.0f", dest[1] / 100, dest[2] / 100, dest[3] / 100) or "none"))
 end
 
@@ -190,7 +201,7 @@ local function dist2d(px, py, p) return math.sqrt((p[1] - px) ^ 2 + (p[2] - py) 
 local function beacon()
     if not audio or not world.in_game() then return end
     local px, py, pz, yaw = world.position()
-    if not dest then return end
+    if not dest or dest_is_guide then return end
     if target_moving() then
         -- Someone leading you: their own person sound says where they are once you're close;
         -- the beacon only calls you along when you fall behind. No arrival chimes.
@@ -333,15 +344,20 @@ local function toggle_walk()
     if not world.in_game() then speech.say("Autowalk works in the world, not in menus.") return end
     if not input then speech.say("Autowalk isn't available: its input module didn't load.") return end
     refresh_route()
-    if not dest then speech.say("There's no objective to walk to. Track a quest first.") return end
+    if not dest then
+        speech.say("There's no objective or person nearby to walk to. Track a quest first.")
+        return
+    end
     local px, py = world.position()
     walking, cancel, waiting = true, nil, false
-    following = target_moving()
+    following = target_moving() or dest_is_guide
     started_at, jumps = os.clock(), 0
     still_since, still_x, still_y = os.clock(), px, py
     local stop_key = keys.describe_combo(keys.combo_of("autowalk"))
     local metres = math.floor(dist2d(px, py, dest) / 100 + 0.5)
-    if following then
+    if dest_is_guide then
+        speech.say(string.format("No objective here. Following the nearest person, %d metres away. Press any movement key or %s to stop.", metres, stop_key))
+    elseif following then
         speech.say(string.format("Following, %d metres behind. Press any movement key or %s to stop.", metres, stop_key))
     else
         speech.say(string.format("Walking to the objective, %d metres. Press any movement key or %s to stop.", metres, stop_key))

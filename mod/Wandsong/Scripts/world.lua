@@ -405,6 +405,24 @@ end
 --- Last known player position (cm) and camera yaw (degrees), as the listener uses them.
 function M.position() return px, py, pz, yaw_now end
 
+--- Position of the nearest tracked thing of one kind ("person", ...) within max_cm, looked
+--- up fresh; nil if there's none.
+function M.nearest(kind, max_cm)
+    if not in_game or state.loading() then return nil end
+    local best
+    for _, n in pairs(nearby) do
+        if n.kind == kind and n.dist and n.dist <= max_cm and (not best or n.dist < best.dist) then best = n end
+    end
+    if not best then return nil end
+    local x, y, z
+    pcall(function()
+        local obj = resolve(best.path)
+        if obj then x, y, z = location(obj) end
+    end)
+    if not x then return nil end
+    return { x, y, z }
+end
+
 --- Play one of the world sounds centred, for the sound legend.
 function M.preview(name, pitch)
     if audio then return audio.play_ui(name, 0.8, pitch or 1.0) end
