@@ -154,4 +154,24 @@ face()
 assert(said[#said]:find("^Turning to the enemy"), "face announced: " .. tostring(said[#said]))
 run(2.5)
 assert(math.abs(((yaw - 135) + 180) % 360 - 180) < 6, "facing the enemy, yaw " .. yaw)
+
+-- A fixed objective with no route from the game: the navmesh path (round a corner) is used.
+face = nil
+w.nearest = function() return nil end
+for i = #route, 1, -1 do route[i] = nil end
+local ox, oy = px, py
+local navpts = { { X = ox, Y = oy, Z = 0 }, { X = ox + 1000, Y = oy, Z = 0 }, { X = ox + 1000, Y = oy + 1000, Z = 0 } }
+local navarr = setmetatable({ GetArrayNum = function() return #navpts end }, { __index = function(t, i) return navpts[i] end })
+local nav_calls = 0
+mgr.FindPathToLocationSynchronously = function() nav_calls = nav_calls + 1; return { PathPoints = navarr } end
+mgr.GetMissionDestinationLocation = function() return { X = ox + 1000, Y = oy + 1000, Z = 0 } end
+run(1.2)
+assert(nav_calls >= 1, "navmesh asked for a path")
+yaws = {}
+walk()
+run(4, true)
+local went_east_first = false
+for i = 1, math.min(5, #yaws) do if math.abs(yaws[i]) < 30 then went_east_first = true end end
+assert(went_east_first, "followed the nav path east first, not straight to the objective")
+assert(said[#said]:find("Arrived"), "arrived via the nav path: " .. tostring(said[#said]))
 print("path test passed")

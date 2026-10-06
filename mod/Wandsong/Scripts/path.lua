@@ -147,6 +147,59 @@ local source = nil              -- "route", "mission" or "guide": a change start
 
 local chosen = nil              -- { path, name }: a scanner entry the player asked to walk to
 
+-- --- The engine's own pathfinding, when the game gives no route ---------------------------
+-- Some objectives come with a destination but no route (PathTS empty). Then the engine's
+-- navigation system is asked for a path over its navmesh (FindPathToLocationSynchronously,
+-- a static function, called on its class default object) and the path's points become the
+-- route. Guarded by a crash fuse like the world layer's: a marker file exists only during the
+-- call, and if the game ever dies inside it, path-finding stays off from the next launch.
+local NAV_FUSE = (function()
+    local src = debug.getinfo(1, "S").source or ""
+    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
+    return dir .. "\\nav_active.flag"
+end)()
+local nav_ok = true
+do
+    local f = io.open(NAV_FUSE, "r")
+    if f then
+        f:close()
+        nav_ok = false
+        log("nav fuse: the game stopped during a path query last time; path-finding is off this session")
+        os.remove(NAV_FUSE)
+    end
+end
+local walking = false           -- autowalk running (declared early: the route refresh uses it)
+local nav_cache = nil           -- { x, y, z, at, pts }
+local nav_fails = 0
+
+local function nav_route(d, max_age)
+    if not nav_ok then return nil end
+    if nav_cache and os.clock() - nav_cache.at < max_age and dist3(nav_cache, { d[1], d[2], d[3] }) < 200 then
+        return nav_cache.pts
+    end
+    local pawn = world.pawn()
+    if not pawn then return nil end
+    local px, py, pz = world.position()
+    local pts = {}
+    diag.trace("path: nav query")
+    local f = io.open(NAV_FUSE, "w")
+    if f then f:write("path query running\n"); f:close() end
+    local ok, err = pcall(function()
+        local ns = StaticFindObject("/Script/NavigationSystem.Default__NavigationSystemV1")
+        local np = ns:FindPathToLocationSynchronously(pawn, { X = px, Y = py, Z = pz }, { X = d[1], Y = d[2], Z = d[3] }, pawn, nil)
+        if np then pts = read_points(np.PathPoints) end
+    end)
+    os.remove(NAV_FUSE)
+    nav_cache = { d[1], d[2], d[3], at = os.clock(), pts = pts }
+    if not ok or #pts < 2 then
+        nav_fails = nav_fails + 1
+        log("nav query: " .. (ok and (#pts .. " points") or ("failed: " .. tostring(err))))
+        return nil
+    end
+    log(string.format("nav query: %d points to %.0f %.0f %.0f", #pts, d[1] / 100, d[2] / 100, d[3] / 100))
+    return pts
+end
+
 local function refresh_route()
     if chosen then
         -- Walking to something picked in the scanner: it's the destination (followed like a
@@ -201,6 +254,10 @@ local function refresh_route()
             if #trail > 1 then
                 for i, p in ipairs(trail) do route[i] = p end
                 if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
+            elseif src == "mission" and not target_moving() then
+                -- A fixed objective with no route from the game: ask the navmesh.
+                local nav = nav_route(d, walking and 3 or 8)
+                if nav then for i, p in ipairs(nav) do route[i] = p end end
             end
         else
             dest, trail = nil, {}
@@ -277,7 +334,7 @@ end
 
 -- --- Autowalk -------------------------------------------------------------------------
 
-local walking = false
+walking = false
 local cancel = nil              -- reason, set from the key observer
 local key_down = false
 local started_at = 0
@@ -466,6 +523,7 @@ local function walk_tick()
         elseif t > BLOCKED_AFTER * (jumps + 1) and jumps < 2 then
             jumps = jumps + 1
             log("autowalk blocked: jump " .. jumps)
+            nav_cache = nil   -- and ask for a fresh path around whatever it is
             jump()
         end
     end
