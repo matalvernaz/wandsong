@@ -10,6 +10,10 @@ function M.loading() return os.clock() < M.loading_until end
 
 function M.mark_loading(seconds) M.loading_until = math.max(M.loading_until, os.clock() + (seconds or 10)) end
 
+-- Set when a modal tutorial (one that pauses play until you continue) has been read; the
+-- world gate then checks the game's tutorial system and stays closed while it's up.
+M.modal_since = nil
+
 -- Recent sound cues, so the player can ask what a sound was. Newest first.
 M.cues = {}
 function M.cue(text)

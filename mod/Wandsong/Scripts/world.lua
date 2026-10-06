@@ -53,7 +53,7 @@ local GATE_STABLE = 5
 -- Game objects are never kept between ticks: touching one the game has since destroyed
 -- crashes inside UE4SS, where nothing can catch it. We keep each object's path and look it
 -- up again (StaticFindObject is a quick hash lookup) every time it's needed.
-local ui_path, pawn_path, ctrl_path
+local ui_path, pawn_path, ctrl_path, ts_path
 local in_game, stable, world_key = false, 0, nil
 
 local function valid(o)
@@ -177,6 +177,23 @@ local function gate_check()
             close_gate(fn)
             return
         end
+    end
+    -- A modal tutorial is up (menus saw it): closed until the game's tutorial system no longer
+    -- shows a modal screen. Only property reads and the class name; nothing is called.
+    if state.modal_since then
+        diag.trace("gate: tutorial")
+        local ts = resolve(ts_path)
+        if not ts then ts = find_live("TutorialSystem"); ts_path = path_of(ts) end
+        local modal = false
+        pcall(function()
+            local scr = ts.CurrentTutorialScreen
+            if scr and scr:IsValid() then
+                local cn = scr:GetClass():GetFName():ToString()
+                modal = cn:find("Modal", 1, true) ~= nil and not cn:find("NonModal", 1, true)
+            end
+        end)
+        if modal and os.clock() - state.modal_since < 600 then close_gate("tutorial"); return end
+        state.modal_since = nil
     end
     diag.trace("gate: player")
     local pawn = resolve(pawn_path)

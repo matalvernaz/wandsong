@@ -146,6 +146,10 @@ local function on_read_menu(widget)
     pcall(function() key = widget:GetFullName() end)
     pcall(function() cls = widget:GetClass():GetFName():ToString() end)
 
+    -- A modal tutorial pauses play: the world layer stands down so the review keys can read
+    -- it and press its Continue (some must be held; the press key holds those).
+    if cls:find("Tutorial_Modal", 1, true) then state.modal_since = os.clock() end
+
     -- Loading screens tell the world layer to keep its hands off until the load is over.
     if is_loading_class(cls) then
         state.mark_loading(6)
