@@ -391,8 +391,8 @@ local function status()
         collectgarbage("collect")
         local reg = 0
         for _ in pairs(debug.getregistry()) do reg = reg + 1 end
-        diag.log(string.format("memory: %.0f KB before collect, %.0f KB live after (%.0f ms), registry %d; allocated KB by task: %s",
-            before, collectgarbage("count"), (os.clock() - t0) * 1000, reg, dispatch.alloc_report()))
+        diag.log(string.format("memory: %.0f KB before collect, %.0f KB live after (%.0f ms), registry %d, %d leaked references cleared; allocated KB by task: %s",
+            before, collectgarbage("count"), (os.clock() - t0) * 1000, reg, dispatch.swept(), dispatch.alloc_report()))
     end
 end
 

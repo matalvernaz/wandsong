@@ -78,6 +78,26 @@ local function call(fn, what)
     return ok and err
 end
 
+-- UE4SS 3.0.1 leaks a Lua registry reference for every out parameter of every game function
+-- called from Lua (LuaUObject.cpp: make_ref for the out table, never unref'd): one per wall
+-- ray, about 80 a second, each pinning its table. Its own long-lived references (callbacks,
+-- coroutines) are all functions and threads, and an out-parameter reference is only used
+-- during its call, so once a second every integer-keyed table in the registry beyond the
+-- reserved slots (1 main thread, 2 globals, 3 free list) is dropped. Entries are set to nil
+-- rather than put on the free list: a nil slot is always safe for luaL_ref to reuse, and
+-- nothing else's bookkeeping is touched.
+local next_sweep, swept = 0, 0
+local function sweep_registry()
+    local reg = debug.getregistry()
+    local dead = {}
+    for k, v in pairs(reg) do
+        if math.type(k) == "integer" and k > 3 and type(v) == "table" then dead[#dead + 1] = k end
+    end
+    for _, k in ipairs(dead) do reg[k] = nil end
+    swept = swept + #dead
+end
+function M.swept() local n = swept; swept = 0; return n end
+
 local function tick()
     -- Take what's queued now; anything queued while running waits for the next tick.
     local loading = state.loading()
@@ -100,6 +120,11 @@ local function tick()
             t.due = now + t.every / 1000
             timers[#timers + 1] = t
         end
+    end
+    if now >= next_sweep then
+        next_sweep = now + 1
+        local ok, err = pcall(sweep_registry)
+        if not ok then log("registry sweep failed: " .. tostring(err)) end
     end
 end
 

@@ -6,6 +6,8 @@
  *
  *   input_bridge.focused()         -> true when the foreground window is this process's
  *   input_bridge.key(vk, down)     -> true if sent (vk: Windows virtual-key code)
+ *   input_bridge.mouse_move(dx, dy) -> true if sent: a relative mouse move, which turns the
+ *                                     camera exactly as the player's own mouse does
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -39,9 +41,24 @@ static int l_key(lua_State *L) {
     return 1;
 }
 
+static int l_mouse_move(lua_State *L) {
+    LONG dx = (LONG)luaL_checkinteger(L, 1);
+    LONG dy = (LONG)luaL_optinteger(L, 2, 0);
+    if (!game_focused()) { lua_pushboolean(L, 0); return 1; }
+    INPUT in;
+    ZeroMemory(&in, sizeof(in));
+    in.type = INPUT_MOUSE;
+    in.mi.dx = dx;
+    in.mi.dy = dy;
+    in.mi.dwFlags = MOUSEEVENTF_MOVE;
+    lua_pushboolean(L, SendInput(1, &in, sizeof(in)) == 1);
+    return 1;
+}
+
 static const luaL_Reg funcs[] = {
     {"focused", l_focused},
     {"key", l_key},
+    {"mouse_move", l_mouse_move},
     {NULL, NULL},
 };
 

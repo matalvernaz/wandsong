@@ -12,6 +12,8 @@ ModifierKey = { CONTROL = 1, SHIFT = 2 }
 RegisterKeyBind = function() end
 
 local played, keys_sent, yaws, vks = {}, {}, {}, {}
+local px, py, yaw
+function yaw_turn(d) yaw = (yaw + d + 180) % 360 - 180; yaws[#yaws + 1] = yaw end
 package.loaded["audio_bridge"] = {
     init = function() return true end,
     play = function(n, x, y) played[#played + 1] = { n = n, x = x, y = y }; return true end,
@@ -21,6 +23,8 @@ package.loaded["audio_bridge"] = {
 package.loaded["input_bridge"] = {
     focused = function() return true end,
     key = function(vk, down) keys_sent[#keys_sent + 1] = down; vks[#vks + 1] = { vk = vk, down = down }; return true end,
+    -- The fake camera turns 0.04 degrees per mouse step (the mod starts guessing 0.15).
+    mouse_move = function(dx) yaw_turn(dx * 0.04); return true end,
 }
 
 -- Route: 20 m east, then 20 m north. The player walks along it as autowalk steers.
@@ -32,7 +36,7 @@ local mgr = { PathTS = arr, GuidePathPoints = arr,
 FindAllOf = function(c) return c == "BP_PathNavigationManager_C" and { mgr } or {} end
 StaticFindObject = function() return mgr end
 
-local px, py, yaw = 0, 0, 0
+px, py, yaw = 0, 0, 0
 local controller = { ControlRotation = { Pitch = 0, Yaw = 0 } }
 function controller:SetControlRotation(r) yaw = r.Yaw; yaws[#yaws + 1] = r.Yaw end
 local pawn = { Controller = controller }
@@ -49,12 +53,17 @@ local walk
 for _, a in pairs(actions) do if a.id == "autowalk" then walk = a.run end end
 assert(walk, "autowalk action registered")
 
+-- The character only walks while the forward key is held.
+function keys_held()
+    for i = #vks, 1, -1 do if vks[i].vk == 0x57 then return vks[i].down end end
+    return false
+end
 local function run(seconds, move, each)
     local last = 0
     local t0 = os.clock()
     while os.clock() - t0 < seconds do
         if each then each() end
-        if move and not (type(move) == "function" and not move()) then
+        if move and not (type(move) == "function" and not move()) and keys_held() then
             px = px + math.cos(math.rad(yaw)) * 40
             py = py + math.sin(math.rad(yaw)) * 40
         end

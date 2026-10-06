@@ -242,6 +242,7 @@ local jumps = 0                 -- jumps tried at the current blocked spot
 local ignore_space_until = 0    -- our own jump presses must not cancel the walk
 local crumb = nil               -- following: the trail point being walked to (a table in trail)
 local next_walk_log = 0
+local turning_since = nil       -- turning on the spot since
 
 -- Following: step through the guide's own footprints in order, so the walk takes exactly
 -- the way they went (round rocks and railings) rather than cutting toward the trail.
@@ -288,15 +289,45 @@ keys.observe(function(combo, key)
     cancel = "you moved"
 end)
 
+-- Turning: the game overwrites a control rotation set from outside (the camera never moved
+-- in testing), so the camera is turned the way the player turns it, with small relative
+-- mouse moves. How far one mouse step turns depends on the player's sensitivity, so it's
+-- learned as we go from the facing the game reports back.
+local deg_per_px = 0.15         -- first guess; refined from every turn
+local last_dx, last_yaw = 0, nil
+local function wrap(a) return (a + 180) % 360 - 180 end
+
+-- Returns how far off the wanted direction the camera still is, in degrees, or nil on failure.
 local function steer(yaw)
-    local pawn = world.pawn()
-    if not pawn then return false end
-    local ok = pcall(function()
-        local c = pawn.Controller
-        local r = c.ControlRotation
-        c:SetControlRotation({ Pitch = r.Pitch, Yaw = yaw, Roll = 0 })
-    end)
-    return ok
+    local _, _, _, now = world.position()
+    if not input.mouse_move then
+        -- An older input module: fall back to setting the rotation directly.
+        local pawn = world.pawn()
+        if not pawn then return nil end
+        local ok = pcall(function()
+            local c = pawn.Controller
+            local r = c.ControlRotation
+            c:SetControlRotation({ Pitch = r.Pitch, Yaw = yaw, Roll = 0 })
+        end)
+        return ok and 0 or nil
+    end
+    -- Learn from the last move: how far did the camera turn per mouse step?
+    if last_yaw and math.abs(last_dx) >= 8 then
+        local turned = wrap(now - last_yaw)
+        if math.abs(turned) > 0.3 and (turned > 0) == (last_dx > 0) then
+            local k = math.abs(turned / last_dx)
+            deg_per_px = math.max(0.005, math.min(2, deg_per_px * 0.6 + k * 0.4))
+        end
+    end
+    local err = wrap(yaw - now)
+    local dx = 0
+    if math.abs(err) > 2 then
+        dx = math.floor(err / deg_per_px * 0.6 + 0.5)
+        dx = math.max(-400, math.min(400, dx))
+        if dx ~= 0 then input.mouse_move(dx, 0) end
+    end
+    last_dx, last_yaw = dx, now
+    return err
 end
 
 -- A low wall, a fence or a gap in the way: tap the jump key, which also climbs and vaults.
@@ -320,7 +351,7 @@ local function walk_tick()
     local d = dist2d(px, py, dest)
     if target_moving() then
         following = true
-    elseif following and d < ARRIVE_CM then
+    elseif following and d < FOLLOW_RESUME_CM then
         stop("caught up")
         return
     elseif d < ARRIVE_CM then
@@ -344,14 +375,26 @@ local function walk_tick()
     if os.clock() >= next_walk_log then
         next_walk_log = os.clock() + 1
         local g = world.nearest("person", 3000)
-        log(string.format("walking: at %.1f %.1f %.1f, aim %.1f %.1f%s, destination %.1f %.1f%s",
-            px / 100, py / 100, pz / 100, p[1] / 100, p[2] / 100,
+        local _, _, _, facing = world.position()
+        log(string.format("walking: at %.1f %.1f %.1f facing %.0f (want %.0f, %.3f deg per mouse step), aim %.1f %.1f%s, destination %.1f %.1f%s",
+            px / 100, py / 100, pz / 100, facing, math.deg(math.atan(p[2] - py, p[1] - px)), deg_per_px,
+            p[1] / 100, p[2] / 100,
             ci and string.format(" (footprint %d of %d)", ci, #trail) or "",
             dest[1] / 100, dest[2] / 100,
             g and string.format(", nearest person %.1f %.1f", g[1] / 100, g[2] / 100) or ""))
     end
     local yaw = math.deg(math.atan(p[2] - py, p[1] - px))
-    if not steer(yaw) then stop("couldn't turn the camera"); return end
+    local off = steer(yaw)
+    if not off then stop("couldn't turn the camera"); return end
+    -- Facing well away from the way to go: turn on the spot first rather than walk off.
+    if math.abs(off) > 60 then
+        release()
+        still_since = os.clock()
+        turning_since = turning_since or os.clock()
+        if os.clock() - turning_since > 3 then stop("couldn't turn the camera") end
+        return
+    end
+    turning_since = nil
     if not key_down then
         key_down = input.key(VK_W, true)
         still_since, still_x, still_y = os.clock(), px, py
@@ -382,6 +425,7 @@ local function toggle_walk()
     end
     local px, py = world.position()
     walking, cancel, waiting, crumb = true, nil, false, nil
+    last_dx, last_yaw, turning_since = 0, nil, nil
     following = target_moving() or dest_is_guide
     started_at, jumps = os.clock(), 0
     still_since, still_x, still_y = os.clock(), px, py
