@@ -78,25 +78,36 @@ local function call(fn, what)
     return ok and err
 end
 
--- UE4SS 3.0.1 leaks a Lua registry reference for every out parameter of every game function
--- called from Lua (LuaUObject.cpp: make_ref for the out table, never unref'd): one per wall
--- ray, about 80 a second, each pinning its table. Its own long-lived references (callbacks,
--- coroutines) are all functions and threads, and an out-parameter reference is only used
--- during its call, so once a second every integer-keyed table in the registry beyond the
--- reserved slots (1 main thread, 2 globals, 3 free list) is dropped. Entries are set to nil
--- rather than put on the free list: a nil slot is always safe for luaL_ref to reuse, and
--- nothing else's bookkeeping is touched.
-local next_sweep, swept = 0, 0
-local function sweep_registry()
+-- UE4SS 3.0.1 leaks a Lua registry reference for every out parameter of a game function
+-- called from Lua (LuaUObject.cpp takes a ref to the out table and never releases it): one
+-- per wall ray, each pinning its table. call_out makes such a call and then frees exactly the
+-- slot luaL_ref (Lua 5.4.4) gave the out table: the free-list head (registry[3]) if there was
+-- one, else the next index past the registry's length. The slot is only cleared if it really
+-- holds that table, and it's set to nil rather than put back on the free list (luaL_ref
+-- always treats a nil slot as free), so nothing else's bookkeeping is touched. No walk over
+-- the registry: UE4SS's async thread writes to it, and a long walk could meet that.
+local out_freed, out_missed = 0, 0
+function M.call_out(fn, ...)
     local reg = debug.getregistry()
-    local dead = {}
-    for k, v in pairs(reg) do
-        if math.type(k) == "integer" and k > 3 and type(v) == "table" then dead[#dead + 1] = k end
+    local head, len = rawget(reg, 3), rawlen(reg)
+    local ok, a, b = pcall(fn)
+    local cands = { len + 1, len + 2, len + 3 }
+    if math.type(head) == "integer" and head > 3 then table.insert(cands, 1, head) end
+    for i = 1, select("#", ...) do
+        local out = select(i, ...)
+        local found = false
+        for _, k in ipairs(cands) do
+            if rawequal(rawget(reg, k), out) then rawset(reg, k, nil); found = true; break end
+        end
+        if found then out_freed = out_freed + 1 else out_missed = out_missed + 1 end
     end
-    for _, k in ipairs(dead) do reg[k] = nil end
-    swept = swept + #dead
+    return ok, a, b
 end
-function M.swept() local n = swept; swept = 0; return n end
+function M.out_stats()
+    local f, m = out_freed, out_missed
+    out_freed, out_missed = 0, 0
+    return f, m
+end
 
 local function tick()
     -- Take what's queued now; anything queued while running waits for the next tick.
@@ -121,20 +132,17 @@ local function tick()
             timers[#timers + 1] = t
         end
     end
-    if now >= next_sweep then
-        next_sweep = now + 1
-        local ok, err = pcall(sweep_registry)
-        if not ok then log("registry sweep failed: " .. tostring(err)) end
-    end
 end
 
+-- One function object for every ExecuteInGameThread call: UE4SS 3.0.1 keeps a registry
+-- reference to each callback it's given, so a fresh closure per call would pin a new closure
+-- 20 times a second; the same function pins nothing new.
+local function game_tick()
+    local ok, err = xpcall(tick, debug.traceback)
+    if not ok then log("tick failed: " .. tostring(err)) end
+end
 LoopAsync(TICK_MS, function()
-    if #queue > 0 or #timers > 0 then
-        ExecuteInGameThread(function()
-            local ok, err = xpcall(tick, debug.traceback)
-            if not ok then log("tick failed: " .. tostring(err)) end
-        end)
-    end
+    if #queue > 0 or #timers > 0 then ExecuteInGameThread(game_tick) end
     return false
 end)
 

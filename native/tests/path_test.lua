@@ -37,7 +37,7 @@ FindAllOf = function(c) return c == "BP_PathNavigationManager_C" and { mgr } or 
 StaticFindObject = function() return mgr end
 
 px, py, yaw = 0, 0, 0
-local controller = { ControlRotation = { Pitch = 0, Yaw = 0 } }
+local controller = { ControlRotation = setmetatable({ Pitch = 0 }, { __index = function(_, k) if k == "Yaw" then return yaw end end }) }
 function controller:SetControlRotation(r) yaw = r.Yaw; yaws[#yaws + 1] = r.Yaw end
 local pawn = { Controller = controller }
 package.loaded["world"] = {
@@ -45,6 +45,8 @@ package.loaded["world"] = {
     pawn = function() return pawn end,
     position = function() return px, py, 0, yaw end,
     nearest = function() return nil end,
+    locate = function() return nil end,
+    locate = function() return nil end,
 }
 
 require("path")
@@ -127,13 +129,14 @@ assert(said[#said]:find("stuck"), "gave up stuck: " .. tostring(said[#said]))
 for i = #route, 1, -1 do route[i] = nil end
 mgr.GetMissionDestinationLocation = function() return { X = 0, Y = 0, Z = 0 } end
 local w = package.loaded["world"]
-w.nearest = function() return { px + 1200, py, 0 } end
+w.nearest = function() return { px + 1200, py, 0 }, "/Game/Fake.Bystander" end
 local real_nearest = w.nearest
 run(1.2)   -- the route refresh picks up the change
 local n_played = #played
 run(1.5)
 for i = n_played + 1, #played do assert(played[i].n ~= "ping", "no beacon toward a passer-by") end
-w.nearest = function() return { gx, gy, 0 } end
+w.nearest = function() return { gx, gy, 0 }, "/Game/Fake.Guide" end
+w.locate = function(path) if path == "/Game/Fake.Guide" then return { gx, gy, 0 } end end
 gx, gy = px + 1200, py
 walk()
 assert(said[#said]:find("nearest person"), "guide fallback announced: " .. tostring(said[#said]))

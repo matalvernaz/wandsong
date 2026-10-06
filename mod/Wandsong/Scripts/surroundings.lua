@@ -61,10 +61,11 @@ end
 -- One collision ray. Returns the hit distance and point, or nil when nothing is in the way.
 local function ray(k, pawn, sx, sy, sz, ex, ey, ez)
     local hit = {}
-    local ok, blocked = pcall(function()
+    -- call_out frees the registry reference UE4SS leaks for the hit table.
+    local ok, blocked = dispatch.call_out(function()
         return k:LineTraceSingle(pawn, { X = sx, Y = sy, Z = sz }, { X = ex, Y = ey, Z = ez },
                                  0, false, {}, 0, hit, true, no_color, no_color, 0.0)
-    end)
+    end, hit)
     if not (ok and blocked) then return nil end
     local d, x, y, z
     pcall(function()

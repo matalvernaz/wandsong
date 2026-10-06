@@ -38,11 +38,14 @@ local WALK_AHEAD_CM = 300       -- autowalk steers toward a point this far along
 local ARRIVE_CM = 400
 local FOLLOW_WAIT_CM = 300      -- following someone: stop this close and wait for them
 local FOLLOW_RESUME_CM = 500    -- ...and walk on once they're this far ahead
+local BESIDE_CM = 170           -- someone standing still: walk right up to them (guides in the
+                                -- intro wait for you to come close before the story moves on)
 local PING_EVERY = 1.3
 local VK_W = 0x57               -- the game's default forward key
 local VK_SPACE = 0x20           -- jump / climb / vault
 local BLOCKED_AFTER = 1.0       -- holding forward this long without moving: try a jump
 local STUCK_AFTER = 4.0         -- ...and give up after this long
+local TURN_GIVE_UP = 5.0        -- turning on the spot this long without facing the way: give up
 
 local beacon_on = true
 local route = {}                -- { {x, y, z}, ... } latest route, player end first
@@ -59,6 +62,7 @@ local function path_of(o)
     return full and full:match("^%S+%s+(.+)$") or nil
 end
 
+local next_mgr_search = 0
 local function manager()
     local m
     if mgr_path then pcall(function() m = StaticFindObject(mgr_path) end) end
@@ -66,6 +70,11 @@ local function manager()
         local ok, v = pcall(function() return m:IsValid() end)
         if ok and v then return m end
     end
+    -- FindAllOf costs ~30 ms: when there's no manager (parts of the intro), look again only
+    -- every 10 seconds.
+    if os.clock() < next_mgr_search then return nil end
+    next_mgr_search = os.clock() + 10
+    m = nil
     pcall(function()
         for _, o in ipairs(FindAllOf("BP_PathNavigationManager_C") or {}) do
             local n = o:GetFullName()
@@ -98,10 +107,13 @@ end
 -- character leading you, and it moves. Its positions are kept as a trail, which is the way
 -- they actually walked, and the trail is followed like a route.
 local TRAIL_STEP_CM = 150       -- a new trail point every this far the target moves
-local TRAIL_JUMP_CM = 3000      -- a bigger jump is a new objective: start a fresh trail
+local TRAIL_JUMP_CM = 800       -- a bigger hop in one second is no one walking: a new
+                                -- objective, or the marker moving on; start a fresh trail
 local MOVING_FOR = 6            -- seconds since the target last moved that still count as moving
 local trail = {}
 local dest_moved_at = -100
+
+local function dist2d(px, py, p) return math.sqrt((p[1] - px) ^ 2 + (p[2] - py) ^ 2) end
 
 local function dist3(a, b)
     return math.sqrt((a[1] - b[1]) ^ 2 + (a[2] - b[2]) ^ 2 + (a[3] - b[3]) ^ 2)
@@ -121,10 +133,17 @@ end
 -- True while the destination is someone walking ahead of you.
 local function target_moving() return os.clock() - dest_moved_at < MOVING_FOR end
 
--- Parts of the intro have no objective at all, only someone leading the way: then autowalk
--- (never the beacon, which would ping at any passer-by) follows the nearest person.
-local GUIDE_RANGE_CM = 3000
 local dest_is_guide = false
+-- The destination is a person (walking now, or walked in the last half minute, or the
+-- nearest-person fallback) rather than a fixed objective.
+local function dest_is_person() return dest_is_guide or os.clock() - dest_moved_at < 30 end
+
+-- Parts of the intro have no objective at all, only someone leading the way: then autowalk
+-- (never the beacon, which would ping at any passer-by) follows the nearest person, and keeps
+-- following that same person rather than whoever happens to pass closer.
+local GUIDE_RANGE_CM = 3000
+local guide_path = nil
+local source = nil              -- "route", "mission" or "guide": a change starts a fresh trail
 
 local function refresh_route()
     local m = manager()
@@ -137,15 +156,27 @@ local function refresh_route()
     route = pts
     dest_is_guide = false
     if #pts > 0 then
-        dest, trail, dest_moved_at = pts[#pts], {}, -100
+        dest, trail, dest_moved_at, source, guide_path = pts[#pts], {}, -100, "route", nil
     else
         diag.trace("path: mission destination")
-        local d
+        local d, src
         if m then pcall(function() d = vec3(m:GetMissionDestinationLocation()) end) end
-        if not (d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1) then
-            d = world.nearest("person", GUIDE_RANGE_CM)
+        if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then
+            src, guide_path = "mission", nil
+        else
+            local px, py = world.position()
+            d = guide_path and world.locate(guide_path)
+            if d and dist2d(px, py, d) > GUIDE_RANGE_CM then d = nil end
+            if not d then
+                local p
+                d, p = world.nearest("person", GUIDE_RANGE_CM)
+                if p ~= guide_path then trail, dest_moved_at = {}, -100 end
+                guide_path = p
+            end
             dest_is_guide = d ~= nil
+            src = "guide"
         end
+        if src ~= source then trail, dest_moved_at, source = {}, -100, src end
         if d then
             dest = d
             note_dest(d)
@@ -194,8 +225,6 @@ local function point_along(px, py, pz, ahead)
     return route[#route]
 end
 
-local function dist2d(px, py, p) return math.sqrt((p[1] - px) ^ 2 + (p[2] - py) ^ 2) end
-
 -- --- Beacon ---------------------------------------------------------------------------
 
 local function beacon()
@@ -235,7 +264,6 @@ local walking = false
 local cancel = nil              -- reason, set from the key observer
 local key_down = false
 local started_at = 0
-local following = false         -- this walk is behind someone leading the way
 local waiting = false           -- following, close behind them: standing still
 local still_since, still_x, still_y = 0, 0, 0   -- where the player last made real progress
 local jumps = 0                 -- jumps tried at the current blocked spot
@@ -275,7 +303,7 @@ local function stop(why, sound)
     log("autowalk stopped: " .. why)
     if sound and audio then audio.play_ui(sound, 0.6) end
     local said = (why == "you've arrived" and "Arrived at the objective.")
-              or (why == "caught up" and "Caught up. They've stopped.")
+              or (why == "caught up" and "Caught up. You're beside them.")
               or ("Autowalk stopped" .. (why ~= "" and (", " .. why) or ""))
     speech.say(said)
 end
@@ -290,40 +318,46 @@ keys.observe(function(combo, key)
 end)
 
 -- Turning: the game overwrites a control rotation set from outside (the camera never moved
--- in testing), so the camera is turned the way the player turns it, with small relative
--- mouse moves. How far one mouse step turns depends on the player's sensitivity, so it's
--- learned as we go from the facing the game reports back.
-local deg_per_px = 0.15         -- first guess; refined from every turn
+-- in testing), so the camera is turned the way the player turns it, with relative mouse
+-- moves. How far one mouse step turns depends on the player's sensitivity, so it's learned
+-- from the facing read back after each move. Until the first move has been measured, moves
+-- are kept small so a high sensitivity can't fling the camera round.
+local deg_per_px, learned = 0.15, false
 local last_dx, last_yaw = 0, nil
 local function wrap(a) return (a + 180) % 360 - 180 end
 
+-- The camera's facing right now, read from the controller (a property read, no call).
+local function facing()
+    local yaw
+    pcall(function()
+        local pawn = world.pawn()
+        if pawn then yaw = pawn.Controller.ControlRotation.Yaw end
+    end)
+    return type(yaw) == "number" and yaw or nil
+end
+
 -- Returns how far off the wanted direction the camera still is, in degrees, or nil on failure.
 local function steer(yaw)
-    local _, _, _, now = world.position()
-    if not input.mouse_move then
-        -- An older input module: fall back to setting the rotation directly.
-        local pawn = world.pawn()
-        if not pawn then return nil end
-        local ok = pcall(function()
-            local c = pawn.Controller
-            local r = c.ControlRotation
-            c:SetControlRotation({ Pitch = r.Pitch, Yaw = yaw, Roll = 0 })
-        end)
-        return ok and 0 or nil
-    end
+    local now = facing()
+    if not now then return nil end
     -- Learn from the last move: how far did the camera turn per mouse step?
     if last_yaw and math.abs(last_dx) >= 8 then
         local turned = wrap(now - last_yaw)
         if math.abs(turned) > 0.3 and (turned > 0) == (last_dx > 0) then
             local k = math.abs(turned / last_dx)
-            deg_per_px = math.max(0.005, math.min(2, deg_per_px * 0.6 + k * 0.4))
+            deg_per_px = learned and math.max(0.002, math.min(2, deg_per_px * 0.6 + k * 0.4)) or k
+            learned = true
+        elseif math.abs(turned) <= 0.3 then
+            -- No visible turn: the steps are smaller than guessed; use bigger moves.
+            deg_per_px = math.max(0.002, deg_per_px * 0.5)
         end
     end
     local err = wrap(yaw - now)
     local dx = 0
     if math.abs(err) > 2 then
-        dx = math.floor(err / deg_per_px * 0.6 + 0.5)
-        dx = math.max(-400, math.min(400, dx))
+        local want = learned and err or math.max(-20, math.min(20, err))
+        dx = math.floor(want / deg_per_px * 0.6 + 0.5)
+        dx = math.max(-1500, math.min(1500, dx))
         if dx ~= 0 then input.mouse_move(dx, 0) end
     end
     last_dx, last_yaw = dx, now
@@ -349,17 +383,14 @@ local function walk_tick()
     local px, py, pz = world.position()
     if not dest then stop("no objective to walk to"); return end
     local d = dist2d(px, py, dest)
-    if target_moving() then
-        following = true
-    elseif following and d < FOLLOW_RESUME_CM then
-        stop("caught up")
-        return
-    elseif d < ARRIVE_CM then
-        stop("you've arrived")   -- the beacon plays the arrival chime
-        return
-    end
-    -- Following: wait close behind them, walk on when they've gone ahead.
-    if following then
+    local person, moving = dest_is_person(), target_moving()
+    if person and not moving then
+        -- They're standing still: walk right up beside them (in the intro the story waits
+        -- for you to come close).
+        waiting = false
+        if d < BESIDE_CM then stop("caught up"); return end
+    elseif person then
+        -- Walking: stay a few metres behind, wait when close, walk on when they're ahead.
         if waiting and d > FOLLOW_RESUME_CM then waiting = false
         elseif not waiting and d < FOLLOW_WAIT_CM then waiting = true end
         if waiting then
@@ -367,21 +398,24 @@ local function walk_tick()
             still_since, still_x, still_y, jumps = os.clock(), px, py, 0
             return
         end
+    elseif d < ARRIVE_CM then
+        stop("you've arrived")   -- the beacon plays the arrival chime
+        return
     end
     local p, ci
-    if following then p, ci = next_crumb(px, py) end
+    if person then p, ci = next_crumb(px, py) end
+    -- The last stretch to someone standing still goes straight to them.
+    if person and not moving and ci == #trail then p = dest end
     if not p then p = point_along(px, py, pz, WALK_AHEAD_CM) end
     if not p then stop("lost the path"); return end
     if os.clock() >= next_walk_log then
         next_walk_log = os.clock() + 1
-        local g = world.nearest("person", 3000)
-        local _, _, _, facing = world.position()
-        log(string.format("walking: at %.1f %.1f %.1f facing %.0f (want %.0f, %.3f deg per mouse step), aim %.1f %.1f%s, destination %.1f %.1f%s",
-            px / 100, py / 100, pz / 100, facing, math.deg(math.atan(p[2] - py, p[1] - px)), deg_per_px,
-            p[1] / 100, p[2] / 100,
+        log(string.format("walking: at %.1f %.1f %.1f facing %.0f (want %.0f, %.3f deg per mouse step%s), aim %.1f %.1f%s, %s %.1f %.1f, %.1f m",
+            px / 100, py / 100, pz / 100, facing() or 0, math.deg(math.atan(p[2] - py, p[1] - px)), deg_per_px,
+            learned and "" or ", guessed", p[1] / 100, p[2] / 100,
             ci and string.format(" (footprint %d of %d)", ci, #trail) or "",
-            dest[1] / 100, dest[2] / 100,
-            g and string.format(", nearest person %.1f %.1f", g[1] / 100, g[2] / 100) or ""))
+            person and (moving and "person walking at" or "person standing at") or "objective at",
+            dest[1] / 100, dest[2] / 100, d / 100))
     end
     local yaw = math.deg(math.atan(p[2] - py, p[1] - px))
     local off = steer(yaw)
@@ -391,7 +425,7 @@ local function walk_tick()
         release()
         still_since = os.clock()
         turning_since = turning_since or os.clock()
-        if os.clock() - turning_since > 3 then stop("couldn't turn the camera") end
+        if os.clock() - turning_since > TURN_GIVE_UP then stop("couldn't turn the camera") end
         return
     end
     turning_since = nil
@@ -417,7 +451,10 @@ end
 local function toggle_walk()
     if walking then stop("") return end
     if not world.in_game() then speech.say("Autowalk works in the world, not in menus.") return end
-    if not input then speech.say("Autowalk isn't available: its input module didn't load.") return end
+    if not (input and input.mouse_move) then
+        speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
+        return
+    end
     refresh_route()
     if not dest then
         speech.say("There's no objective or person nearby to walk to. Track a quest first.")
@@ -426,19 +463,18 @@ local function toggle_walk()
     local px, py = world.position()
     walking, cancel, waiting, crumb = true, nil, false, nil
     last_dx, last_yaw, turning_since = 0, nil, nil
-    following = target_moving() or dest_is_guide
     started_at, jumps = os.clock(), 0
     still_since, still_x, still_y = os.clock(), px, py
     local stop_key = keys.describe_combo(keys.combo_of("autowalk"))
     local metres = math.floor(dist2d(px, py, dest) / 100 + 0.5)
     if dest_is_guide then
         speech.say(string.format("No objective here. Following the nearest person, %d metres away. Press any movement key or %s to stop.", metres, stop_key))
-    elseif following then
+    elseif dest_is_person() then
         speech.say(string.format("Following, %d metres behind. Press any movement key or %s to stop.", metres, stop_key))
     else
         speech.say(string.format("Walking to the objective, %d metres. Press any movement key or %s to stop.", metres, stop_key))
     end
-    log("autowalk started, " .. #route .. " route points" .. (following and ", following" or ""))
+    log("autowalk started, " .. #route .. " route points" .. (dest_is_person() and ", following" or ""))
 end
 
 keys.action{

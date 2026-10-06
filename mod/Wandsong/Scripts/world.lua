@@ -384,15 +384,15 @@ local function status()
         px / 100, py / 100, pz / 100, yaw_now, total, table.concat(parts, " "),
         collectgarbage("count"), q, t))
     -- Every 30 s: a full collection, to tell garbage from memory that's really held, plus the
-    -- Lua registry size (UE4SS keeps references to game objects there) and who allocated what.
+    -- Lua registry's length (UE4SS leaks references there) and who allocated what.
     status_n = status_n + 1
     if status_n % 3 == 0 then
         local before, t0 = collectgarbage("count"), os.clock()
         collectgarbage("collect")
-        local reg = 0
-        for _ in pairs(debug.getregistry()) do reg = reg + 1 end
-        diag.log(string.format("memory: %.0f KB before collect, %.0f KB live after (%.0f ms), registry %d, %d leaked references cleared; allocated KB by task: %s",
-            before, collectgarbage("count"), (os.clock() - t0) * 1000, reg, dispatch.swept(), dispatch.alloc_report()))
+        local freed, missed = dispatch.out_stats()
+        diag.log(string.format("memory: %.0f KB before collect, %.0f KB live after (%.0f ms), registry length %d, out references freed %d, missed %d; allocated KB by task: %s",
+            before, collectgarbage("count"), (os.clock() - t0) * 1000, rawlen(debug.getregistry()),
+            freed, missed, dispatch.alloc_report()))
     end
 end
 
@@ -414,9 +414,17 @@ function M.nearest(kind, max_cm)
         if n.kind == kind and n.dist and n.dist <= max_cm and (not best or n.dist < best.dist) then best = n end
     end
     if not best then return nil end
+    local p = M.locate(best.path)
+    if not p then return nil end
+    return p, best.path
+end
+
+--- Current position of an actor by its path, or nil if it's gone. Nothing is kept.
+function M.locate(path)
+    if not in_game or state.loading() or not path then return nil end
     local x, y, z
     pcall(function()
-        local obj = resolve(best.path)
+        local obj = resolve(path)
         if obj then x, y, z = location(obj) end
     end)
     if not x then return nil end
