@@ -27,7 +27,7 @@ eq(table.concat(t.legend_order({ "gemma gemmerson", "Oct 3, 2026", "F", "Load Ga
 eq(table.concat(t.legend_order({ "Settings" }), ", "), "Settings")
 eq(t.rewrite("Mouse Look Around"), "Look around: left arrow and right arrow turn you, up arrow says which way you face.")
 eq(t.rewrite("Use your camera Mouse to select an active target., Continue: Space"),
-   "Turn toward an enemy to make it your target: comma turns you to the nearest one, and period locks on., Continue: Space")
+   "Turn toward an enemy to make it your target: comma turns you to the nearest one, and period locks on., To continue, hold space for a moment.")
 assert(t.rewrite("A white outline indicates your active target. Aim Mode reveals additional secondary targets, and a reticle for greater targeting precision."):find("With Wandsong: comma turns you"), "reticle note")
 eq(t.clean('Tap <img src="cbi_Keyboard_Slash"/> to cast'), "Tap forward slash to cast")
 eq(t.rewrite("The Minimap shows your surroundings, with you Map PlayerBlip in the middle. This is your current objective. Press and hold V to toggle quest objective details., Continue: Space"),
