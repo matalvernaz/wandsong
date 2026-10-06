@@ -9,9 +9,9 @@
 --   * Read subtitles aloud (off by default, as in other access mods): each line is queued for
 --     speech, never interrupting.
 --   * Audio description (on by default): descriptions.lua holds short descriptions of what's
---     on screen, each tied to the line it follows (matched loosely by text, since the
---     descriptions were written from a recording). One is spoken when that line has finished,
---     after its delay, in the silence before the next line.
+--     on screen, grouped by the line they follow (matched loosely by text, since they were
+--     written from a recording): { after = "line", items = { { delay = s, text = "..." }, ... } }.
+--     When that line finishes, each item is spoken at its delay, in the silence that follows.
 
 local dispatch = require("dispatch")
 local speech = require("speech")
@@ -49,12 +49,14 @@ end
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
 local used = {}   -- descriptions already spoken this session
 
+-- Short trigger lines ("Ah.", "Accio.") also need the line before them to match (prev).
+local last_text = ""
 local function match(text)
     local best, best_s = nil, 0.6
     for i, d in ipairs(DESCRIPTIONS) do
         if d.after and not used[i] then
             local s = similarity(text, d.after)
-            if s > best_s then best, best_s = i, s end
+            if s > best_s and (not d.prev or similarity(last_text, d.prev) >= 0.5) then best, best_s = i, s end
         end
     end
     return best, best_s
@@ -66,14 +68,25 @@ local function on_line(e)
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
     if read_aloud then speech.say(e.text, true) end
+    local prev_text = last_text
+    last_text = e.text
     if not describe or #DESCRIPTIONS == 0 then return end
+    last_text = prev_text
     local i, s = match(e.text)
+    last_text = e.text
     if not i then return end
     used[i] = true
     local d = DESCRIPTIONS[i]
-    local wait = (e.dur or 0) + (d.delay or 0.3)
-    log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, d.text))
-    dispatch.later(math.floor(wait * 1000), function() speech.say(d.text, true) end, "audio description", true)
+    local items = d.items or { { delay = d.delay, text = d.text } }
+    for _, it in ipairs(items) do
+        if it.text and it.text ~= "" then
+            local wait = (e.dur or 0) + (it.delay or 0.3)
+            log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, it.text))
+            dispatch.later(math.floor(wait * 1000), function()
+                if describe then speech.say(it.text, true) end
+            end, "audio description", true)
+        end
+    end
 end
 
 local function hook_ok(fn)
