@@ -71,6 +71,14 @@ function M.active() return walk ~= nil end
 -- Returns true once the player's controller holds the character again.
 local function hand_back(w, why)
     local pawn = resolve(w.pawn_path)
+    if not pawn then
+        -- The character itself is gone (defeated, or the world changing): the game decides what
+        -- holds the next one. Still remove the AI controller if it's there.
+        local ai = w.ai_path and resolve(w.ai_path)
+        if ai then step("destroy the AI controller", function() ai:K2_DestroyActor() end) end
+        log("handed back (" .. why .. "): the character is gone; nothing to hand back")
+        return true
+    end
     if pawn then step("stop the character", function() pawn.CharacterMovement:StopMovementImmediately() end) end
     local ai = w.ai_path and resolve(w.ai_path)
     if ai then

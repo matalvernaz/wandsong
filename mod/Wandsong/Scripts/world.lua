@@ -611,12 +611,21 @@ local function character_kind(a, cn, creature_cls, enemy_cls)
     return "person"
 end
 
+-- An empty result is believed only the second time in a row: one blip (UE4SS answers nil for
+-- "none" and for a failed query alike) must not wipe every person and enemy for a pass.
+local empty_streak = {}
 local function run_pass(cls, pass, priority, classify)
     local t0 = os.clock()
     diag.trace("scan " .. cls .. ": FindAllOf")
     local ok, actors = pcall(FindAllOf, cls)
     if not ok then return end
     actors = actors or {}
+    if #actors == 0 then
+        empty_streak[pass] = (empty_streak[pass] or 0) + 1
+        if empty_streak[pass] < 2 then return end
+    else
+        empty_streak[pass] = 0
+    end
     diag.trace("scan " .. cls .. ": reading " .. #actors)
     local seen, found = {}, 0
     for _, a in ipairs(actors) do

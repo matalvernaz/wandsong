@@ -107,6 +107,18 @@ assert(leftover == ai, "a load leaves the hand-back to the game")
 assert(not walk.start({ 3000, 0, 100 }, "the door"), "never hands back to an AI controller")
 pawn.Controller = pc
 
+-- The character dies mid-walk: nothing to hand back, and no "load your save" alarm.
+calls, px = {}, 0
+assert(walk.start({ 3000, 0, 100 }, "the door"))
+local saved_pawn = objects["/Game/Player"]
+objects["/Game/Player"] = nil
+local n_said = #said
+walk.stop("defeated"); t.run(1)
+objects["/Game/Player"] = saved_pawn
+assert(not walk.active() and order():find("destroy ai", 1, true), "the AI controller is still removed")
+for i = n_said + 1, #said do assert(not said[i]:find("load your last save", 1, true), "no false alarm when the character is gone") end
+pawn.Controller = pc
+
 -- No path: never leaves the AI holding the character.
 calls, move_result = {}, 0
 assert(not walk.start({ 3000, 0, 100 }, "the door"), "no path: not started")

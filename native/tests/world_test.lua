@@ -125,6 +125,12 @@ assert(kind=="enemy" and name=="Stone knight","a knight that comes alive becomes
 FindAllOf=function(cls) if cls=="NPC_Character" then return {knight,wolf} end return {} end
 t.run(1.5)
 assert(kind_of("/Game/Vault.Fighter")==nil and world.locate("/Game/Vault.Fighter")==nil,"a vanished fighter is dropped")
+-- One empty answer is a blip, not everyone leaving; two in a row is everyone leaving.
+FindAllOf=function() return nil end
+t.run(1.2)
+assert(kind_of("/Game/Forest.Wolf")=="beast","one empty pass keeps the characters")
+t.run(1.2)
+assert(kind_of("/Game/Forest.Wolf")==nil,"two empty passes in a row drop them")
 
 -- Generic interactables take the name the level designer gave them; pots go to Objects.
 local function cls_of(o, name) o.GetClass=function() return {GetFName=function() return {ToString=function() return name end} end} end end
