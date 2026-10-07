@@ -736,42 +736,37 @@ local last_quest_line = nil
 -- Logs each distinct failure once per session (the objective watch asks every 4 s).
 local logged_once = {}
 local function once_log(s) if not logged_once[s] then logged_once[s] = true; log(s) end end
+-- The quest as the HUD shows it: the tracked quest's title (the mission banner's
+-- StepTitleText, "The Path to Hogwarts") and its open tasks (each live
+-- UI_BP_MissionBannerCheckbox_C, "Follow Professor Fig"). Found with the developer console,
+-- Oct 6: the mission manager only hands back localisation keys ("INT_01_Intro_AncientPath").
+-- Widgets are looked up fresh each time and only read while the UI is settled.
+local function widget_text(w)
+    local ok, t = pcall(function() return w:GetText():ToString() end)
+    if ok and t then t = t:gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$") end
+    return ok and t ~= "" and t or nil
+end
+local function visible(w)
+    local ok, v = pcall(function() return w:IsValid() and w:IsVisible() end)
+    return ok and v == true
+end
 local function objective_text()
-    local mm
-    if mm_path then pcall(function() mm = StaticFindObject(mm_path) end) end
-    if not mm then
-        pcall(function()
-            for _, o in ipairs(FindAllOf("MissionManager") or {}) do
-                local n = o:GetFullName()
-                if not n:find("Default__", 1, true) then mm = o; mm_path = n:match("^%S+%s+(.+)$") end
-            end
-        end)
+    if world.ui_busy and world.ui_busy() then return nil end
+    local tasks, seen = {}, {}
+    for _, cb in ipairs(FindAllOf("UI_BP_MissionBannerCheckbox_C") or {}) do
+        if visible(cb) then
+            local t
+            pcall(function() t = widget_text(cb.CheckboxText) end)
+            if t and not seen[t] then seen[t] = true; tasks[#tasks + 1] = t end
+        end
     end
-    if not mm then once_log("quest text: no MissionManager found") return nil end
-    local out, arr = {}, nil
-    local ok = dispatch.call_out(function() arr = mm:GetMissionLogDataBP(out) end, out)
-    if not ok or not arr then
-        once_log("quest text: GetMissionLogDataBP " .. (ok and "returned nothing" or "failed") .. " on " .. tostring(mm_path))
-        return nil
+    local title
+    for _, b in ipairs(FindAllOf("UI_BP_MissionBanner_New_C") or {}) do
+        if not title and visible(b) then pcall(function() title = widget_text(b.StepTitleText) end) end
     end
-    local text
-    pcall(function()
-        local idx = out.OutTrackedMissionIndex
-        local n = arr:GetArrayNum()
-        log("mission log: " .. tostring(n) .. " quests, tracked index " .. tostring(idx))
-        if type(idx) ~= "number" or idx < 0 or idx >= n then return end
-        local m = arr[idx + 1]
-        local title = m.MissionTitle:ToString()
-        local task
-        m.TaskStates:ForEach(function(_, e)
-            local t = e:get()
-            if not task and not t.IsComplete then task = t.DisplayName:ToString() end
-        end)
-        local step = m.StepJournal:ToString()
-        log("tracked quest: " .. title .. " | task: " .. tostring(task) .. " | step: " .. step)
-        text = "Quest: " .. title .. ((task and task ~= "") and (". " .. task) or ((step ~= "") and (". " .. step) or ""))
-    end)
-    return text
+    if #tasks == 0 and not title then once_log("quest text: no visible quest on the HUD") return nil end
+    once_log("quest text from the HUD: " .. tostring(title) .. " | " .. table.concat(tasks, "; "))
+    return "Quest: " .. (title or "current quest") .. (#tasks > 0 and (". " .. table.concat(tasks, ". ")) or "")
 end
 
 -- New objectives are announced as the game changes them (checked every 4 s in the world; a
