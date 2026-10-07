@@ -59,6 +59,7 @@ local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or di
 -- up again (StaticFindObject is a quick hash lookup) every time it's needed.
 local ui_path, pawn_path, ctrl_path, ts_path
 local in_game, stable, world_key = false, 0, nil
+local ui_playing = false   -- world features switched off, but the UI says gameplay
 
 local function valid(o)
     if not o then return false end
@@ -148,39 +149,20 @@ local function close_gate(why)
     end
 end
 
-local function gate_check()
-    if not enabled then
-        if fuse_blown and not state.loading() then
-            fuse_blown = false
-            dispatch.later(8000, function()
-                speech.say("Wandsong world features are paused after the previous game stopped. Press " ..
-                           keys.describe_combo(keys.combo_of("world_resume")) .. " to resume them.", true)
-            end)
-        end
-        close_gate("switched off")
-        return
-    end
-    -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
-    if state.loading() then
-        if in_game or pawn_path then log("loading: pausing the world layer") end
-        close_gate("loading")
-        clear_world(true)
-        pawn_path, world_key = nil, nil
-        return
-    end
-    -- Ask the long-lived UI manager first; only look at the player once it says "playing".
+-- Why the UI isn't plain gameplay (a menu, pause, a load, a modal tutorial), or nil when it
+-- is. Asks only the long-lived UI manager and tutorial system, never the player or the world.
+local function ui_blocker()
     diag.trace("gate: UI manager")
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
-    if not ui_manager then close_gate("no UI manager"); return end
+    if not ui_manager then return "no UI manager" end
     state.paused = false
     for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
                           "GetInMenuTransition", "InPauseMode" }) do
         if call_bool(ui_manager, fn) == true then
             state.paused = fn == "InPauseMode" or fn == "GetInMenuTransition"
             if fn == "IsAsyncScreenLoadInProgress" then state.mark_loading(5) end
-            close_gate(fn)
-            return
+            return fn
         end
     end
     -- A modal tutorial is up (menus saw it): closed until the game's tutorial system no longer
@@ -197,9 +179,39 @@ local function gate_check()
                 modal = cn:find("Modal", 1, true) ~= nil and not cn:find("NonModal", 1, true)
             end
         end)
-        if modal and os.clock() - state.modal_since < 600 then close_gate("tutorial"); return end
+        if modal and os.clock() - state.modal_since < 600 then return "tutorial" end
         state.modal_since = nil
     end
+    return nil
+end
+
+local function gate_check()
+    if not enabled then
+        if fuse_blown and not state.loading() then
+            fuse_blown = false
+            dispatch.later(8000, function()
+                speech.say("Wandsong world features are paused after the previous game stopped. Press " ..
+                           keys.describe_combo(keys.combo_of("world_resume")) .. " to resume them.", true)
+            end)
+        end
+        close_gate("switched off")
+        -- Still tell gameplay from menus, so the arrow keys and screen review don't walk HUD
+        -- widgets mid-gameplay: with the fuse blown that crashed the game (Oct 6, up arrow).
+        ui_playing = not state.loading() and ui_blocker() == nil
+        return
+    end
+    ui_playing = false
+    -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
+    if state.loading() then
+        if in_game or pawn_path then log("loading: pausing the world layer") end
+        close_gate("loading")
+        clear_world(true)
+        pawn_path, world_key = nil, nil
+        return
+    end
+    -- Ask the long-lived UI manager first; only look at the player once it says "playing".
+    local why = ui_blocker()
+    if why then close_gate(why); return end
     diag.trace("gate: player")
     local pawn = resolve(pawn_path)
     if not pawn then pawn = find_live("Biped_Player"); pawn_path = path_of(pawn) end
@@ -242,6 +254,9 @@ local function gate_check()
 end
 
 function M.in_game() return in_game and enabled and not state.loading() end
+--- True in gameplay even while world features are switched off: menu code must not walk
+--- widget trees then. in_game() alone is false whenever the world layer is off.
+function M.gameplay() return M.in_game() or (not enabled and ui_playing and not state.loading()) end
 function M.sounds_enabled() return sounds_on and not speech.is_muted() end
 
 --- True while the game is swapping screens (opening or closing a menu, loading one): widget

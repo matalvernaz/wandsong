@@ -11,7 +11,7 @@ local pawn = {Controller={ControlRotation={Yaw=0}}}
 local target = {1500,0,0}
 local pressed, said, tones = {}, {}, 0
 local sound_on, muted = true, false
-package.loaded.world = { in_game=function() return not require("state").loading() end, position=function() return px,py,pz,yaw end,
+package.loaded.world = { in_game=function() return not require("state").loading() end, gameplay=function() return not require("state").loading() end, position=function() return px,py,pz,yaw end,
     pawn=function() return pawn end, locate=function() return target end, nearest=function() end,
     sounds_enabled=function() return sound_on end }
 package.loaded.audio_bridge={init=function() return true end, play=function() tones=tones+1 end,

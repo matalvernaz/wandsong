@@ -283,7 +283,7 @@ local function on_read_menu(widget)
             -- a long notice), read that too, after the summary.
             local wpath = path_of(widget)
             dispatch.later(400, function()
-                if state.loading() or require("world").in_game() or require("world").ui_busy() then return end
+                if state.loading() or require("world").gameplay() or require("world").ui_busy() then return end
                 local widget = resolve(wpath)
                 local ok_v, still = pcall(function() return widget and widget:IsInViewport() end)
                 if not (ok_v and still) then return end
@@ -368,7 +368,7 @@ dispatch.every(200, function()
     -- In gameplay there's no menu to follow, and the last screen read (a tutorial prompt,
     -- a closed menu) may already be freed: polling it crashed the game while standing still.
     -- Menus opened from gameplay announce themselves through ReadMenu.
-    if require("world").in_game() then current_screen = nil; return end
+    if require("world").gameplay() then current_screen = nil; return end
     if require("world").ui_busy() then return end
     local w = resolve(current_screen)
     if not w then current_screen = nil; return end
@@ -888,7 +888,7 @@ local function refresh()
     end
     -- No widget walking while loading or in gameplay: old screens may be freed, and menus
     -- opened from gameplay close the world gate and announce themselves through ReadMenu.
-    if state.loading() or require("world").in_game() then review_items = {}; return false end
+    if state.loading() or require("world").gameplay() then review_items = {}; return false end
     -- Nor while a screen is opening or closing: its widgets are being torn down.
     if require("world").ui_busy() then
         review_items = {}
@@ -923,7 +923,7 @@ end
 
 -- A review key pressed with nothing picked: in the world that's no menu at all.
 local function nothing_selected()
-    if require("world").in_game() then
+    if require("world").gameplay() then
         speak("No menu is open. " .. key_name("press") .. " presses menu buttons.")
     else
         speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first.")
@@ -1069,7 +1069,7 @@ local IE_PRESSED, IE_RELEASED = 0, 1
 
 -- Feed a menu action into the game's UMG input manager, exactly as if its key was pressed.
 local function send_action(action, hold)
-    if state.loading() or require("world").in_game() or require("world").ui_busy() then return false end
+    if state.loading() or require("world").gameplay() or require("world").ui_busy() then return false end
     local mgr = FindFirstOf("UMGInputManager")
     if not (mgr and mgr:IsValid()) then log("no UMGInputManager"); return false end
     local ok, err = pcall(function() mgr:OnInputAction(action, IE_PRESSED) end)
@@ -1097,7 +1097,7 @@ start_editing = function(item)
 end
 dispatch.every(150, function()
     if not editing then return end
-    if state.loading() or require("world").in_game() then editing = nil; return end
+    if state.loading() or require("world").gameplay() then editing = nil; return end
     if require("world").ui_busy() then return end
     local w = resolve(editing)
     if not w then editing = nil; return end
@@ -1317,7 +1317,7 @@ local function contextual_help()
     if os.clock() - last_help < 1.5 then last_help = -10; speak(full_help()); return end
     last_help = os.clock()
     if not refresh() or #review_items == 0 then
-        if require("world").in_game() then
+        if require("world").gameplay() then
             -- In the world the help key opens the guide to how the mod works.
             open_screen(require("guide"), "use it")
             return

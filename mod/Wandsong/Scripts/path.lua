@@ -784,7 +784,8 @@ end, "objective watch")
 local function where_am_i()
     -- In menus the up arrow moves up the list.
     if not world.in_game() then
-        if state.menu_step then state.menu_step(-1) else speech.say(world.not_ready_reason()) end
+        if state.menu_step and not world.gameplay() then state.menu_step(-1)
+        else speech.say(world.not_ready_reason()) end
         return
     end
     local now = facing()
@@ -846,7 +847,8 @@ keys.action{ id = "turn_right_big", name = "Turn right 90 degrees", group = "In 
 keys.action{ id = "turn_around", name = "Turn around (in menus: next item)", group = "In the world", default = "down_arrow",
              run = function()
                  if not world.in_game() then
-                     if state.menu_step then state.menu_step(1) end
+                     if state.menu_step and not world.gameplay() then state.menu_step(1)
+                     elseif world.gameplay() then speech.say(world.not_ready_reason()) end
                      return
                  end
                  turn_by(180)
