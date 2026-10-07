@@ -594,7 +594,7 @@ end
 
 --- Play one of the world sounds centred, for the sound legend.
 function M.preview(name, pitch)
-    if audio then return audio.play_ui(name, 0.8, pitch or 1.0) end
+    if audio and not speech.is_muted() then return audio.play_ui(name, 0.8, pitch or 1.0) end
     return false
 end
 

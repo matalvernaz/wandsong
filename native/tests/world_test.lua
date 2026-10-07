@@ -32,6 +32,10 @@ pawn.RootComponent.RelativeLocation.X=500
 t.run(0.3)
 assert(world.position()==500,"position keeps updating without sounds")
 t.action("world_toggle")(); assert(world.sounds_enabled())
+before=stopped
+require("speech").toggle_mute()
+assert(stopped>before and not world.sounds_enabled(),"global mute immediately stops active sounds")
+require("speech").toggle_mute()
 require("state").mark_loading(0.5)
 assert(not world.in_game(),"load closes public gate immediately")
 t.run(0.3)

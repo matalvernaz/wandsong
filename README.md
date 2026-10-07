@@ -10,7 +10,7 @@ supports it. Without a screen reader it uses a Windows voice.
 
 ## Status
 
-Early, but playable through the menus. Working now:
+An early mod, tested with Matt through menus and parts of the intro. Confirmed features:
 
 - Every menu screen is read when it opens, including key hints and descriptions.
 - A review cursor steps through all text, buttons, checkboxes and shortcuts on screen.
@@ -27,8 +27,10 @@ Early, but playable through the menus. Working now:
 - Contextual help, item descriptions, repeat last speech, copy screen text.
 - A surroundings scan in the world (enemies, creatures, chests, doors, people and more).
 
-Coming next: radar and wall sounds, 3D sound beacons on objects, area names, an object
-tracker, combat cues, subtitles and dialogue choices. See docs/ for the plans.
+World sounds, walls and openings, route beacons, guide following, turning keys and intro audio
+description are implemented. The latest reliability fixes and new interaction/health/combat
+feedback need testing in the game. See [the game-PC test guide](docs/TESTING_ON_GAME_PC.md)
+for the update command, expected behavior and logs. The complete game is not yet accessible.
 
 ## Requirements
 
@@ -39,7 +41,10 @@ tracker, combat cues, subtitles and dialogue choices. See docs/ for the plans.
 
 ## Installing
 
-1. Download the latest Wandsong zip from the Releases page.
+There is no published release yet. Build the installer as described below for a new install.
+For an existing development installation, use [the update script](docs/TESTING_ON_GAME_PC.md).
+
+1. Build `dist\Wandsong-<version>.zip` from source.
 2. Extract it anywhere, for example your Downloads folder.
 3. Quit Hogwarts Legacy if it is running.
 4. Open the extracted Wandsong folder and run WandsongSetup.exe.
@@ -69,8 +74,9 @@ Control apostrophe. Entries are grouped by situation (On foot, Spells and combat
 flying, ... then Wandsong's own groups) and read like "Basic cast: slash, left mouse
 button". Press the press key on one, then the key you want; clashes with other controls or
 your screen reader are named first. Game keys take effect the next time the game starts.
-The first entry applies a no-mouse preset for laptops: slash casts, right shift aims, 9 and
-0 change spell sets, delete skips cutscenes. Mouse buttons keep working.
+The no-mouse preset adds slash for casting, right shift for aiming, 9 and 0 for spell sets,
+and delete for skipping scenes where those actions have no keyboard binding. Existing custom
+keys stay in place. The menu lists the assigned keys. Mouse buttons keep working.
 
 Reading the screen:
 
@@ -93,12 +99,25 @@ Help and speech:
 
 - Semicolon: what this screen is, what's on it, and how to use the current item.
 - Semicolon twice quickly: all the keys.
-- Control semicolon: repeat the last thing said. Press again to go further back.
-- Control backslash: turn Wandsong speech off or on.
+- F6: the guide and current key assignments.
+- F7: repeat the last thing said. Press again to go further back.
+- F9: turn Wandsong speech and sounds off or on.
+- Shift+F6: audio description on or off. Shift+F7: read subtitles aloud on or off.
+- F8: mark a problem in the log.
 
 In the world:
 
-- F9: what's around you, with distance and clock direction.
+- Page Down/Up: next/previous nearby thing, with name, distance and direction.
+- Shift+Page Down/Up: change scanner category, including the quest objective.
+- Home: read the selected thing again and face it. Shift+Home: walk to it.
+- Shift+grave accent: autowalk to the objective or follow your guide; press again to stop.
+- Left/right arrows: turn 45 degrees. Shift+left/right: turn 90 degrees. Down: turn around.
+- Up arrow: facing direction, objective and tracked quest. Comma: face the nearest enemy.
+- Grave accent: explain recent sounds. F5: objective beacon on/off.
+- Shift+F5: world sounds on/off. Scanning and navigation stay available.
+- Shift+F8: resume world features if a previous crash paused them.
+- End: health and healing potions from the HUD (new, needs game verification).
+- Shift+End: optional teleport near the objective when stuck.
 
 The game's own keys still work as normal, for example Escape for the pause menu, Q and E to
 switch tabs, and F to continue.
@@ -133,6 +152,16 @@ Needs Visual Studio 2022 Build Tools (C++), CMake and the GitHub CLI. Run:
 
 This fetches Prism and UE4SS, builds the speech helper and the installer, and writes
 dist\Wandsong-<version>.zip.
+
+Run offline checks with Python 3 and CMake on Windows or Linux:
+
+```text
+python tools/run_tests.py
+```
+
+The runner builds the bundled Lua 5.4.4 host and gives each test separate temporary settings.
+It fails on Lua errors, failed assertions, syntax errors and dispatcher task errors. GitHub
+Actions runs these checks on Windows and Linux and builds the Windows input module.
 
 Layout:
 

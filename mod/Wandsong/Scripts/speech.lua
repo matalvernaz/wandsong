@@ -144,6 +144,8 @@ function M.toggle_mute()
     else
         emit("Wandsong speech off", true)
         muted = true
+        local audio = package.loaded.audio_bridge
+        if type(audio) == "table" and audio.stop_all then pcall(audio.stop_all) end
     end
     return muted
 end

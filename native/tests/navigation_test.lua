@@ -9,11 +9,13 @@ local nav, nav_count, available = nil, 0, true
 local mgr = { PathTS=arr(points), IsValid=function() return true end, GetFullName=function() return "Mgr /Game/Manager" end }
 local pawn = {Controller={ControlRotation={Yaw=0}}}
 local target = {1500,0,0}
-local pressed, said = {}, {}
+local pressed, said, tones = {}, {}, 0
+local sound_on, muted = true, false
 package.loaded.world = { in_game=function() return not require("state").loading() end, position=function() return px,py,pz,yaw end,
     pawn=function() return pawn end, locate=function() return target end, nearest=function() end,
-    sounds_enabled=function() return true end }
-package.loaded.audio_bridge={init=function() return true end, play=function() end, play_ui=function() end}
+    sounds_enabled=function() return sound_on end }
+package.loaded.audio_bridge={init=function() return true end, play=function() tones=tones+1 end,
+    play_ui=function() tones=tones+1 end}
 package.loaded.input_bridge={ focused=function() return true end, key=function(v,down) pressed[v]=down; return true end,
     mouse_move=function(dx) yaw=yaw+dx*0.15; pawn.Controller.ControlRotation.Yaw=yaw; return true end }
 package.loaded.surroundings={profile=function() return "test step" end}
@@ -24,6 +26,7 @@ StaticFindObject=function(p)
     return mgr
 end
 require("speech").say=function(s) said[#said+1]=s end
+require("speech").is_muted=function() return muted end
 local path=require("path")
 t.action("autowalk")(); t.run(0.3)
 for _,s in ipairs(said) do assert(not s:find("Arrived"), "no arrival on another floor") end
@@ -75,4 +78,18 @@ path.walk_to("/Game/Chest","Chest","chest")
 t.run(9, function() pz=pressed[74] and 100 or 0 end)
 assert(not pressed[73] and not pressed[74],"jumping in place cannot keep walking forever")
 assert(said[#said]:find("stuck"),"blocked walk explains why it stopped")
+
+-- A path which disappears during movement must not become a straight-line walk.
+pz=0
+path.walk_to("/Game/Chest","Chest","chest")
+nav=nil; t.run(1.5)
+assert(not pressed[73] and said[#said]:find("no path found"),"failed route refresh stops movement")
+
+sound_on=false
+local silent=tones
+t.action("turn_left")(); t.run(0.3)
+assert(tones==silent,"turn sound respects world mute")
+sound_on=true; muted=true
+t.action("turn_right")(); t.run(0.3)
+assert(tones==silent,"turn and beacon respect global mute")
 print("navigation test passed")

@@ -22,15 +22,15 @@ and free F keys, never Ctrl in the world.
 | Shift+Home: auto walk    | Shift+Home                   | done |
 | Shift+Q: walk to quest   | Shift+grave (Q is Protego)   | done |
 | Shift+F: follow someone  | autowalk follows a moving target; dedicated key to do (F is Interact) |
-| Shift+End: teleport      | Shift+End                    | to do |
-| End: subfilter           | End                          | to do |
+| Shift+End: teleport      | Shift+End                    | implemented, needs game check |
+| End: subfilter           | key to choose; End is gauges | to do |
 | U: interact from afar    | to choose (U is a game key)  | to do |
 | F4: route beacons        | F5 (beacon on/off)           | partly: passive beacon exists |
 | N / Shift+N: compass, where am I | Up arrow (facing, objective, quest) | partly |
 | Comma: face nearest enemy| Comma                        | done |
-| Period: gauges           | Period is Lock On here; gauges key to choose | to do |
+| Period: gauges           | End: health and healing potions | implemented, HUD events need game check |
 | F2 repeat                | F7                           | done |
-| F3 message history       | to choose (F8 is the mark key; maybe Shift+F7) | to do |
+| F3 message history       | to choose (Shift+F7 reads subtitles) | to do |
 | F6 key glossary          | F6 (guide + every key)       | done |
 | F1 menu shortcuts        | semicolon in menus           | done |
 
@@ -42,7 +42,7 @@ and free F keys, never Ctrl in the world.
    - to do: particulars per entry (locked, empty, already looted); doors that say where they
      lead; group identical things ("Pot, 5 nearby"); quest items / clues category (things the
      quest marks); destructibles category (things Confringo/Basic Cast breaks); corpses/loot;
-     End = subfilter (characters: all / quest givers / merchants); larger radius (100 m) with a
+     subfilter (characters: all / quest givers / merchants), key to choose; larger radius (100 m) with a
      setting; real names for everything (no technical names).
 2. Quests
    - done: up arrow reads the tracked quest and task (unconfirmed in game).
@@ -51,14 +51,17 @@ and free F keys, never Ctrl in the world.
      names the person when the target is a person.
 3. Getting around
    - done: autowalk on the game's route, trail following, walking up to a standing guide,
-     navmesh fallback (unconfirmed), jumping when blocked, stuck/arrived messages.
-   - to do: honest outcomes like other access mods ("arrived as close as possible, N metres left",
-     "no path to X", why it stopped: locked door, something to break); open unlocked doors on
-     the way; follow-a-character key; teleport safety net (Shift+End); route beacons mode
+     navmesh fallback (unconfirmed), held jumps when blocked, height-aware arrival, bounded
+     stuck detection and failed/partial scanner paths. Shift+End teleport is implemented.
+   - game verification first: broken steps after the first fight, stationary targets around
+     obstacles, another-floor targets, partial navmesh paths and remapped movement/jump.
+   - to do: specific obstacle reasons (locked door, something to break); open unlocked doors on
+     the way; follow-a-character key; route beacons mode
      (rhythm = distance, pitch = height, a sound at each turn and on arrival).
 4. Combat sounds (speak little, sound a lot)
-   - to do: incoming-attack alert and a lower "unblockable, dodge" alert; health below 50% and
-     20%; hit confirmation; enemy killed; enemy radar (4 nearest within 20 m, already partly in
+   - implemented, needs game verification: block/dodge warning pitches and health below 50%
+     and 20%, from HUD Blueprint events in feedback.lua. End reads health and potion count.
+   - to do: hit confirmation; enemy killed; enemy radar (4 nearest within 20 m, already partly in
      the world layer); lock-on announced with the enemy's name and a sheet key; cutscene start
      and end sounds. First look at the game's own accessibility audio-cue events (gamecues.lua).
 5. Information keys: gauges (health, ancient magic, potions), where am I (region, place,
@@ -72,12 +75,14 @@ and free F keys, never Ctrl in the world.
 8. Settings inside the game: a mod settings screen (sounds each with a switch and volume, the
    scanner radius, read subtitles aloud, announce shortcuts on menu open), an audio glossary
    (sounds.lua, already in).
-9. Subtitles read aloud (off by default) with the speaker's name; dialogue choices read.
+9. Subtitles read aloud (off by default), plus intro audio description. Replay/skip/load/pause
+   handling is implemented and tested offline. Later-game descriptions and dialogue choices
+   still need coverage.
 
 ## Deliberate differences from the reference mod
 
 - Directions are relative to the camera ("ahead left") rather than compass points, because
   turning is by the arrow keys in 45-degree steps here and relative words match that. Compass
   words are available from the up arrow. Revisit if Matt prefers compass.
-- No recorded audio description of cutscenes (out of scope for now).
+- Intro audio description uses screen-reader speech from a maintained description catalogue.
 - Passive world sounds (people, items, walls, ledges) stay on by default: Matt's zero-key rule.

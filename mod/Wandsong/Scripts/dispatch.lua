@@ -35,8 +35,8 @@ end
 
 local SLOW_MS = 40
 
--- during_load = true lets a task run while the game is loading. Everything else waits until
--- the load is over: touching game objects mid-load is what crashes.
+-- during_load = true lets a task run while the game is loading. Other work waits until the
+-- load ends, unless it came from a previous world generation, in which case it is discarded.
 function M.run(fn, label, during_load)
     queue[#queue + 1] = { fn = fn, label = label or where(fn), during_load = during_load, generation = state.generation }
 end

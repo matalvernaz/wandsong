@@ -403,7 +403,9 @@ local function stop(why, sound)
         speech.say("Arrived at " .. was.name .. ".")
         return
     end
-    if sound and audio then audio.play_ui(sound, 0.6) end
+    if sound and audio and not speech.is_muted() and (not world.sounds_enabled or world.sounds_enabled()) then
+        audio.play_ui(sound, 0.6)
+    end
     local said = (why == "you've arrived" and "Arrived at the objective.")
               or (why == "caught up" and "Caught up. You're beside them.")
               or ("Autowalk stopped" .. (why ~= "" and (", " .. why) or ""))
@@ -488,6 +490,7 @@ local function walk_tick()
     if not walking then return end
     if cancel then local c = cancel; cancel = nil; stop(c); return end
     if not world.in_game() then stop("the game paused or a scene started"); return end
+    if route_failure then stop(route_failure); return end
     if not input or not input.focused() then
         release()   -- alt-tabbed: let go, and pick up again when the game has focus
         return
@@ -582,6 +585,7 @@ local function walk_tick()
             log("autowalk blocked: jump " .. jumps)
             nav_cache = nil   -- and ask for a fresh path around whatever it is
             refresh_route()
+            if route_failure then stop(route_failure); return end
             jump()
         end
     end
@@ -687,7 +691,7 @@ local function turn_by(degrees)
     -- Snap to the nearest 45 degrees, so turns land on the compass points.
     local target = math.floor((now + degrees) / 45 + 0.5) * 45
     face = { yaw = wrap(target), until_t = os.clock() + 3, what = "a turn", say_after = true }
-    if audio then audio.play_ui("tick", 0.5) end
+    if audio and not speech.is_muted() and (not world.sounds_enabled or world.sounds_enabled()) then audio.play_ui("tick", 0.5) end
 end
 
 --- Turn to face a scanner entry (by object path). quiet: the caller has already spoken.
