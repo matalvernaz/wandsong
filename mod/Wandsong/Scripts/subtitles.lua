@@ -76,10 +76,16 @@ local function after_prev(prev)
     end
     return false
 end
-local function match(text)
+local function match(text, id)
+    -- Keyed to the game's own line ID (tools/ad/key_lines.py): exact, nothing else can fire it.
+    if id then
+        for i, d in ipairs(DESCRIPTIONS) do
+            if d.id == id then return i, 1 end
+        end
+    end
     local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
-        if d.after then
+        if d.after and not d.id then
             local s = similarity(text, d.after)
             if s > best_s and (not d.prev or after_prev(d.prev)) then best, best_s = i, s end
         end
@@ -129,7 +135,7 @@ local function on_line(e)
     -- Sound-only lines ("(snoring)") are neither triggers nor the line before one.
     if e.text:match("^%s*%(.*%)%s*$") then return end
     local i, s
-    if describe and #DESCRIPTIONS > 0 then i, s = match(e.text) end
+    if describe and #DESCRIPTIONS > 0 then i, s = match(e.text, e.id) end
     before[#before + 1] = e.text
     if #before > 3 then table.remove(before, 1) end
     if not i then return end

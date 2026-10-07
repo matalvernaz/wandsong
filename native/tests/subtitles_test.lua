@@ -1,7 +1,8 @@
 local t = dofile("native/tests/testlib.lua")
 local events={}
 RegisterCustomEvent=function(name,fn) events[name]=fn end
-package.loaded.descriptions={{after="We must hurry, the carriage is waiting.",delay=0.2,text="Fig climbs into the carriage."}}
+package.loaded.descriptions={{after="We must hurry, the carriage is waiting.",delay=0.2,text="Fig climbs into the carriage."},
+    {id="Fig_7",after="Wait.",delay=0.2,text="Keyed description."}}
 local said={}
 require("speech").say=function(s) said[#said+1]=s end
 local keys=require("keys")
@@ -41,5 +42,11 @@ assert(#said==before,"turning descriptions off cancels pending speech")
 assert(subs.similarity("Hello there, friend","hello there friend")==1)
 assert(subs.similarity("It can't be.","Just give me whatever it is you've found here and we can let bygones be bygones.")<0.7,"a short line is not contained in a long one")
 assert(subs.similarity("Take this. It's Wiggenweld Potion. That stuff'll right you in a second.","That stuff will write you in a second.")>0.7,"a transcript line inside the game's longer line still matches")
+t.action("audio_description")(); t.run(5)
+local n0=#said
+line("Wait.",0.3,"Other_1"); t.run(1)
+assert(#said==n0,"a keyed description ignores other lines with the same text")
+line("Something the transcript misheard.",0.3,"Fig_7"); t.run(1)
+assert(said[#said]=="Keyed description.","a keyed description fires on its line ID whatever the text")
 assert(not next(t.hooks),"custom subtitle event needs no repeated RegisterHook attempts")
 print("subtitles test passed")
