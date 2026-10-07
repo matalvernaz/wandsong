@@ -49,6 +49,46 @@ hook("ShowButtonInfo", function(ctx, shown)
     local path = context_path(ctx, "UI_BP_InteractBlip")
     if path then record("prompt", { path = path, shown = value(shown) == true }) end
 end)
+-- The HUD's notifications: items picked up, money, special unlocks, ticker messages
+-- (Phoenix.hpp PhoenixHUDWidget On... events; UI_BP_NotificationPanel AddMoneyNotification).
+-- Only strings and numbers are copied out of the hook.
+local function text(p)
+    local ok, v = pcall(function() return p:get():ToString() end)
+    if ok and type(v) == "string" then return (v:gsub("<[^>]*>", ""):match("^%s*(.-)%s*$")) end
+end
+hook("OnAddPickupNotification", function(_, name, _, count, special)
+    record("notice", { kind = "item", name = text(name), count = value(count), special = value(special) == true })
+end)
+hook("OnAddSpecialItemNotification", function(_, name, _, count, unlock)
+    record("notice", { kind = "special", name = text(name), count = value(count), unlock = text(unlock) })
+end)
+hook("OnAddFastTravelUnlockedNotification", function(_, name)
+    record("notice", { kind = "travel", name = text(name) })
+end)
+hook("OnAddCompanionLevelUpNotification", function(_, name)
+    record("notice", { kind = "companion", name = text(name) })
+end)
+hook("OnAddTextTickerNotification", function(_, msg)
+    record("notice", { kind = "ticker", name = text(msg) })
+end)
+hook("AddMoneyNotification", function(ctx, data)
+    if not context_path(ctx, "NotificationPanel") then return end
+    local ok, n = pcall(function() return data:get().ItemCount end)
+    record("notice", { kind = "money", count = ok and n or nil })
+end)
+
+-- What a notification says aloud, or nil for one with nothing readable.
+function M.notice_text(d)
+    local n = d.name and d.name ~= "" and d.name or nil
+    local many = type(d.count) == "number" and d.count > 1
+    if d.kind == "item" and n then return "Got " .. (many and (d.count .. " ") or "") .. n
+    elseif d.kind == "special" and n then return "New item: " .. n .. ((d.unlock and d.unlock ~= "") and (". " .. d.unlock) or "")
+    elseif d.kind == "travel" and n then return "Floo Flame discovered: " .. n
+    elseif d.kind == "companion" and n then return n .. " grew stronger"
+    elseif d.kind == "ticker" and n then return n
+    elseif d.kind == "money" and type(d.count) == "number" and d.count > 0 then return "Got " .. d.count .. " Galleons"
+    end
+end
 
 local function health_update(pct)
     if type(pct) ~= "number" or pct ~= pct or pct < 0 or pct > 1 then return end
@@ -108,6 +148,9 @@ dispatch.every(100, function()
                 elseif active_prompt == e.data.path then
                     prompt, last_prompt, active_prompt = nil, nil, nil
                 end
+            elseif e.kind == "notice" then
+                local said = M.notice_text(e.data)
+                if said then speech.say(said, true); print("[Wandsong feedback] " .. said .. "\n") end
             elseif e.kind == "attack" and world.in_game() and not speech.is_muted()
                    and world.sounds_enabled() and os.clock() - e.at < 0.75 and os.clock() - last_attack > 0.2 then
                 local danger = e.data.unblockable == true

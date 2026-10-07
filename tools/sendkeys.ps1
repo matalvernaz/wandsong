@@ -44,7 +44,7 @@ function Focus-Game {
         if ([HaKeys]::GetForegroundWindow() -eq $hwnd) {
             # The Alt tap that steals focus can leave Alt looking held, and the game ignores
             # input for a moment after regaining focus: release Alt and let it settle.
-            if ($i -gt 0) { [HaKeys]::Key(0x12, $false, $true); Start-Sleep -Milliseconds 800 }
+            if ($i -gt 0) { [HaKeys]::Key(0x12, $false, $true); Start-Sleep -Milliseconds 1500 }
             return $true
         }
         [HaKeys]::keybd_event(0x12,0,0,[UIntPtr]::Zero)
