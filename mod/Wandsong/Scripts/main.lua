@@ -1,4 +1,4 @@
-﻿-- Wandsong: blind accessibility for Hogwarts Legacy.
+-- Wandsong: blind accessibility for Hogwarts Legacy.
 -- Speech goes through the player's screen reader (via wandsong_helper.exe and Prism).
 
 local diag = require("diag")   -- first: it captures every later log line
