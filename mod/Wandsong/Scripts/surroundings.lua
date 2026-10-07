@@ -398,5 +398,29 @@ dispatch.every(WALL_MS, function()
 end, "walls")
 dispatch.every(10000, function() if world.in_game() then status() end end, "surroundings status")
 
+--- What's in front of the player, for the log when autowalk is stuck: horizontal rays 1.5 m
+--- out at heights from knee to above head (distance to a hit, or "-"), and the floor height
+--- just beyond. Same single game call as the walls; nothing is kept.
+function M.profile(yaw)
+    local pawn = world.pawn()
+    local k = kismet()
+    if not (pawn and k) then return "no profile" end
+    local px, py, pz = world.position()
+    local half = 90
+    pcall(function() half = pawn.RootComponent.CapsuleHalfHeight end)
+    local feet = pz - half
+    local a = math.rad(yaw)
+    local cx, cy = math.cos(a), math.sin(a)
+    local parts = {}
+    for _, h in ipairs({ 20, 50, 80, 110, 150, 200, 250, 300 }) do
+        local d = ray(k, pawn, px, py, feet + h, px + cx * 150, py + cy * 150, feet + h)
+        parts[#parts + 1] = string.format("%d cm: %s", h, d and string.format("%.0f", d) or "-")
+    end
+    local fx, fy = px + cx * 180, py + cy * 180
+    local d, _, _, hz = ray(k, pawn, fx, fy, feet + 400, fx, fy, feet - 400)
+    parts[#parts + 1] = "floor beyond: " .. (d and string.format("%+.0f cm", hz - feet) or "none")
+    return table.concat(parts, ", ")
+end
+
 log("loaded" .. (audio and "" or " (no audio)"))
 return M

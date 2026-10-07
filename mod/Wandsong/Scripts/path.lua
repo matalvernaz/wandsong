@@ -520,7 +520,20 @@ local function walk_tick()
         still_since, still_x, still_y, jumps = os.clock(), px, py, 0
     else
         local t = os.clock() - still_since
-        if t > STUCK_AFTER then stop("stuck", "step_blocked")
+        if t > STUCK_AFTER then
+            -- Record what's in the way and where the route goes, to work out from the log what a
+            -- sighted player would do here.
+            pcall(function()
+                local nxt = {}
+                for _, q in ipairs(route) do
+                    if #nxt < 4 and dist2d(px, py, q) > 50 then
+                        nxt[#nxt + 1] = string.format("(%.1f m away, %+.1f m up)", dist2d(px, py, q) / 100, (q[3] - pz) / 100)
+                    end
+                end
+                log(string.format("stuck at %.1f %.1f %.1f heading %.0f; ahead: %s; route: %s", px / 100, py / 100,
+                    pz / 100, yaw, require("surroundings").profile(yaw), table.concat(nxt, " ")))
+            end)
+            stop("stuck", "step_blocked")
         elseif t > BLOCKED_AFTER * (jumps + 1) and jumps < 2 then
             jumps = jumps + 1
             log("autowalk blocked: jump " .. jumps)
