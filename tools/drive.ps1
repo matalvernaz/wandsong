@@ -1,6 +1,8 @@
 # Dev helper: press keys in the game, then print what the mod said and which screens opened.
 # Usage: drive.ps1 -Keys "f","rbr" [-Wait 2500] [-Lines 8]
 param([string[]]$Keys, [int]$Wait = 2500, [int]$Lines = 8)
+# powershell -File passes "a,b" as one string: split it.
+$Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
 $log = "C:\Program Files (x86)\Steam\steamapps\common\Hogwarts Legacy\Phoenix\Binaries\Win64\UE4SS.log"
 $before = (Get-Content $log -Encoding UTF8).Count

@@ -1,9 +1,11 @@
-﻿# Dev helper: focus Hogwarts Legacy and send keys as real input events.
+# Dev helper: focus Hogwarts Legacy and send keys as real input events.
 # Usage: sendkeys.ps1 -Keys "ctrl+rbr","bslash" [-DelayMs 700]
 # Key names: num0-num9, space, esc, enter, up/down/left/right, f, r, lbr ([), rbr (]),
 # bslash (\), quote ('), semi (;), minus, equals, pageup/pagedown/home/end, grave (`), comma, period,
 # slash, f1-f12; prefix ctrl+ or shift+. Suffix @ms holds the key that long ("space@2500").
 param([string[]]$Keys, [int]$DelayMs = 700)
+# powershell -File passes "a,b" as one string: split it.
+$Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -39,7 +41,12 @@ $hwnd = $p.MainWindowHandle
 # game and confirm it before every key.
 function Focus-Game {
     for ($i = 0; $i -lt 20; $i++) {
-        if ([HaKeys]::GetForegroundWindow() -eq $hwnd) { return $true }
+        if ([HaKeys]::GetForegroundWindow() -eq $hwnd) {
+            # The Alt tap that steals focus can leave Alt looking held, and the game ignores
+            # input for a moment after regaining focus: release Alt and let it settle.
+            if ($i -gt 0) { [HaKeys]::Key(0x12, $false, $true); Start-Sleep -Milliseconds 800 }
+            return $true
+        }
         [HaKeys]::keybd_event(0x12,0,0,[UIntPtr]::Zero)
         [void][HaKeys]::SetForegroundWindow($hwnd)
         [HaKeys]::keybd_event(0x12,0,2,[UIntPtr]::Zero)
