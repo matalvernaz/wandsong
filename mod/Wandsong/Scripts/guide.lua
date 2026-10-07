@@ -34,7 +34,8 @@ local function sections()
           "leading you when there is one; any movement key stops it. W A S D move you yourself. " ..
           k("turn_left") .. " and " .. k("turn_right") .. " turn you 45 degrees, with shift for 90, and " ..
           k("turn_around") .. " turns you round. " .. k("where_am_i") .. " says which way you face and where " ..
-          "the objective is. " .. k("beacon_toggle") .. " turns the beacon off or on." },
+          "the objective is. " .. k("beacon_toggle") .. " turns the beacon off or on. Stuck? " ..
+          k("teleport") .. " moves you to the route just short of the objective." },
         { "Spells and fighting",
           k("face_target") .. " turns you to the nearest enemy. Forward slash casts your basic spell at " ..
           "whatever is in front of you, period locks on to a target, Q blocks, and left control dodges. " ..

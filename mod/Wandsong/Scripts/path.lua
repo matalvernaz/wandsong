@@ -730,6 +730,42 @@ local function where_am_i()
     speech.say(table.concat(t, ". "))
 end
 
+-- Teleport, a safety net from other access mods (Shift+End): when the way to the objective can't be
+-- walked (a ledge that won't climb, a missing step), put the player on the route a few metres
+-- short of the objective. K2_TeleportTo is the engine's own teleport: it checks the spot is
+-- free and needs no out parameter. A deliberate, player-asked call on the player's character.
+local function teleport()
+    if not world.in_game() then speech.say(world.not_ready_reason()) return end
+    refresh_route()
+    if not dest or dest_is_guide then speech.say("There's no objective to go to.") return end
+    if walking then stop("") end
+    local px, py = world.position()
+    -- A route point about 3 m short of the objective, on walkable ground; else the objective.
+    local target = dest
+    if #route > 1 then
+        for i = #route, 1, -1 do
+            if dist2d(route[i][1], route[i][2], dest) >= 300 then target = route[i]; break end
+        end
+    end
+    local pawn = world.pawn()
+    if not pawn then return end
+    local ok, moved = pcall(function()
+        local yaw = pawn.Controller.ControlRotation.Yaw
+        return pawn:K2_TeleportTo({ X = target[1], Y = target[2], Z = target[3] + 100 },
+                                  { Pitch = 0, Yaw = yaw, Roll = 0 })
+    end)
+    log(string.format("teleport to %.0f %.0f %.0f: %s", target[1] / 100, target[2] / 100, target[3] / 100,
+                      ok and tostring(moved) or "failed"))
+    if ok and moved then
+        speech.say(string.format("Moved you %d metres, near the objective.",
+                                 math.floor(dist2d(px, py, target) / 100 + 0.5)))
+    else
+        speech.say("Couldn't move you there.")
+    end
+end
+keys.action{ id = "teleport", name = "Teleport near the objective, when you're stuck", group = "In the world",
+             default = "shift+end", run = teleport }
+
 keys.action{ id = "turn_left", name = "Turn left 45 degrees", group = "In the world", default = "left_arrow",
              run = function() turn_by(-45) end }
 keys.action{ id = "turn_right", name = "Turn right 45 degrees", group = "In the world", default = "right_arrow",

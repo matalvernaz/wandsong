@@ -82,7 +82,8 @@ local function on_line(e)
     last_id, last_at = e.id, os.clock()
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
-    if read_aloud then speech.say(e.text:gsub("<[^>]*>", ""), true) end
+    -- Read aloud, but not sound-only lines like "(effort sound)" or "(pained cry)".
+    if read_aloud and not plain(e.text):match("^%s*%(.*%)%s*$") then speech.say((e.text:gsub("<[^>]*>", "")), true) end
     -- The speaker's on-screen name names them in the scanner ("Professor Fig", not "Student").
     local shown = e.text:match("^%s*<Name_Text>(.-):?</>")
     if shown and e.speaker and e.voice ~= "Player" then
