@@ -156,6 +156,9 @@ local REWRITES = {
                " turns you to the nearest enemy, and " .. require("bindings").spoken("LockOn", "Period") .. " locks on to it." end },
 }
 local function rewrite(text)
+    -- A spell's icon reads as its name, right before the name itself: "cast Revelio Revelio",
+    -- "extinguish Lumos Lumos".
+    text = text:gsub("(%f[%a]%u%a+) %1%f[%A]", "%1")
     for _, r in ipairs(REWRITES) do
         local a, b = text:find(r[1])
         if a then text = text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end

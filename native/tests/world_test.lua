@@ -16,7 +16,7 @@ FindFirstOf=function(cls) if cls=="UIManager" then return ui elseif cls=="Biped_
 FindAllOf=function() return {} end
 StaticFindObject=function(path) return objects[path] end
 local stopped=0
-package.loaded.audio_bridge={init=function() return true end,play_ui=function() end,listener=function() end,
+package.loaded.audio_bridge={init=function() return true end,play_ui=function() end,play=function() end,listener=function() end,
     stop_all=function() stopped=stopped+1 end}
 package.loaded.tips={once=function() end}
 package.loaded.guide={welcome=function() return "Welcome" end}
@@ -70,4 +70,18 @@ assert(not world.in_game() and require("state").generation==generation+1,
     "an unexpected player replacement also settles before scanning")
 t.run(6)
 assert(world.in_game(),"replacement player settles")
+-- Puzzle knights are statues until they come alive: no growl, no enemy tip, their own name.
+local knight=obj("BP_HogwartsProtector_C","/Game/Vault.Knight",{bHasBeenReleased=false,
+    RootComponent={RelativeLocation={X=600,Y=230,Z=340}}})
+knight.GetClass=function() return {GetFName=function() return {ToString=function() return "BP_HogwartsProtector_C" end} end} end
+FindAllOf=function(cls) if cls=="Enemy_Character" then return {knight} end return {} end
+local function kind_of(path) for _,e in ipairs(world.entries()) do if e.path==path then return e.kind,e.name end end end
+t.run(8)
+local kind,name=kind_of("/Game/Vault.Knight")
+assert(kind=="statue" and name=="Knight statue","a kneeling puzzle knight is a statue, not an enemy")
+assert(world.resolve("/Game/Vault.Knight")==knight,"statues are looked up fresh by path")
+knight.bHasBeenReleased=true
+t.run(8)
+kind,name=kind_of("/Game/Vault.Knight")
+assert(kind=="enemy" and name=="Stone knight","a knight that comes alive becomes an enemy")
 print("world test passed")

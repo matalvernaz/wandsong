@@ -46,6 +46,11 @@ local CATEGORIES = {
 }
 -- Class-name fragments that mean "a person, not a foe" even under Enemy_Character.
 local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merchant" }
+-- Puzzle knights (the Gringotts vault) are enemies too, but until one comes alive it's a
+-- statue to work out, not something to fight: no growl, no enemy tip, its own scanner name.
+-- statues.lua plays the puzzle.
+local STATUE = { kind = "statue", sound = nil, every = 99, range = 2500, classes = {} }
+local STATUE_CLASS = "HogwartsProtector"
 
 local SCAN_EVERY_MS = 600      -- one class query per this interval (~30 ms each)
 local LISTENER_MS = 100
@@ -396,7 +401,7 @@ end
 -- ("BP_OL_Chest_C" -> "Chest"), else the category's noun. Worked out once per actor, from
 -- property reads only, and logged with its source so missing names can be fixed.
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
-                    collect = "Collectible", door = "Door", usable = "Something to use" }
+                    collect = "Collectible", door = "Door", usable = "Something to use", statue = "Statue" }
 local NOISE_WORDS = { Default = true, Base = true, Character = true, Actor = true, Generic = true,
                       Phoenix = true, Int = true, Props = true, Prop = true, Items = true, Item = true }
 
@@ -491,18 +496,30 @@ local function scan_step()
             local cat = entry.cat
             -- Stations are spots characters stand at to act something out: not for the player.
             if cat.kind == "usable" and a:GetClass():GetFName():ToString():find("Station", 1, true) then return end
-            if cat.kind == "enemy" and friendly(a:GetClass():GetFName():ToString()) then
-                cat = CATEGORIES[1]   -- a student or ghost: a person
+            local statue_class = false
+            if cat.kind == "enemy" then
+                local cn = a:GetClass():GetFName():ToString()
+                statue_class = cn:find(STATUE_CLASS, 1, true) ~= nil
+                if friendly(cn) then
+                    cat = CATEGORIES[1]   -- a student or ghost: a person
+                elseif statue_class and a.bHasBeenReleased ~= true then
+                    cat = STATUE
+                end
             end
-            -- Earlier (more specific) categories win; don't let a later one relabel.
+            -- Earlier (more specific) categories win; don't let a later one relabel. A statue
+            -- that comes alive does become an enemy.
             local prev = claimed_by[key]
-            if prev and prev ~= cat.kind and prev ~= "person" then return end
+            if prev and prev ~= cat.kind and prev ~= "person" and prev ~= "statue" then return end
             if d > math.max(cat.range * 1.5, KEEP_CM) then nearby[key] = nil; return end
             claimed_by[key] = cat.kind
             local n = nearby[key]
             if not n or n.kind ~= cat.kind then
                 n = { next_at = os.clock() + math.random() * cat.every }
-                n.name, n.name_src = name_of(a, cat.kind)
+                if statue_class then
+                    n.name, n.name_src = cat.kind == "statue" and "Knight statue" or "Stone knight", "statue"
+                else
+                    n.name, n.name_src = name_of(a, cat.kind)
+                end
                 nearby[key] = n
                 if cat.kind == "enemy" then
                     require("tips").once("enemy", function()
@@ -628,6 +645,13 @@ function M.nearest(kind, max_cm)
     local p = M.locate(best.path)
     if not p then return nil end
     return p, best.path
+end
+
+--- An actor by its path, looked up fresh and checked to still be that object, during
+--- gameplay only (nil otherwise). Use it within one task; never keep it.
+function M.resolve(path)
+    if not in_game or state.loading() then return nil end
+    return resolve(path)
 end
 
 --- Current position of an actor by its path, or nil if it's gone. Nothing is kept.

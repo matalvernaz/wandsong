@@ -33,4 +33,9 @@ eq(t.clean('Tap <img src="cbi_Keyboard_Slash"/> to cast'), "Tap forward slash to
 eq(t.rewrite("The Minimap shows your surroundings, with you Map PlayerBlip in the middle. This is your current objective. Press and hold V to toggle quest objective details., Continue: Space"),
    "The minimap shows your surroundings to sighted players. With Wandsong, up arrow says your quest, its current task and which way the objective is. This is your current objective. Press and hold V to toggle quest objective details., To continue, hold space for a moment.")
 eq(t.rewrite("Something., Continue: Space"), "Something., To continue, hold space for a moment.")
+eq(t.rewrite("R cast Revelio Revelio."), "R cast Revelio.")
+eq(t.rewrite("Tap 1 to cast or extinguish Lumos Lumos."), "Tap 1 to cast or extinguish Lumos.")
+eq(t.rewrite("Hold still, then hold the line."), "Hold still, then hold the line.")
+assert(t.rewrite("Steady your wand with Mouse and guide it along the symbol's path to learn the spell. Press the corresponding input when prompted to accelerate your wand's motion along the symbol's path."):find("^Spell lesson"),
+    "the spell lesson's mouse instructions are said in the mod's terms")
 print("text test passed")
