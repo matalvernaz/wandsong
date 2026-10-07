@@ -1,26 +1,31 @@
 -- Statues: the knight-statue puzzles of the Gringotts vault ("Discover the statue's secret",
--- later "Activate the statues"), made playable by ear.
+-- later "Activate the statues"), as an audio puzzle.
 --
--- How the game does it (BP_HogwartsProtector_C in the class dump): a puzzle knight kneels with
--- a reflection in the floor that turns toward a light (TargetActor), CurrentAngle easing
--- toward TargetAngle. The knight is aligned, and comes alive, when the light stands in its
--- AlignmentCorridor, a box in front of it, so that the reflection faces the way the knight
--- does (AlignToAngle). Sighted players see a white hint line along the corridor. With three
--- knights, the corridors cross at one spot that aligns them all.
+-- The game (BP_HogwartsProtector_C, measured in the vault on Oct 7): a puzzle knight kneels
+-- with a reflection in the floor. The reflection turns toward the light it follows
+-- (TargetActor): TargetAngle is the compass bearing from the knight to that light, and
+-- CurrentAngle eases toward it. The knight itself faces AlignToAngle. With your own light in
+-- front of the knight, inside its alignment corridor (a box about 1 to 7 m out and a metre
+-- wide), the reflection matches the knight and the knight comes alive. Sighted players watch
+-- the reflection turn; in the three-knight version they also see white hint lines.
 --
--- What the mod does, with no keys: while a puzzle is active, a low chime sounds from the spot
--- to stand on (inside the corridor, or where the corridors cross), and the beacon's autowalk
--- (Shift+grave) leads there. Once your own wand light is the one the reflection follows,
--- ticks quicken as the reflection turns into line. A knight that only shows as a reflection
--- is mentioned once, with the Revelio key.
+-- The audio version gives the same information, and no more:
+--   * each visible knight sounds its note now and then, from where it kneels;
+--   * while your own light leads a knight's reflection, the reflection's note follows the
+--     knight's: the further the reflection is turned from the way the knight faces, the
+--     further its pitch from the knight's (above when it's turned to the knight's right,
+--     below when to its left). In unison: lined up.
+--   * where the game shows a knight's hint line, standing on that line adds a soft hum;
+--   * a knight that shows only as a reflection is described once, and the scanner (Home on
+--     a knight) says which way the knight and its reflection face.
+-- No spot is marked and nothing walks you there: finding it is the puzzle (Matt, Oct 7).
 --
--- Rules kept: statues come from the world scan (no extra FindAllOf), are looked up by path
+-- Rules kept: knights come from the world scan (no extra FindAllOf), are looked up by path
 -- every time, and only their properties are read. Hooks (by event name, registered once at
 -- startup) record an event name and a path, nothing else.
 
-local dispatch, state, diag = require("dispatch"), require("state"), require("diag")
-local speech, keys, world = require("speech"), require("keys"), require("world")
-local bindings = require("bindings")
+local dispatch, state = require("dispatch"), require("state")
+local speech, world = require("speech"), require("world")
 
 local M = {}
 local function log(s) print("[Wandsong statues] " .. s .. "\n") end
@@ -32,10 +37,12 @@ do
 end
 
 local CLASS = "HogwartsProtector"
-local CHIME_EVERY = 1.2          -- seconds between chimes from the spot
-local IN_LINE_INSET_CM = 15      -- stand this far inside a corridor's edge to count as in line
-local ALIGNED_DEG = 5            -- reflection within this of the knight's angle: lined up
-local HIDDEN_HINT_CM = 2000
+local CYCLE = 1.4                -- seconds between one knight's notes
+local REFLECTION_AFTER = 0.2     -- the reflection's note this long after the knight's
+local ALIGNED_DEG = 3            -- reflection within this of the knight's facing: lined up
+local NEAR_CM = 2500             -- knights further than this stay quiet
+local SETTLE = 3                 -- seconds of uninterrupted play before describing anything
+local BASES = { 1.0, 1.26, 1.5 } -- each knight's own note: a major chord across three knights
 
 local function num(v) return type(v) == "number" and v == v and math.abs(v) < 1e12 end
 local function vec(v)
@@ -83,14 +90,15 @@ end
 local function relative(c)
     local l, r, s = vec(c.RelativeLocation), rot(c.RelativeRotation), vec(c.RelativeScale3D)
     if not l or not r then return nil end
-    local t = { loc = l, ax = axes(r), scale = s or { 1, 1, 1 }, yaw = r[2] }
+    local t = { loc = l, ax = axes(r), scale = s or { 1, 1, 1 } }
     pcall(function()
         t.abs_loc, t.abs_rot, t.abs_scale = c.bAbsoluteLocation == true, c.bAbsoluteRotation == true, c.bAbsoluteScale == true
     end)
     return t
 end
 --- World transform of a scene component: its relative transforms composed up the attachment
---- chain (property reads only). Socket offsets are not included.
+--- chain (property reads only). Socket offsets are not included. The vault knights are scaled
+--- (0.75), which this accounts for.
 local function world_of(c)
     local chain, cur = {}, c
     for _ = 1, 8 do
@@ -119,9 +127,9 @@ end
 M.world_of = world_of
 
 -- The alignment corridor as a box: centre, axes and half sizes (cm).
-local function corridor(statue)
+local function corridor(knight)
     local box
-    pcall(function() box = statue.AlignmentCorridor end)
+    pcall(function() box = knight.AlignmentCorridor end)
     if not valid(box) then return nil end
     local w, e
     pcall(function() w = world_of(box); e = vec(box.BoxExtent) end)
@@ -142,58 +150,9 @@ local function inside(cor, p, inset)
 end
 M.inside = inside
 
--- The corridor's long horizontal axis: a point on it and a unit direction (2D).
-local function long_axis(cor)
-    local i = cor.h[1] >= cor.h[2] and 1 or 2
-    local a = cor.ax[i]
-    local len = math.sqrt(a[1] ^ 2 + a[2] ^ 2)
-    if len < 1e-3 then return nil end
-    return { cor.c[1], cor.c[2] }, { a[1] / len, a[2] / len }, cor.h[i]
-end
-
--- Where to stand for one knight: the corridor's centre, or, when the box sits on the knight
--- itself, a few metres out along it on the side the knight faces.
-local function spot_for(s)
-    local cor = s.cor
-    if not cor then return nil end
-    local c, dir, half = long_axis(cor)
-    if not c then return nil end
-    local root = s.root or cor.c
-    if dist2(c, root) > 100 then return { c[1], c[2], cor.c[3] } end
-    local r = math.rad(s.yaw or 0)
-    local fx, fy = math.cos(r), math.sin(r)
-    if dir[1] * fx + dir[2] * fy < 0 then dir = { -dir[1], -dir[2] } end
-    local out = math.max(0, math.min(half - 50, 300))
-    return { c[1] + dir[1] * out, c[2] + dir[2] * out, cor.c[3] }
-end
-
--- Where several corridors cross: each pair of long axes is intersected, and the crossing
--- inside the most corridors wins.
-local function crossing(list)
-    local best, best_n
-    for i = 1, #list - 1 do
-        for j = i + 1, #list do
-            local p1, d1 = long_axis(list[i].cor)
-            local p2, d2 = long_axis(list[j].cor)
-            if p1 and p2 then
-                local cross = d1[1] * d2[2] - d1[2] * d2[1]
-                if math.abs(cross) > 1e-3 then
-                    local t = ((p2[1] - p1[1]) * d2[2] - (p2[2] - p1[2]) * d2[1]) / cross
-                    local q = { p1[1] + d1[1] * t, p1[2] + d1[2] * t, (list[i].cor.c[3] + list[j].cor.c[3]) / 2 }
-                    local n = 0
-                    for _, s in ipairs(list) do if inside(s.cor, q, 0) then n = n + 1 end end
-                    if not best_n or n > best_n then best, best_n = q, n end
-                end
-            end
-        end
-    end
-    if best and best_n >= 2 then return best end
-end
-M.crossing = crossing
-
 -- --- Reading the knights ----------------------------------------------------------------
 
-local function read(path, pawn_path, px, py, pz)
+local function read(path, pawn_path, me)
     local o = world.resolve and world.resolve(path)
     if not o then return nil end
     local s = { path = path }
@@ -204,9 +163,9 @@ local function read(path, pawn_path, px, py, pz)
     pcall(function() s.align_to = o.AlignToAngle end)
     pcall(function() s.target_angle = o.TargetAngle end)
     pcall(function() s.current = o.CurrentAngle end)
+    pcall(function() s.hint = o.VFX_HintLine_Alpha end)
     pcall(function() s.root = vec(o.RootComponent.RelativeLocation) end)
     pcall(function() s.yaw = o.RootComponent.RelativeRotation.Yaw end)
-    pcall(function() s.cor = corridor(o) end)
     pcall(function()
         local t = o.TargetActor
         if valid(t) then
@@ -215,160 +174,158 @@ local function read(path, pawn_path, px, py, pz)
             if w then s.target_at = w.loc end
         end
     end)
+    if num(s.hint) and s.hint > 0.05 then pcall(function() s.cor = corridor(o) end) end
     -- Whose light the reflection follows: the player's own, or someone else's (Fig's).
     s.mine = s.target ~= nil and (s.target == pawn_path
-        or (s.target_at ~= nil and dist2(s.target_at, { px, py }) < 150 and math.abs(s.target_at[3] - pz) < 200))
-    if num(s.current) and num(s.align_to) then s.off = math.abs(wrap(s.current - s.align_to)) end
+        or (s.target_at ~= nil and dist2(s.target_at, me) < 150 and math.abs(s.target_at[3] - me[3]) < 200))
+    if num(s.current) and num(s.align_to) then s.off = wrap(s.current - s.align_to) end
+    s.visible = (s.statue_visible or s.reflection_visible) and s.active and not s.released
     return s
 end
 
-local known = {}                 -- path -> { said_intro, said_hidden, was_active, released }
-local puzzle = nil               -- { spot = {x,y,z}, list = {statues}, in_line, mine, off }
+local known = {}                 -- path -> { base, next_at, said_hidden, said_intro, aligned }
+local knights = {}               -- the visible puzzle knights at the last check
 local generation = state.generation
-local next_chime, next_tick, next_log = 0, 0, 0
-local was_in_line, was_aligned = false, false
-
-local function lumos_key() return bindings.spoken("AM_SpellButton1", "One") end
-local function walk_key() return keys.describe_combo(keys.combo_of("autowalk")) end
-
-local function intro(many)
-    return (many and "Statue puzzle: each knight's reflection in the floor turns toward the light. " ..
-        "Light Lumos with " .. lumos_key() .. " and stand where all the knights line up with their reflections. "
-        or "Statue puzzle: the knight's reflection in the floor turns toward the light. " ..
-        "Light Lumos with " .. lumos_key() .. " and stand where the knight lines up with its reflection. ") ..
-        "A low chime marks the spot, and " .. walk_key() .. " walks you there."
-end
+local playing_since = nil        -- uninterrupted gameplay since
+local next_log = 0
+local loops = {}                 -- hum loops playing, by id
 
 local function sounds_ok()
     return audio and world.sounds_enabled and world.sounds_enabled() and not speech.is_muted()
 end
 
+local function stop_loops()
+    if audio then for id in pairs(loops) do pcall(audio.stop, id) end end
+    loops = {}
+end
+
 local function snapshot(s, why)
     local function f(v) return num(v) and string.format("%.1f", v) or tostring(v) end
     local function p3(v) return v and string.format("%.0f %.0f %.0f", v[1], v[2], v[3]) or "?" end
-    local cor = s.cor
     log(string.format("%s %s: active %s released %s statue %s reflection %s; angles align %s target %s current %s off %s; " ..
-        "root %s yaw %s; light %s (%s) at %s; corridor %s", why, s.path:match("[^.:]+$") or s.path,
+        "root %s yaw %s; light %s (%s) at %s; hint line %s", why, s.path:match("[^.:]+$") or s.path,
         tostring(s.active), tostring(s.released), tostring(s.statue_visible), tostring(s.reflection_visible),
         f(s.align_to), f(s.target_angle), f(s.current), f(s.off), p3(s.root), f(s.yaw),
-        tostring(s.target), s.mine and "yours" or "not yours", p3(s.target_at),
-        cor and string.format("centre %s half %.0f %.0f %.0f x-axis %.2f %.2f", p3(cor.c), cor.h[1], cor.h[2], cor.h[3],
-            cor.ax[1][1], cor.ax[1][2]) or "none"))
+        tostring(s.target), s.mine and "yours" or "not yours", p3(s.target_at), f(s.hint)))
 end
 
 local function tick()
     if generation ~= state.generation then
         generation = state.generation
-        known, puzzle, was_in_line, was_aligned = {}, nil, false, false
+        known, knights, playing_since = {}, {}, nil
+        stop_loops()
     end
-    if not world.in_game() then puzzle = nil; return end
+    if not world.in_game() then
+        knights, playing_since = {}, nil
+        stop_loops()
+        return
+    end
+    playing_since = playing_since or os.clock()
+    local settled = os.clock() - playing_since >= SETTLE
     local px, py, pz = world.position()
+    local me = { px, py, pz }
     local pawn = world.pawn and world.pawn()
     local pawn_path = pawn and path_of(pawn)
-    local active, hidden = {}, nil
-    for _, e in ipairs(world.entries()) do
+    local now = os.clock()
+    local seen, hums = {}, {}
+    for _, e in ipairs(world.entries and world.entries() or {}) do
         if e.kind == "statue" or (e.path and e.path:find(CLASS, 1, true)) then
-            local s = read(e.path, pawn_path, px, py, pz)
+            local s = read(e.path, pawn_path, me)
             if s then
-                local k = known[s.path] or {}
-                known[s.path] = k
-                if s.active ~= k.was_active or s.statue_visible ~= k.was_visible then
-                    k.was_active, k.was_visible = s.active, s.statue_visible
+                local k = known[s.path]
+                if not k then
+                    local n = 0
+                    for _ in pairs(known) do n = n + 1 end
+                    k = { base = BASES[n % #BASES + 1], next_at = now + (n % #BASES) * CYCLE / #BASES }
+                    known[s.path] = k
+                end
+                if s.visible ~= k.was_visible or s.statue_visible ~= k.was_statue then
+                    k.was_visible, k.was_statue = s.visible, s.statue_visible
                     snapshot(s, "state")
                 end
-                if s.active and not s.released and s.cor then active[#active + 1] = s end
-                if s.reflection_visible and not s.statue_visible and not s.released and s.root
-                   and dist2(s.root, { px, py }) < HIDDEN_HINT_CM and not k.said_hidden then
-                    hidden = hidden or { s = s, k = k }
+                if s.visible and s.root and dist2(s.root, me) < NEAR_CM then
+                    seen[#seen + 1] = s
+                    s.k = k
+                    if s.cor and inside(s.cor, me, 10) and s.mine then hums[s.path] = s end
                 end
             end
         end
     end
-    if hidden then
-        hidden.k.said_hidden = true
-        speech.say("Only a knight's reflection shows in the floor. Cast Revelio with " ..
-            bindings.spoken("AM_Revelio", "R") .. " to reveal the knight.", true)
-    end
-    if #active == 0 then
-        if puzzle then log("puzzle ended") end
-        puzzle, was_in_line, was_aligned = nil, false, false
-        return
-    end
-    local spot = #active > 1 and crossing(active) or nil
-    if not spot then
-        table.sort(active, function(a, b) return dist2(a.root or a.cor.c, { px, py }) < dist2(b.root or b.cor.c, { px, py }) end)
-        spot = spot_for(active[1])
-    end
-    if not spot then return end
-    -- Stand at your own height on that floor (the box's centre can be well above the ground).
-    local cor1 = active[1].cor
-    if math.abs(cor1.c[3] - pz) <= cor1.h[3] + 200 then spot[3] = pz end
-    local me = { px, py, pz }
-    local in_line, mine, off = true, true, 0
-    for _, s in ipairs(active) do
-        if not inside(s.cor, me, IN_LINE_INSET_CM) then in_line = false end
-        if not s.mine then mine = false end
-        off = math.max(off, s.off or 180)
-    end
-    puzzle = { spot = spot, list = active, in_line = in_line, mine = mine, off = off }
-    -- Explained once per knight: a new set of knights (the next puzzle) is explained again.
-    local untold = false
-    for _, s in ipairs(active) do if not known[s.path].told then untold = true end end
-    if untold then
-        for _, s in ipairs(active) do known[s.path].told = true; snapshot(s, "puzzle") end
-        log(string.format("spot %.0f %.0f %.0f for %d knight(s)", spot[1], spot[2], spot[3], #active))
-        speech.say(intro(#active > 1), true)
-    end
-    local aligned = mine and off <= ALIGNED_DEG
-    if in_line ~= was_in_line then
-        was_in_line = in_line
-        if in_line then
-            speech.say((#active > 1 and "In line with the knights." or "In line with the knight.") ..
-                (mine and " Hold your light still." or (" Light Lumos with " .. lumos_key() .. ".")))
+    knights = seen
+    -- Descriptions wait for play to settle (not over a cutscene's last lines).
+    if settled then
+        for _, s in ipairs(seen) do
+            local k = s.k
+            if s.reflection_visible and not s.statue_visible and not k.said_hidden then
+                k.said_hidden = true
+                speech.say("Only a knight's reflection shows in the floor. No knight stands above it.", true)
+            elseif s.statue_visible and not k.said_intro then
+                k.said_intro, k.said_hidden = true, true
+                speech.say("A stone knight kneels here, with its reflection in the floor. You hear the knight's note. " ..
+                    "While your own light leads the reflection, the reflection's note follows the knight's, " ..
+                    "and the two sound as one when the reflection lines up with the knight.", true)
+            end
         end
     end
-    if aligned ~= was_aligned then
-        was_aligned = aligned
-        if aligned then speech.say("Lined up.") end
+    -- "Lined up" once per alignment, as a sighted player would see it.
+    for _, s in ipairs(seen) do
+        local k = s.k
+        local aligned = s.mine and s.off ~= nil and math.abs(s.off) <= ALIGNED_DEG
+        if aligned and not k.aligned then speech.say(#seen > 1 and "That knight is lined up." or "Lined up.") end
+        k.aligned = aligned
     end
-    local now = os.clock()
-    if now >= next_log then
-        next_log = now + 2
-        for _, s in ipairs(active) do snapshot(s, "watch") end
-        log(string.format("player %.0f %.0f %.0f; in line %s, light yours %s, off %.1f", px, py, pz,
-            tostring(in_line), tostring(mine), off))
+    if now >= next_log and #seen > 0 then
+        next_log = now + 3
+        for _, s in ipairs(seen) do snapshot(s, "watch") end
+        log(string.format("player %.0f %.0f %.0f", px, py, pz))
     end
-    if not sounds_ok() then return end
-    if not in_line and now >= next_chime then
-        next_chime = now + CHIME_EVERY
-        audio.play("chime", spot[1], spot[2], spot[3] + 60, 0.7, 0.6)
-        state.cue("Statue puzzle spot " .. state.where(px, py, select(4, world.position()), spot[1], spot[2]))
+    if not sounds_ok() then stop_loops(); return end
+    for _, s in ipairs(seen) do
+        local k = s.k
+        if now >= k.next_at then
+            k.next_at = now + CYCLE
+            local x, y, z = s.root[1], s.root[2], s.root[3] + 60
+            audio.play("note", x, y, z, 0.6, k.base)
+            if s.mine and s.off then
+                -- Up to an octave away when the reflection faces the opposite way.
+                local pitch = k.base * 2 ^ (s.off / 180)
+                dispatch.later(REFLECTION_AFTER * 1000, function()
+                    if sounds_ok() and world.in_game() then audio.play("note", x, y, z, 0.5, pitch) end
+                end, "statue reflection note")
+            end
+        end
     end
-    -- Parking-sensor ticks while your light leads the reflection: quicker and higher as it
-    -- turns into line.
-    if mine and now >= next_tick then
-        local f = math.min(off, 90) / 90
-        next_tick = now + 0.1 + f * 0.8
-        audio.play_ui("tick", 0.45, 1.6 - f * 0.8)
+    -- Hint lines: standing on one (with your light) hums the knight's note.
+    for id in pairs(loops) do
+        if not hums[id:sub(7)] then pcall(audio.stop, id); loops[id] = nil end
+    end
+    for path, s in pairs(hums) do
+        local id = "statue" .. path
+        audio.loop(id, "hum", s.root[1], s.root[2], s.root[3] + 60, 0.25, s.k.base)
+        loops[id] = true
     end
 end
 
---- The spot to stand on while a statue puzzle is active: { x, y, z, name }, else nil.
-function M.target()
-    if not puzzle or not world.in_game() then return nil end
-    local s = puzzle.spot
-    return { s[1], s[2], s[3], name = #puzzle.list > 1 and "where the knights line up" or "where the knight lines up" }
-end
---- True while the player stands in line with every active puzzle knight (this module says so
---- itself when it happens).
-function M.in_line() return puzzle ~= nil and puzzle.in_line and world.in_game() end
---- What to say on reaching the spot without being in line by the corridor's measure.
-function M.arrival_text()
-    if puzzle and not puzzle.mine then return "At the spot. Light Lumos with " .. lumos_key() .. "." end
-    return "At the spot."
+--- What a sighted player sees of a knight: which way it faces, and its reflection.
+function M.describe(path)
+    if not world.in_game() then return nil end
+    local px, py, pz = world.position()
+    local pawn = world.pawn and world.pawn()
+    local s = read(path, pawn and path_of(pawn), { px, py, pz })
+    if not s or not num(s.yaw) then return nil end
+    if s.released then return "standing, alive" end
+    if not s.statue_visible and s.reflection_visible then
+        return "only its reflection shows, facing " .. state.compass(s.current or s.yaw)
+    end
+    local t = "kneeling, facing " .. state.compass(s.yaw)
+    if s.reflection_visible and num(s.current) then
+        t = t .. (s.off and math.abs(s.off) <= ALIGNED_DEG and "; its reflection faces the same way"
+            or ("; its reflection faces " .. state.compass(s.current)))
+    end
+    return t
 end
 
--- --- Game events (logged; they confirm what the game decided) ----------------------------
+-- --- Game events (logged: they show what the game decided) -------------------------------
 local EVENTS = { "ToggleReflectionPuzzle", "SetupReflectionPuzzle", "ActivateStatue", "ToggleStatueState",
     "SignalForRelease", "Branch to Release", "Unmark Ready for Release", "StandingArrived",
     "ProtectorPuzzleComplete", "SetupProtegoTutorial", "ProtegoTutorialComplete", "GoParryEvent",
@@ -381,7 +338,7 @@ for _, event in ipairs(EVENTS) do
             local p
             pcall(function() p = path_of(ctx:get()) end)
             if p and p:find(CLASS, 1, true) and #pending < 64 then
-                pending[#pending + 1] = { event = event, path = p, at = os.clock(), generation = state.generation }
+                pending[#pending + 1] = { event = event, path = p, generation = state.generation }
             end
         end)
         if not ok then log("hook failed " .. event .. ": " .. tostring(err)) end
@@ -398,7 +355,11 @@ local function events()
     end
 end
 
-dispatch.every(250, tick, "statue puzzle")
+-- Home on a knight in the scanner says what a glance would show.
+local ok_scanner, scanner = pcall(require, "scanner")
+if ok_scanner and type(scanner) == "table" and scanner.details then scanner.details.statue = M.describe end
+
+dispatch.every(200, tick, "statue puzzle")
 dispatch.every(200, events, "statue events")
 
 log("loaded")

@@ -36,6 +36,7 @@ local CATEGORIES = {
     { kind = "door", name = "Doors" },
     { kind = "usable", name = "Things to use" },
     { kind = "statue", name = "Statues" },
+    { kind = "prop", name = "Objects" },
 }
 local REBUILD_AFTER = 3          -- seconds
 local REBUILD_MOVED_CM = 500
@@ -95,9 +96,13 @@ local function index_of(path)
     return nil
 end
 
+-- What a sighted player would notice about a thing at a glance, beyond its name, by kind:
+-- modules register describers (statues.lua: which way a knight and its reflection face).
+M.details = {}
+
 -- "Professor Fig, 4 metres, ahead left, 2 of 9", position read fresh. Returns false if the
--- thing has gone.
-local function describe(i)
+-- thing has gone. With `detail`, what the thing's describer adds.
+local function describe(i, detail)
     local e = list[i]
     local p = e.point and { e.x, e.y, e.z } or world.locate(e.path)
     if not p then return false end
@@ -109,6 +114,8 @@ local function describe(i)
     local m = metres(d)
     local text = string.format("%s, %s, %s%s, %d of %d", e.name, m <= 1 and "close" or (m .. " metres"),
                                where, floor, i, #list)
+    local more = detail and M.details[e.kind] and M.details[e.kind](e.path)
+    if more then text = text .. ". " .. more:sub(1, 1):upper() .. more:sub(2) .. "." end
     speech.say(text)
     log("say " .. e.path .. ": " .. text)
     return true
@@ -151,7 +158,7 @@ local function current()
         i = selected and index_of(selected)
     end
     if not i then step(1) return end
-    if not describe(i) then speech.say(list[i].name .. " has gone"); selected = nil; return end
+    if not describe(i, true) then speech.say(list[i].name .. " has gone"); selected = nil; return end
     -- As in other access mods, Home also turns you to face it.
     local e = list[i]
     if e.point then require("path").face_point(e.x, e.y, e.name)

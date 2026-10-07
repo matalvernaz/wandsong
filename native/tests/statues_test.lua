@@ -1,7 +1,7 @@
--- The knight-statue puzzle: the spot comes from the game's own corridor box, the chime and
--- ticks follow the puzzle state, and nothing is said or played outside it.
+-- The knight-statue puzzle as an audio puzzle: notes carry what a sighted player sees (the
+-- knight, and how far its reflection is turned from it); nothing marks or walks to the answer.
 local t = dofile("native/tests/testlib.lua")
-local said, played, ticks = {}, {}, 0
+local said, notes, loops = {}, {}, {}
 local px, py, pz, in_game = 500, 0, 100, true
 local function obj(cls, path, props)
     props.IsValid = function() return true end
@@ -12,16 +12,17 @@ local pawn = obj("BP_Biped_Player_C", "/Game/Player", { RootComponent = { Relati
     RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } } })
 local fig = obj("BP_Student_C", "/Game/Fig", { RootComponent = { RelativeLocation = { X = -300, Y = 300, Z = 100 },
     RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 } } })
--- A kneeling knight at the origin facing +Y; its corridor runs 1 to 7 m in front of it.
+-- A kneeling knight at the origin facing +Y (yaw 90), scaled 0.75 like the vault's; its
+-- corridor box is 550 cm out (412 after scaling), 400 x 75 half extents (300 x 56).
 local root = obj("CapsuleComponent", "/Game/Vault.Knight.Root", { RelativeLocation = { X = 0, Y = 0, Z = 100 },
-    RelativeRotation = { Pitch = 0, Yaw = 90, Roll = 0 }, RelativeScale3D = { X = 1, Y = 1, Z = 1 } })
-local box = obj("BoxComponent", "/Game/Vault.Knight.Corridor", { RelativeLocation = { X = 400, Y = 0, Z = 0 },
+    RelativeRotation = { Pitch = 0, Yaw = 90, Roll = 0 }, RelativeScale3D = { X = 0.75, Y = 0.75, Z = 0.75 } })
+local box = obj("BoxComponent", "/Game/Vault.Knight.Corridor", { RelativeLocation = { X = 550, Y = 0, Z = -100 },
     RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 }, RelativeScale3D = { X = 1, Y = 1, Z = 1 },
-    BoxExtent = { X = 300, Y = 60, Z = 100 }, AttachParent = root })
+    BoxExtent = { X = 400, Y = 75, Z = 180 }, AttachParent = root })
 local knight_path = "/Game/Vault.BP_HogwartsProtector_C_1"
-local knight = obj("BP_HogwartsProtector_C", knight_path, { bPuzzleActive = false, bHasBeenReleased = false,
-    bStatueVisible = false, bReflectionVisible = true, AlignToAngle = 90, TargetAngle = 0, CurrentAngle = 0,
-    RootComponent = root, AlignmentCorridor = box, TargetActor = fig })
+local knight = obj("BP_HogwartsProtector_C", knight_path, { bPuzzleActive = true, bHasBeenReleased = false,
+    bStatueVisible = false, bReflectionVisible = false, AlignToAngle = 90, TargetAngle = 180, CurrentAngle = 180,
+    VFX_HintLine_Alpha = 0, RootComponent = root, AlignmentCorridor = box, TargetActor = fig })
 local entries = { { path = knight_path, kind = "statue", name = "Knight statue" } }
 package.loaded.world = {
     in_game = function() return in_game end, position = function() return px, py, pz, 0 end,
@@ -30,87 +31,101 @@ package.loaded.world = {
     sounds_enabled = function() return true end,
 }
 package.loaded.audio_bridge = { init = function() return true end,
-    play = function(name, x, y, z) played[#played + 1] = { name = name, x = x, y = y, z = z } end,
-    play_ui = function(name) if name == "tick" then ticks = ticks + 1 end end }
+    play = function(name, x, y, z, vol, pitch) notes[#notes + 1] = { name = name, x = x, y = y, pitch = pitch } end,
+    play_ui = function() end, loop = function(id, name) loops[id] = name; return true end,
+    stop = function(id) loops[id] = nil end }
 require("speech").say = function(s) said[#said + 1] = s end
-local keys = require("keys")
-keys.action{ id = "autowalk", name = "Autowalk", default = "shift+`", run = function() end }
 local statues = require("statues")
 local function heard(fragment)
     for _, s in ipairs(said) do if s:find(fragment, 1, true) then return true end end
     return false
 end
+local function count_loops() local n = 0; for _ in pairs(loops) do n = n + 1 end; return n end
 
--- Only the reflection shows: Revelio is suggested once, and nothing else happens yet.
-t.run(1)
-assert(heard("Cast Revelio with r"), "a hidden knight suggests Revelio with its real key")
-local n = #said
-t.run(2)
-assert(#said == n, "the Revelio hint is said once")
-assert(not statues.target() and #played == 0, "no spot or chime before the puzzle is active")
+-- Before the floor changes, the knight is invisible: no sound, nothing said.
+t.run(4)
+assert(#notes == 0 and #said == 0, "an invisible knight makes no sound")
 
--- Revealed and active: the spot is the corridor's centre at the player's height.
-knight.bStatueVisible, knight.bPuzzleActive = true, true
-t.run(0.5)
-local spot = statues.target()
-assert(spot and math.abs(spot[1]) < 1 and math.abs(spot[2] - 400) < 1 and spot[3] == pz,
-    "spot is the corridor centre, from the attached box's world transform")
-assert(heard("Light Lumos with one") and heard("shift grave accent"), "the puzzle is explained with real keys")
-t.run(1.5)
-assert(#played > 0 and played[#played].name == "chime" and math.abs(played[#played].y - 400) < 1,
-    "a chime sounds from the spot")
-assert(ticks == 0, "no alignment ticks while the reflection follows someone else's light")
-
--- Into the corridor, without your own light yet.
-px, py = 20, 300
-t.run(0.5)
-assert(statues.in_line(), "standing inside the corridor counts as in line")
-assert(said[#said]:find("In line with the knight", 1, true) and said[#said]:find("Light Lumos", 1, true),
-    "in line, and told to light Lumos")
-local chimes = #played
-t.run(1.5)
-assert(#played == chimes, "no chime once you are on the spot")
-
--- Your light leads the reflection: ticks, and "Lined up" when it matches the knight.
-knight.TargetActor = pawn
-t.run(1)
-assert(ticks > 0, "ticks while your light leads the reflection")
-knight.CurrentAngle = 88
-t.run(0.5)
-assert(said[#said] == "Lined up.", "lined up once the reflection matches the knight")
-
--- Released: the puzzle is over.
-knight.bHasBeenReleased = true
-t.run(0.5)
-assert(not statues.target() and not statues.in_line(), "a released knight ends the puzzle")
-chimes, ticks = #played, 0
-t.run(2)
-assert(#played == chimes and ticks == 0, "silence after the puzzle")
-
--- A box centred on the knight itself: stand a few metres out on the side it faces.
-local s = { cor = { c = { 0, 0, 100 }, ax = { { 0, 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 } }, h = { 500, 60, 100 } },
-            root = { 0, 0, 100 }, yaw = 90 }
-knight.bHasBeenReleased, knight.AlignmentCorridor = false, obj("BoxComponent", "/Game/Vault.Knight.Corridor2", {
-    RelativeLocation = { X = 0, Y = 0, Z = 0 }, RelativeRotation = { Pitch = 0, Yaw = 0, Roll = 0 },
-    RelativeScale3D = { X = 1, Y = 1, Z = 1 }, BoxExtent = { X = 500, Y = 60, Z = 100 }, AttachParent = root })
-px, py = 500, 0
-t.run(0.5)
-spot = statues.target()
-assert(spot and math.abs(spot[1]) < 1 and math.abs(spot[2] - 300) < 1, "box on the knight: 3 m out in front")
-
--- Three corridors that cross at (1000, 1000): the crossing is where to stand.
-local function cor(cx, cy, yaw)
-    local r = math.rad(yaw)
-    return { c = { cx, cy, 100 }, ax = { { math.cos(r), math.sin(r), 0 }, { -math.sin(r), math.cos(r), 0 }, { 0, 0, 1 } },
-             h = { 600, 60, 100 } }
-end
-local q = statues.crossing({ { cor = cor(1000, 600, 90) }, { cor = cor(600, 1000, 0) },
-    { cor = cor(1000 - 300, 1000 - 300, 45) } })
-assert(q and math.abs(q[1] - 1000) < 1 and math.abs(q[2] - 1000) < 1, "corridors cross at one spot")
-
--- Leaving gameplay drops the puzzle at once.
+-- The floor changes in a cutscene; only the reflection shows. Once play has settled again it's
+-- described once, and the knight's note plays.
 in_game = false
-assert(not statues.target(), "no puzzle spot outside gameplay, even before the next check")
+knight.bReflectionVisible = true
+t.run(2)
+in_game = true
+t.run(1)
+assert(not heard("reflection"), "nothing is described before play settles")
+t.run(3)
+assert(heard("Only a knight's reflection shows"), "a reflection without a knight is described")
+local n = #said
+t.run(3)
+assert(#said == n, "described once")
+assert(#notes > 0 and notes[#notes].name == "note" and notes[#notes].pitch == 1.0, "the knight's note plays from it")
+assert(not heard("Revelio") and not heard("walks you"), "no solution is given away")
+
+-- Revealed: the puzzle is explained in the mod's terms, once.
+knight.bStatueVisible = true
+t.run(1)
+assert(heard("A stone knight kneels here"), "the revealed knight is introduced")
+-- Fig's light leads the reflection: only the knight's note, no reflection note.
+notes = {}
+knight.TargetAngle, knight.CurrentAngle = 200, 200
+t.run(3)
+for _, s in ipairs(notes) do assert(s.pitch == 1.0, "no reflection note while someone else's light leads") end
+
+-- Your light leads it: the reflection's note follows the knight's, off by the angle.
+knight.TargetActor = pawn
+knight.TargetAngle, knight.CurrentAngle = 180, 180
+notes = {}
+t.run(3)
+local high = false
+for _, s in ipairs(notes) do
+    if math.abs(s.pitch - 2 ^ (90 / 180)) < 1e-6 then high = true end
+end
+assert(high, "a reflection turned 90 degrees right sounds half an octave above the knight")
+knight.TargetAngle, knight.CurrentAngle = 30, 30
+notes = {}
+t.run(3)
+local low = false
+for _, s in ipairs(notes) do if s.pitch < 1 then low = true end end
+assert(low, "turned left of the knight: below it")
+-- Lined up: said once, and the two notes are the same.
+knight.TargetAngle, knight.CurrentAngle = 91, 91
+notes = {}
+t.run(3)
+assert(said[#said] == "Lined up.", "lined up when the reflection matches the knight")
+for _, s in ipairs(notes) do assert(math.abs(s.pitch - 2 ^ (1 / 180)) < 1e-6 or s.pitch == 1.0, "unison") end
+n = #said
+t.run(3)
+assert(#said == n, "lined up is said once per alignment")
+
+-- What a glance shows, for the scanner.
+knight.TargetAngle, knight.CurrentAngle = 180, 180
+local d = statues.describe(knight_path)
+assert(d == "kneeling, facing east; its reflection faces south", "describe: " .. tostring(d))
+
+-- Hint lines: standing on one (inside the corridor) with your light hums; stepping off stops it.
+knight.VFX_HintLine_Alpha = 1
+px, py = 0, 600
 t.run(0.5)
-assert(not statues.target(), "no puzzle spot outside gameplay")
+assert(count_loops() == 1, "on the hint line: a hum")
+px, py = 300, 600
+t.run(0.5)
+assert(count_loops() == 0, "off the line: no hum")
+knight.VFX_HintLine_Alpha = 0
+px, py = 0, 600
+t.run(0.5)
+assert(count_loops() == 0, "no hint line shown, no hum (nothing a sighted player can't see)")
+
+-- Released: silence.
+knight.bHasBeenReleased = true
+notes = {}
+t.run(3)
+assert(#notes == 0, "a knight that has come alive is no longer a puzzle")
+
+-- Outside gameplay: silence, and nothing to describe.
+knight.bHasBeenReleased = false
+in_game = false
+notes = {}
+t.run(3)
+assert(#notes == 0 and statues.describe(knight_path) == nil, "silent outside gameplay")
 print("statues test passed")

@@ -19,7 +19,7 @@
 //   audio.sounds() -> { names }
 //
 // Built-in synthesized sounds: ping, tick, chime, arrive, wall, opening, door, person, item,
-// enemy, warn, step_blocked, ledge, hop, climb.
+// enemy, warn, step_blocked, ledge, hop, climb, note, hum.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -122,6 +122,19 @@ Sound noise_loop(float lowpass, float amp, float wobble_hz) {
     return s;
 }
 
+// A soft steady tone that loops seamlessly (a whole number of cycles in one second).
+Sound tone_loop(float freq, float amp) {
+    Sound s;
+    s.loops = true;
+    int n = kRate;
+    for (int i = 0; i < n; ++i) {
+        float t = static_cast<float>(i) / kRate;
+        float v = std::sin(2 * kPi * freq * t) + 0.2f * std::sin(4 * kPi * freq * t);
+        s.pcm.push_back(static_cast<int16_t>(v * amp * 32000));
+    }
+    return s;
+}
+
 // One-shot noise burst: footsteps, landings, the rush of air at an opening.
 Sound noise_burst(float len, float lowpass, float amp, float attack, uint32_t seed) {
     Sound s;
@@ -160,6 +173,12 @@ void build_sounds() {
     g_sounds["hop"] = tone({{520, 1}, {780, 1}}, 0.05f, 0.5f, 0.3f);
     // A ledge you can climb: four rising notes.
     g_sounds["climb"] = tone({{330, 1}, {440, 1}, {587, 1}, {784, 1}}, 0.05f, 0.45f, 0.3f);
+    // Statue puzzles: a clear bell-like note whose pitch carries meaning (the knight's note
+    // and its reflection's), and a soft hum for standing on a knight's hint line.
+    g_sounds["note"] = tone({{523.25, 1}}, 0.35f, 0.5f, 0.15f);
+    g_sounds["hum"] = tone_loop(220.0f, 0.35f);
+    g_sounds["hum_preview"] = tone_loop(220.0f, 0.35f);  // one second, not looping
+    g_sounds["hum_preview"].loops = false;
 }
 
 // --- Spatialisation --------------------------------------------------------------------

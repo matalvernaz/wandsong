@@ -157,15 +157,6 @@ local source = nil              -- "route", "mission" or "guide": a change start
 -- Forward-declared above for target classification.
 local last_objective = nil      -- the current task, as the game words it (when it does)
 
--- A statue puzzle (statues.lua) names its own spot to stand on; the game's marker sits on the
--- knight itself. statues.lua is loaded after this module, by main.lua.
-local PUZZLE_ARRIVE_CM = 60
-local puzzle_name = nil
-local function statues()
-    local mod = package.loaded.statues
-    return type(mod) == "table" and mod or nil
-end
-
 -- --- The engine's own pathfinding, when the game gives no route ---------------------------
 -- Some objectives come with a destination but no route (PathTS empty). Then the engine's
 -- navigation system is asked for a path over its navmesh (FindPathToLocationSynchronously,
@@ -188,6 +179,13 @@ local nav_cache = nil           -- { x, y, z, at, pts }
 local nav_fails = 0
 local route_failure = nil
 local route_from_nav = false
+-- The navmesh sometimes stops well short of an objective that is plainly walkable (the vault's
+-- glowing floor: the path ended 13 m away, Oct 7, and Matt had to walk the rest by hand). Then
+-- the last stretch is walked straight, up to this far, watching the floor ahead for drops;
+-- a wall still ends it as "stuck".
+local STRAIGHT_MAX_CM = 2500
+local straight_to = nil         -- {x, y, z}: the objective being walked to in a straight line
+local next_floor_check = 0
 
 local function nav_route(d, max_age)
     if not nav_ok then return nil, "pathfinding is paused after a previous crash" end
@@ -232,6 +230,8 @@ local function refresh_route()
         if dest_is_person() and #trail > 1 then
             for i, p in ipairs(trail) do route[i] = p end
             if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
+        elseif straight_to and dist3(straight_to, d) < 200 then
+            route = { d }
         else
             local nav, err = nav_route(d, walking and 3 or 8)
             if nav then route, route_from_nav = nav, true
@@ -239,19 +239,6 @@ local function refresh_route()
         end
         return
     end
-    local st = statues()
-    local spot = st and st.target and st.target()
-    if spot then
-        route, dest_is_guide, guide_path, puzzle_name = {}, false, nil, spot.name
-        if source ~= "puzzle" then trail, dest_moved_at, source = {}, -100, "puzzle" end
-        dest = { spot[1], spot[2], spot[3] }
-        local nav = nav_route(dest, walking and 3 or 8)
-        if nav then route, route_from_nav = nav, true end
-        diag.event("route", string.format("%d points, statue puzzle spot %.0f %.0f %.0f", #route,
-            dest[1] / 100, dest[2] / 100, dest[3] / 100))
-        return
-    end
-    if source == "puzzle" then source, dest, puzzle_name = nil, nil, nil end
     local m = manager()
     diag.trace("path: read route")
     local pts = {}
@@ -291,9 +278,13 @@ local function refresh_route()
                 for i, p in ipairs(trail) do route[i] = p end
                 if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
             elseif src == "mission" and not target_moving() then
-                -- A fixed objective with no route from the game: ask the navmesh.
-                local nav = nav_route(d, walking and 3 or 8)
-                if nav then route, route_from_nav = nav, true end
+                if straight_to and dist3(straight_to, d) < 200 then
+                    route = { d }
+                else
+                    -- A fixed objective with no route from the game: ask the navmesh.
+                    local nav = nav_route(d, walking and 3 or 8)
+                    if nav then route, route_from_nav = nav, true end
+                end
             end
         else
             dest, trail = nil, {}
@@ -342,7 +333,6 @@ local function beacon()
     if speech.is_muted() or not beacon_on then return end
     local px, py, pz, yaw = world.position()
     if not dest or dest_is_guide then return end
-    if source == "puzzle" then return end   -- statues.lua chimes from the spot itself
     if target_moving() then
         -- Someone leading you: their own person sound says where they are once you're close;
         -- the beacon only calls you along when you fall behind. No arrival chimes.
@@ -418,7 +408,7 @@ end
 local PAUSED = "the game paused or a scene started"
 local function stop(why, sound)
     if not walking then return end
-    walking, waiting = false, false
+    walking, waiting, straight_to = false, false, nil
     release()
     log("autowalk stopped: " .. why)
     local was = chosen
@@ -426,12 +416,6 @@ local function stop(why, sound)
     if was then route, dest, nav_cache, source = {}, nil, nil, nil end
     if was and (why == "caught up" or why == "you've arrived") then
         speech.say("Arrived at " .. was.name .. ".")
-        return
-    end
-    if why == "in line" then return end   -- statues.lua says so itself
-    if why == "at the spot" then
-        local st = statues()
-        speech.say(st and st.arrival_text and st.arrival_text() or "At the spot.")
         return
     end
     if sound and audio and not speech.is_muted() and (not world.sounds_enabled or world.sounds_enabled()) then
@@ -551,12 +535,7 @@ local function walk_tick()
     local level = math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM
     if route_failure then stop(route_failure); return end
     local person, moving = dest_is_person(), target_moving()
-    if source == "puzzle" then
-        -- The spot is exact: the corridor may be only a metre or two wide.
-        local st = statues()
-        if st and st.in_line and st.in_line() then stop("in line"); return end
-        if d < PUZZLE_ARRIVE_CM and level then stop("at the spot"); return end
-    elseif person and not moving then
+    if person and not moving then
         -- They're standing still: walk right up beside them (in the intro the story waits
         -- for you to come close).
         waiting = false
@@ -582,9 +561,26 @@ local function walk_tick()
     local partial = endpoint and (dist2d(dest[1], dest[2], endpoint) > BESIDE_CM
         or math.abs(dest[3] - endpoint[3]) >= ARRIVE_HEIGHT_CM)
     if route_from_nav and #route > 1 and partial and dist3({px, py, pz}, endpoint) < 130 then
-        stop(string.format("as close as the path goes, %.1f metres from %s", dist3({px, py, pz}, dest) / 100,
-             chosen and chosen.name or "the objective"))
-        return
+        local left = dist3({px, py, pz}, dest)
+        if not straight_to and not person and left < STRAIGHT_MAX_CM and math.abs(dest[3] - pz) < 2 * ARRIVE_HEIGHT_CM then
+            straight_to = { dest[1], dest[2], dest[3] }
+            route, route_from_nav = { straight_to }, false
+            log(string.format("path ends %.1f m short; walking straight", left / 100))
+        else
+            stop(string.format("as close as the path goes, %.1f metres from %s", left / 100,
+                 chosen and chosen.name or "the objective"))
+            return
+        end
+    end
+    if straight_to and os.clock() >= next_floor_check then
+        next_floor_check = os.clock() + 0.3
+        local yaw_to = math.deg(math.atan(dest[2] - py, dest[1] - px))
+        local floor, unknown = require("surroundings").floor_ahead(yaw_to, 120)
+        if not unknown and (not floor or floor < -100) then
+            stop(string.format("the floor drops away ahead, %.1f metres from %s", dist3({px, py, pz}, dest) / 100,
+                 chosen and chosen.name or "the objective"), "ledge")
+            return
+        end
     end
     if person then p, ci = next_crumb(px, py, pz) end
     -- The last stretch to someone standing still goes straight to them.
@@ -674,9 +670,6 @@ local function toggle_walk()
     local metres = math.floor(dist2d(px, py, dest) / 100 + 0.5)
     if dest_is_guide then
         speech.say(string.format("No objective here. Following the nearest person, %d metres away. Press any movement key or %s to stop.", metres, stop_key))
-    elseif source == "puzzle" then
-        speech.say(string.format("Walking to %s, %d metres. Press any movement key or %s to stop.",
-            puzzle_name or "the statue puzzle spot", metres, stop_key))
     elseif dest_is_person() then
         speech.say(string.format("Following, %d metres behind. Press any movement key or %s to stop.", metres, stop_key))
     else
@@ -720,10 +713,7 @@ end
 
 local face = nil                -- { path = actor path or nil, x, y, until_t, what }
 
-local COMPASS = { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" }
--- World yaw as a compass word. The game's +X axis is called north (Unreal's convention); it
--- stays consistent, which is what matters for finding your way.
-local function compass(yaw) return COMPASS[math.floor(((yaw % 360) + 22.5) / 45) % 8 + 1] end
+local compass = state.compass
 
 local function face_tick()
     if not face or walking then return end
@@ -780,9 +770,6 @@ end
 --- nearest-person fallback or a scanner walk target: only what the game points at.
 function M.objective()
     if not dest or dest_is_guide or chosen then return nil end
-    if source == "puzzle" then
-        return { x = dest[1], y = dest[2], z = dest[3], name = "Statue puzzle: " .. (puzzle_name or "the spot") }
-    end
     return { x = dest[1], y = dest[2], z = dest[3],
              name = (last_objective and ("Objective: " .. last_objective)) or "Quest objective" }
 end
@@ -885,8 +872,7 @@ local function where_am_i()
     local t = { "Facing " .. compass(now or yaw) }
     if dest and not dest_is_guide then
         local w = state.where(px, py, now or yaw, dest[1], dest[2])
-        t[#t + 1] = (source == "puzzle" and "Statue puzzle spot "
-            or (dest_is_person() and "Person you're following " or "Objective ")) .. w
+        t[#t + 1] = (dest_is_person() and "Person you're following " or "Objective ") .. w
     end
     local q = objective_text()
     if q then t[#t + 1] = q end
@@ -990,7 +976,7 @@ dispatch.every(500, function()
         generation = state.generation
         if walking then stop("loading") end
         route, dest, trail, chosen, crumb, guide_path, mgr_path, quest_paths, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil, nil
-        source, last_quest_line, last_objective, arrived_at, face, puzzle_name = nil, nil, nil, nil, nil, nil
+        source, last_quest_line, last_objective, arrived_at, face, straight_to = nil, nil, nil, nil, nil, nil
         next_mgr_search = 0
     end
     if walking and state.loading() then stop("loading") end

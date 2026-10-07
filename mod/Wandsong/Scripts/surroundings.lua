@@ -427,5 +427,22 @@ function M.profile(yaw)
     return table.concat(parts, ", ")
 end
 
+--- Height of the floor `ahead` cm in front along `yaw`, relative to the player's feet (cm),
+--- or nil if there's no floor within 4 m below (a drop). nil, "unknown" if it can't be told.
+function M.floor_ahead(yaw, ahead)
+    local pawn = world.pawn()
+    local k = kismet()
+    if not (pawn and k) then return nil, "unknown" end
+    local px, py, pz = world.position()
+    local half = 90
+    pcall(function() half = pawn.RootComponent.CapsuleHalfHeight end)
+    local feet = pz - half
+    local a = math.rad(yaw)
+    local fx, fy = px + math.cos(a) * ahead, py + math.sin(a) * ahead
+    local d, _, _, hz = ray(k, pawn, fx, fy, feet + 150, fx, fy, feet - 400)
+    if not d then return nil end
+    return hz - feet
+end
+
 log("loaded" .. (audio and "" or " (no audio)"))
 return M

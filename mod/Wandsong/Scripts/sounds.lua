@@ -24,6 +24,9 @@ local LEGEND = {
     { "tick", "Lined up: a soft tick right after an obstacle sound means it's straight ahead of you. Also plays when you turn with the arrow keys." },
     { "warn", "Incoming attack: the high alert means you can block with Protego." },
     { "warn", "Unblockable attack: the lower alert means dodge.", 0.65 },
+    { "note", "Statue puzzle, the knight's note: a clear bell from where a puzzle knight kneels." },
+    { "note", "Statue puzzle, the reflection's note: right after the knight's while your own light leads its reflection. Higher or lower means the reflection is turned away from the way the knight faces; the same note means lined up.", 1.12 },
+    { "hum_preview", "Statue puzzle hint line: a soft hum while you stand on a knight's line of light, where the game shows one." },
 }
 
 function M.items()

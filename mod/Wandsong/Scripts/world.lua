@@ -44,6 +44,10 @@ local CATEGORIES = {
     { kind = "usable",  sound = nil,      every = 99,  range = 1500,
       classes = { "InteractiveObjectActor", "SimpleInteractObject", "WorldInteractObject" } },
 }
+-- Breakable props (pots, jugs, kitchenware) are interactive objects too, but they're scenery to
+-- a player looking for what to use: they get their own category instead of crowding it.
+local PROP = { kind = "prop", sound = nil, every = 99, range = 1500, classes = {} }
+local PROP_CLASSES = { "BCProps", "KitchenItems", "Ceramic" }
 -- Class-name fragments that mean "a person, not a foe" even under Enemy_Character.
 local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merchant" }
 -- Puzzle knights (the Gringotts vault) are enemies too, but until one comes alive it's a
@@ -201,6 +205,17 @@ local function ui_blocker()
                 end
             end)
             if modal and os.clock() - state.modal_since < 600 then why = "tutorial" else state.modal_since = nil end
+        end
+        -- Quest failed or defeated (Oct 7, vault: arrows kept turning the camera and the review
+        -- keys found nothing while "Try Again" waited). The UI manager holds that screen.
+        if not why and state.fail_screen_since then
+            diag.trace("gate: fail screen")
+            local up = false
+            pcall(function()
+                local scr = ui_manager.MissionFailedScreen
+                if scr and scr:IsValid() and scr.Visibility ~= 1 and scr.Visibility ~= 2 then up = scr:IsInViewport() == true end
+            end)
+            if up and os.clock() - state.fail_screen_since < 600 then why = "quest failed" else state.fail_screen_since = nil end
         end
     end
     if why ~= ui_last_why then ui_last_why, ui_changed_at = why, os.clock() end
@@ -401,7 +416,22 @@ end
 -- ("BP_OL_Chest_C" -> "Chest"), else the category's noun. Worked out once per actor, from
 -- property reads only, and logged with its source so missing names can be fixed.
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
-                    collect = "Collectible", door = "Door", usable = "Something to use", statue = "Statue" }
+                    collect = "Collectible", door = "Door", usable = "Something to use", statue = "Statue",
+                    prop = "Object" }
+-- Class names that say nothing about the thing ("BP_INT_Interact_C" was read as "Interact").
+local GENERIC = { ["Interact"] = true, ["Simple Interact Object"] = true, ["Interactive Object Actor"] = true,
+                  ["World Interact Object"] = true, ["Something to use"] = true }
+
+-- The level designer's own name for a placed thing ("Interact_VaultDoor" -> "Vault Door"),
+-- unless it's an automatic one ("BP_INT_Interact_C_2147450000").
+local function placed_name(actor)
+    local p = path_of(actor)
+    local leaf = p and p:match("[^.:]+$")
+    if not leaf then return nil end
+    leaf = leaf:gsub("_C_%d+$", ""):gsub("^BP_", ""):gsub("^INT_", ""):gsub("^Int_", "")
+    leaf = leaf:gsub("^Interact_", ""):gsub("_Interact$", ""):gsub("^Interact$", "")
+    return leaf ~= "" and leaf or nil
+end
 local NOISE_WORDS = { Default = true, Base = true, Character = true, Actor = true, Generic = true,
                       Phoenix = true, Int = true, Props = true, Prop = true, Items = true, Item = true }
 
@@ -461,8 +491,17 @@ local function name_of(actor, kind)
         local cls = "?"
         pcall(function() cls = actor:GetClass():GetFName():ToString() end)
         local h = humanize(cls)
+        if not h or GENERIC[h] then
+            -- Generic class: the thing's own label, its beacon name, or the name it was placed with.
+            try("label", function() return actor.Text:ToString() end)
+            try("beacon name", function() return actor.BeaconName:ToString() end)
+            try("placed as", function() return placed_name(actor) end)
+            if name and GENERIC[name] then name, src = nil, nil end
+        end
         -- A class name that only repeats the category ("Enemy") adds nothing.
-        if h and h:lower() ~= (KIND_NOUN[kind] or ""):lower() then name, src = h, "class " .. cls end
+        if not name and h and not GENERIC[h] and h:lower() ~= (KIND_NOUN[kind] or ""):lower() then
+            name, src = h, "class " .. cls
+        end
     end
     if not name then name, src = KIND_NOUN[kind] or "Something", "category" end
     if not logged_names[name .. src] then
@@ -495,7 +534,13 @@ local function scan_step()
             local d = math.sqrt(dx * dx + dy * dy + dz * dz)
             local cat = entry.cat
             -- Stations are spots characters stand at to act something out: not for the player.
-            if cat.kind == "usable" and a:GetClass():GetFName():ToString():find("Station", 1, true) then return end
+            if cat.kind == "usable" then
+                local cn = a:GetClass():GetFName():ToString()
+                if cn:find("Station", 1, true) then return end
+                for _, frag in ipairs(PROP_CLASSES) do
+                    if cn:find(frag, 1, true) then cat = PROP; break end
+                end
+            end
             local statue_class = false
             if cat.kind == "enemy" then
                 local cn = a:GetClass():GetFName():ToString()
@@ -509,7 +554,7 @@ local function scan_step()
             -- Earlier (more specific) categories win; don't let a later one relabel. A statue
             -- that comes alive does become an enemy.
             local prev = claimed_by[key]
-            if prev and prev ~= cat.kind and prev ~= "person" and prev ~= "statue" then return end
+            if prev and prev ~= cat.kind and prev ~= "person" and prev ~= "statue" and prev ~= "prop" then return end
             if d > math.max(cat.range * 1.5, KEEP_CM) then nearby[key] = nil; return end
             claimed_by[key] = cat.kind
             local n = nearby[key]

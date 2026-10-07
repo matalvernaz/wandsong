@@ -250,6 +250,9 @@ local function on_read_menu(widget)
     -- A modal tutorial pauses play: the world layer stands down so the review keys can read
     -- it and press its Continue (some must be held; the press key holds those).
     if cls:find("Tutorial_Modal", 1, true) then state.modal_since = os.clock() end
+    -- "Quest failed" (Try Again, Exit to the Main Menu) and being defeated: real menus that the
+    -- UI manager doesn't report as one. The world layer stands down while they're up.
+    if cls:find("MissionFailScreen", 1, true) or cls:find("GameOver", 1, true) then state.fail_screen_since = os.clock() end
 
     -- Loading screens tell the world layer to keep its hands off until the load is over.
     if is_loading_class(cls) then

@@ -18,12 +18,14 @@ public class HaKeys {
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
  [DllImport("user32.dll")] public static extern void keybd_event(byte v,byte s,uint f,UIntPtr e);
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
+ // Virtual key plus its scan code, like a real keyboard driver reports. Scan-code-only
+ // input (KEYEVENTF_SCANCODE) was never seen by the game or UE4SS for F or Enter (Oct 7).
  public static void Key(ushort vk, bool ext, bool up){
   var a=new IN[1]; a[0].type=1;
   uint scan=MapVirtualKey(vk,4);
+  a[0].ki.vk=vk;
   a[0].ki.scan=(ushort)(scan & 0xff);
-  a[0].ki.flags=(uint)(8|((ext || (scan & 0xff00)==0xe000)?1:0)|(up?2:0));
-  if(scan==0){ a[0].ki.vk=vk; a[0].ki.flags &= ~8u; }
+  a[0].ki.flags=(uint)(((ext || (scan & 0xff00)==0xe000)?1:0)|(up?2:0));
   if(SendInput(1,a,Marshal.SizeOf(typeof(IN)))!=1) throw new InvalidOperationException("Windows rejected the key input");
  }
 }

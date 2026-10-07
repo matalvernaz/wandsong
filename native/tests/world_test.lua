@@ -84,4 +84,36 @@ knight.bHasBeenReleased=true
 t.run(8)
 kind,name=kind_of("/Game/Vault.Knight")
 assert(kind=="enemy" and name=="Stone knight","a knight that comes alive becomes an enemy")
+
+-- Generic interactables take the name the level designer gave them; pots go to Objects.
+local function cls_of(o, name) o.GetClass=function() return {GetFName=function() return {ToString=function() return name end} end} end end
+local door=obj("BP_INT_Interact_C","/Game/Vault.Interact_VaultDoor",{RootComponent={RelativeLocation={X=700,Y=230,Z=340}}})
+cls_of(door,"BP_INT_Interact_C")
+local glow=obj("BP_INT_Interact_C","/Game/Vault.BP_INT_Interact_C_2147450001",{Text={ToString=function() return "Strange glow" end},
+    RootComponent={RelativeLocation={X=800,Y=230,Z=340}}})
+cls_of(glow,"BP_INT_Interact_C")
+local anon=obj("BP_INT_Interact_C","/Game/Vault.BP_INT_Interact_C_2147450002",{RootComponent={RelativeLocation={X=900,Y=230,Z=340}}})
+cls_of(anon,"BP_INT_Interact_C")
+local pot=obj("BP_Int_BCProps_Pot_001_W_C","/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7",{RootComponent={RelativeLocation={X=650,Y=230,Z=340}}})
+cls_of(pot,"BP_Int_BCProps_Pot_001_W_C")
+FindAllOf=function(c) if c=="SimpleInteractObject" then return {door,glow,anon,pot} end return {} end
+t.run(8)
+kind,name=kind_of("/Game/Vault.Interact_VaultDoor")
+assert(kind=="usable" and name=="Vault Door","placed name instead of Interact: "..tostring(name))
+kind,name=kind_of("/Game/Vault.BP_INT_Interact_C_2147450001")
+assert(name=="Strange glow","the thing's own label: "..tostring(name))
+kind,name=kind_of("/Game/Vault.BP_INT_Interact_C_2147450002")
+assert(name=="Something to use","an anonymous one is never called Interact: "..tostring(name))
+kind,name=kind_of("/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7")
+assert(kind=="prop" and name=="Pot","pots are objects, not things to use")
+
+-- The quest-failed screen (Try Again / Exit) is a menu: the world stands down while it's up.
+local fail_up=true
+ui.MissionFailedScreen={IsValid=function() return true end, Visibility=0, IsInViewport=function() return fail_up end}
+require("state").fail_screen_since=os.clock()
+t.run(0.5)
+assert(not world.in_game() and not world.gameplay(),"quest failed screen closes the world gate")
+fail_up=false
+t.run(6)
+assert(world.in_game() and require("state").fail_screen_since==nil,"gone: back to the world")
 print("world test passed")

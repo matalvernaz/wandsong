@@ -18,7 +18,8 @@ package.loaded.audio_bridge={init=function() return true end, play=function() to
     play_ui=function() tones=tones+1 end}
 package.loaded.input_bridge={ focused=function() return true end, key=function(v,down) pressed[v]=down; return true end,
     mouse_move=function(dx) yaw=yaw+dx*0.15; pawn.Controller.ControlRotation.Yaw=yaw; return true end }
-package.loaded.surroundings={profile=function() return "test step" end}
+local floor_ahead=0
+package.loaded.surroundings={profile=function() return "test step" end, floor_ahead=function() return floor_ahead end}
 FindAllOf=function(c) return available and c=="BP_PathNavigationManager_C" and {mgr} or {} end
 StaticFindObject=function(p)
     if not available then return nil end
@@ -44,13 +45,22 @@ path.walk_to("/Game/Chest","Chest","chest")
 assert(said[#said]:find("no path"),"failed path explained")
 assert(not pressed[73],"no movement after failed path")
 
--- A partial navmesh path stops at its reachable end and reports the remaining distance.
+-- A partial navmesh path whose end is close to the objective: the last stretch is walked
+-- straight (the vault's glowing floor, 13 m past the navmesh), until the floor drops away.
 nav={{X=0,Y=0,Z=0},{X=0,Y=1000,Z=0}}
 path.walk_to("/Game/Chest","Chest","chest")
 py=1000; t.run(0.3)
+assert(pressed[73] and not said[#said]:find("as close as the path goes"),"walks on straight past the navmesh's end")
+floor_ahead=nil; t.run(0.5)
+assert(not pressed[73] and said[#said]:find("floor drops away",1,true),"a drop ahead ends the straight walk")
+floor_ahead=0
+-- Too far past the navmesh: stop at its end and say how far is left.
+target={1500,4000,0}
+path.walk_to("/Game/Chest","Chest","chest")
+t.run(0.3)
 assert(said[#said]:find("as close as the path goes"),"partial path is not reported as arrival")
 assert(not pressed[73])
-py=0
+py=0; target={1500,0,0}
 
 -- A complete path may end within a step of a guide's current location. Keep walking that
 -- last step instead of calling it a partial path (observed at the Gringotts vault).
@@ -93,27 +103,6 @@ pz=0
 path.walk_to("/Game/Chest","Chest","chest")
 nav=nil; t.run(1.5)
 assert(not pressed[73] and said[#said]:find("no path found"),"failed route refresh stops movement")
-
--- A statue puzzle's spot replaces the game's marker (which sits on the knight): autowalk
--- walks there and stops when the puzzle says you're in line, without its own announcement.
-muted=false; sound_on=true
-local spot={300,0,0}; local in_line=false
-package.loaded.statues={target=function() return spot and {spot[1],spot[2],spot[3],name="where the knight lines up"} end,
-    in_line=function() return in_line end, arrival_text=function() return "At the spot." end}
-px,py,pz,yaw=0,0,0,0; pawn.Controller.ControlRotation.Yaw=0
-nav={{X=0,Y=0,Z=0},{X=300,Y=0,Z=0}}
-t.action("autowalk")(); t.run(0.3)
-assert(said[#said]:find("Walking to where the knight lines up",1,true),"autowalk names the puzzle spot")
-assert(path.objective().name:find("Statue puzzle",1,true),"the scanner's objective is the puzzle spot")
-assert(pressed[73],"walks toward the spot")
-px=150; t.run(0.3)
-assert(pressed[73],"4 m short of a puzzle spot is not arrival")
-local n=#said
-in_line=true; t.run(0.3)
-assert(not pressed[73] and #said==n,"stops in line, leaving the announcement to the puzzle")
-in_line=false; spot=nil; t.run(1.2)
-assert(path.objective()==nil or not path.objective().name:find("Statue",1,true),"puzzle over: back to the quest")
-package.loaded.statues=nil; px=0
 
 sound_on=false
 local silent=tones

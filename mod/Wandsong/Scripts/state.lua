@@ -25,6 +25,8 @@ end
 -- Set when a modal tutorial (one that pauses play until you continue) has been read; the
 -- world gate then checks the game's tutorial system and stays closed while it's up.
 M.modal_since = nil
+-- Set when the quest-failed (or defeated) screen has been read; cleared once it's gone.
+M.fail_screen_since = nil
 
 -- Recent sound cues, so the player can ask what a sound was. Newest first.
 M.cues = {}
@@ -32,6 +34,11 @@ function M.cue(text)
     table.insert(M.cues, 1, { text = text, at = os.clock() })
     if #M.cues > 8 then table.remove(M.cues) end
 end
+
+-- A world yaw as a compass word. The game's +X axis is called north (Unreal's convention); it
+-- stays consistent, which is what matters for finding your way.
+local COMPASS = { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" }
+function M.compass(yaw) return COMPASS[math.floor(((yaw % 360) + 22.5) / 45) % 8 + 1] end
 
 -- Where a point is relative to the player and the camera: "ahead left, 4 metres".
 local SIDES = { "ahead", "ahead right", "right", "behind right", "behind", "behind left", "left", "ahead left" }
