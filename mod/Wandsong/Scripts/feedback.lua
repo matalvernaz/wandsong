@@ -109,6 +109,10 @@ local function read_prompt(path)
     local ok, text = pcall(function()
         local widget = StaticFindObject(path)
         if not widget or not widget:IsValid() then return end
+        -- A destroyed widget can still come back from the lookup, renamed None (world.lua).
+        local full
+        pcall(function() full = widget:GetFullName() end)
+        if full and not full:find(path, 1, true) then return end
         local panel = widget.ButtonPrompt
         if panel and (panel.Visibility == 1 or panel.Visibility == 2 or panel.RenderOpacity == 0) then return end
         local action = widget.ActionText.Text:ToString()

@@ -69,7 +69,8 @@ local function manager()
     local m
     if mgr_path then pcall(function() m = StaticFindObject(mgr_path) end) end
     if m then
-        local ok, v = pcall(function() return m:IsValid() end)
+        -- Valid, and still the object the path names (a destroyed one comes back renamed None).
+        local ok, v = pcall(function() return m:IsValid() and m:GetFullName():find(mgr_path, 1, true) ~= nil end)
         if ok and v then return m end
     end
     -- FindAllOf costs ~30 ms: when there's no manager (parts of the intro), look again only
@@ -758,7 +759,10 @@ local function quest_widgets()
         for _, p in ipairs(quest_paths) do
             local o
             pcall(function() o = StaticFindObject(p.path) end)
-            if o and visible(o) then found[#found + 1] = { kind = p.kind, obj = o } end
+            -- A widget the game has destroyed can come back from the lookup renamed None:
+            -- calling IsVisible on it would crash. The full name must still end in the path.
+            local same = o and path_of(o) == p.path
+            if same and visible(o) then found[#found + 1] = { kind = p.kind, obj = o } end
         end
         if #found > 0 then return found end
     end

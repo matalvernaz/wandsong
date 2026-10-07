@@ -59,7 +59,6 @@ local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or di
 -- up again (StaticFindObject is a quick hash lookup) every time it's needed.
 local ui_path, pawn_path, ctrl_path, ts_path
 local in_game, stable, world_key = false, 0, nil
-local ui_playing = false   -- the UI shows no menu, pause or load (gameplay or a scene), world gate aside
 
 local function valid(o)
     if not o then return false end
@@ -77,8 +76,13 @@ local function resolve(path)
     if not path then return nil end
     local o
     pcall(function() o = StaticFindObject(path) end)
-    if valid(o) then return o end
-    return nil
+    if not valid(o) then return nil end
+    -- An object the game has just destroyed can still come back from the lookup, its name
+    -- already cleared (the Field Guide screen, 200 ms after the pause menu closed, Oct 6
+    -- 10:15 PM: calling a function on it crashed the game). Its full name no longer matches.
+    local now_path = path_of(o)
+    if now_path and now_path ~= path then diag.trace("stale object " .. path); return nil end
+    return o
 end
 
 local function call_bool(o, fn)
@@ -151,38 +155,48 @@ end
 
 -- Why the UI isn't plain gameplay (a menu, pause, a load, a modal tutorial), or nil when it
 -- is. Asks only the long-lived UI manager and tutorial system, never the player or the world.
+-- Asked afresh every time, never cached: menu code asks right before each widget read, and a
+-- menu that has just closed must count as gameplay at once, not after the gate's next tick.
+-- (Oct 6, 10:15 PM: the focus poller called a function on the Field Guide screen 200 ms after
+-- the pause menu closed; the game had already freed it, and crashed.)
+local UI_SETTLE = 0.75              -- seconds after any UI change in which widgets may still be dying
+local ui_last_why, ui_changed_at = false, -10
 local function ui_blocker()
-    diag.trace("gate: UI manager")
+    local why
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
-    if not ui_manager then return "no UI manager" end
-    state.paused = false
-    for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
-                          "GetInMenuTransition", "InPauseMode" }) do
-        if call_bool(ui_manager, fn) == true then
-            state.paused = fn == "InPauseMode" or fn == "GetInMenuTransition"
-            if fn == "IsAsyncScreenLoadInProgress" then state.mark_loading(5) end
-            return fn
+    if not ui_manager then
+        why = "no UI manager"
+    else
+        state.paused = false
+        for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
+                              "GetInMenuTransition", "InPauseMode" }) do
+            if call_bool(ui_manager, fn) == true then
+                state.paused = fn == "InPauseMode" or fn == "GetInMenuTransition"
+                if fn == "IsAsyncScreenLoadInProgress" then state.mark_loading(5) end
+                why = fn
+                break
+            end
+        end
+        -- A modal tutorial is up (menus saw it): closed until the game's tutorial system no longer
+        -- shows a modal screen. Only property reads and the class name; nothing is called.
+        if not why and state.modal_since then
+            diag.trace("gate: tutorial")
+            local ts = resolve(ts_path)
+            if not ts then ts = find_live("TutorialSystem"); ts_path = path_of(ts) end
+            local modal = false
+            pcall(function()
+                local scr = ts.CurrentTutorialScreen
+                if scr and scr:IsValid() then
+                    local cn = scr:GetClass():GetFName():ToString()
+                    modal = cn:find("Modal", 1, true) ~= nil and not cn:find("NonModal", 1, true)
+                end
+            end)
+            if modal and os.clock() - state.modal_since < 600 then why = "tutorial" else state.modal_since = nil end
         end
     end
-    -- A modal tutorial is up (menus saw it): closed until the game's tutorial system no longer
-    -- shows a modal screen. Only property reads and the class name; nothing is called.
-    if state.modal_since then
-        diag.trace("gate: tutorial")
-        local ts = resolve(ts_path)
-        if not ts then ts = find_live("TutorialSystem"); ts_path = path_of(ts) end
-        local modal = false
-        pcall(function()
-            local scr = ts.CurrentTutorialScreen
-            if scr and scr:IsValid() then
-                local cn = scr:GetClass():GetFName():ToString()
-                modal = cn:find("Modal", 1, true) ~= nil and not cn:find("NonModal", 1, true)
-            end
-        end)
-        if modal and os.clock() - state.modal_since < 600 then return "tutorial" end
-        state.modal_since = nil
-    end
-    return nil
+    if why ~= ui_last_why then ui_last_why, ui_changed_at = why, os.clock() end
+    return why
 end
 
 local function gate_check()
@@ -195,12 +209,11 @@ local function gate_check()
             end)
         end
         close_gate("switched off")
-        -- Still tell gameplay from menus, so the arrow keys and screen review don't walk HUD
-        -- widgets mid-gameplay: with the fuse blown that crashed the game (Oct 6, up arrow).
-        ui_playing = not state.loading() and ui_blocker() == nil
+        -- Keep the pause and load state current (gameplay() asks the UI manager itself).
+        diag.trace("gate: UI manager")
+        ui_blocker()
         return
     end
-    ui_playing = false
     -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
     if state.loading() then
         if in_game or pawn_path then log("loading: pausing the world layer") end
@@ -210,8 +223,8 @@ local function gate_check()
         return
     end
     -- Ask the long-lived UI manager first; only look at the player once it says "playing".
+    diag.trace("gate: UI manager")
     local why = ui_blocker()
-    ui_playing = why == nil
     if why then close_gate(why); return end
     diag.trace("gate: player")
     local pawn = resolve(pawn_path)
@@ -257,13 +270,20 @@ end
 function M.in_game() return in_game and enabled and not state.loading() end
 --- True whenever no menu is up: gameplay, a scene or dialogue, the gate still settling, or
 --- world features off. Menu code must not walk widget trees then; in_game() alone is false in
---- all of those, and up arrow walking the HUD crashed the game twice (Oct 6).
-function M.gameplay() return M.in_game() or (ui_playing and not state.loading()) end
+--- all of those, and up arrow walking the HUD crashed the game twice (Oct 6). The UI manager
+--- is asked now, so a menu that closed a moment ago already counts as gameplay.
+function M.gameplay()
+    if state.loading() then return false end
+    return M.in_game() or ui_blocker() == nil
+end
 function M.sounds_enabled() return sounds_on and not speech.is_muted() end
 
---- True while the game is swapping screens (opening or closing a menu, loading one): widget
---- trees are being torn down then, and reading them crashed the game (Oct 6, pause menu).
+--- True while the game is swapping screens (opening or closing a menu, loading one) and for a
+--- moment after any such change: widget trees are being torn down then, and reading them
+--- crashed the game (Oct 6, pause menu, twice).
 function M.ui_busy()
+    ui_blocker()
+    if os.clock() - ui_changed_at < UI_SETTLE then return true end
     local ui = resolve(ui_path)
     if not ui then return false end
     return call_bool(ui, "GetInMenuTransition") == true or call_bool(ui, "IsAsyncScreenLoadInProgress") == true

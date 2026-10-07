@@ -199,8 +199,13 @@ local function resolve(path)
     local o
     pcall(function() o = StaticFindObject(path) end)
     local ok, alive = pcall(function() return o and o:IsValid() end)
-    if ok and alive then return o end
-    return nil
+    if not (ok and alive) then return nil end
+    -- A screen the game has just destroyed can still come back from the lookup, its name
+    -- already cleared (the Field Guide, 200 ms after the pause menu closed, Oct 6 10:15 PM:
+    -- calling a function on it crashed the game). Its full name no longer matches the path.
+    local now_path = path_of(o)
+    if now_path and now_path ~= path then diag.trace("stale object " .. path); return nil end
+    return o
 end
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 local loading_screen = nil -- path of a loading screen while one is up
