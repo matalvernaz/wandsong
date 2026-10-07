@@ -1,0 +1,102 @@
+"""Merge second-pass descriptions with the first pass into the slot files build_descriptions.py
+reads, in story order (key_lines.py aligns descriptions to the game's lines monotonically).
+
+    python -I merge_pass2.py <work dir> <pass2 dir> <out desc dir> <out batches dir>
+
+Second-pass files (<pass2 dir>/span<NN>_<k>.json) hold {"items": [{"line": <transcript index>,
+"delay": seconds after that line ends, "text": "..."}]}. Every first-pass slot (desc2/batches2)
+is kept; a new item joins the slot triggered by the same transcript line, else starts a new
+slot. An item that mostly repeats a description already on that line is dropped.
+"""
+import glob
+import json
+import os
+import re
+import sys
+
+work, pass2, out_desc, out_batches = sys.argv[1:5]
+tr = json.load(open(os.path.join(work, "transcript.json"), encoding="utf-8"))
+speech = json.load(open(os.path.join(work, "speech.json")))
+
+
+def line_index_before(t):
+    """The transcript line that started last before t: slots.py's trigger rule."""
+    best = None
+    for i, x in enumerate(tr):
+        if x["start"] <= t - 0.3:
+            best = i
+    return best
+
+
+def words(s):
+    return set(re.sub(r"[^\w\s]", " ", s.lower()).split())
+
+
+def repeats(text, others):
+    w = words(text)
+    for o in others:
+        ow = words(o)
+        if w and ow and len(w & ow) / min(len(w), len(ow)) >= 0.6:
+            return True
+    return False
+
+
+slots = {}          # transcript line index -> slot dict (first pass)
+batches = {}        # transcript line index -> batch dict
+for f in glob.glob(os.path.join(work, "batches2", "batch_*.json")):
+    for b in json.load(open(f, encoding="utf-8")):
+        li = line_index_before(b["t0"]) if b.get("after") else None
+        if li is None:
+            continue
+        batches.setdefault(li, b)
+by_slot_id = {}
+for f in glob.glob(os.path.join(work, "desc2", "batch_*.json")):
+    for s in json.load(open(f, encoding="utf-8")):
+        by_slot_id[s["slot"]] = s
+for li, b in batches.items():
+    s = by_slot_id.get(b["id"])
+    if s:
+        items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
+        slots[li] = {"after": s.get("after") or b.get("after"), "items": items, "t0": b["t0"], "span": b.get("span")}
+
+added, dropped = 0, 0
+for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):
+    data = json.load(open(f, encoding="utf-8"))
+    for it in data.get("items", []):
+        li, text = it.get("line"), (it.get("text") or "").strip()
+        if li is None or not text or li < 0 or li >= len(tr):
+            continue
+        delay = max(0.0, float(it.get("delay", 0.5)))
+        slot = slots.get(li)
+        if slot is None:
+            end = tr[li]["end"]
+            slot = {"after": tr[li]["text"], "items": [], "t0": end, "span": None}
+            slots[li] = slot
+            nxt = [s for s in speech if s[0] > end + 0.2]
+            batches[li] = {"id": None, "t0": end, "t1": nxt[0][0] if nxt else end + 10,
+                           "after": tr[li]["text"],
+                           "context_before": [x["text"] for x in tr[max(0, li - 2):li + 1]]}
+        if repeats(text, [i["text"] for i in slot["items"]]):
+            dropped += 1
+            continue
+        slot["items"].append({"offset": round(max(0.0, delay - 0.4), 1), "text": text})
+        added += 1
+
+order = sorted(slots, key=lambda li: slots[li]["t0"])
+out_s, out_b = [], []
+for new_id, li in enumerate(order):
+    s, b = slots[li], batches[li]
+    s["items"].sort(key=lambda i: i["offset"])
+    out_s.append({"slot": new_id, "after": s["after"], "items": s["items"]})
+    bb = dict(b)
+    bb["id"] = new_id
+    bb.setdefault("context_before", [x["text"] for x in tr[max(0, li - 2):li + 1]])
+    out_b.append(bb)
+os.makedirs(out_desc, exist_ok=True)
+os.makedirs(out_batches, exist_ok=True)
+for old in glob.glob(os.path.join(out_desc, "batch_*.json")) + glob.glob(os.path.join(out_batches, "batch_*.json")):
+    os.remove(old)
+json.dump(out_s, open(os.path.join(out_desc, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+json.dump(out_b, open(os.path.join(out_batches, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+print("%d slots, %d second-pass descriptions added, %d dropped as repeats, %d descriptions in all"
+      % (len(out_s), added, dropped, sum(len(s["items"]) for s in out_s)))
