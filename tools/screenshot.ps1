@@ -1,6 +1,7 @@
 # Dev helper: save a screenshot of the Hogwarts Legacy window (for Claude to look at while
-# testing). Usage: screenshot.ps1 [-Out path.png] [-Width 1280]
-param([string]$Out = "$env:TEMP\hl_shot.png", [int]$Width = 1280)
+# testing). Usage: screenshot.ps1 [-Out path.jpg] [-Width 960] [-Quality 70]
+# JPEG, small: a tool result over 1 MiB (a big PNG) once killed the claude-web session.
+param([string]$Out = "$env:TEMP\hl_shot.jpg", [int]$Width = 960, [int]$Quality = 70)
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -24,6 +25,9 @@ if ($w -gt $Width) {
     $small = New-Object System.Drawing.Bitmap $bmp, $Width, $nh
     $bmp.Dispose(); $bmp = $small
 }
-$bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
+$codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
+$params = New-Object System.Drawing.Imaging.EncoderParameters 1
+$params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), ([long]$Quality)
+$bmp.Save($Out, $codec, $params)
 $g.Dispose(); $bmp.Dispose()
 Write-Output $Out

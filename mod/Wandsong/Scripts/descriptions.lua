@@ -25,16 +25,14 @@ return {
         { delay = 0.9, text = "Inside the carriage, Osric sits facing you and Fig." },
         { delay = 7.7, text = "You nod, smiling." },
     } },
-    { after = "Heh heh heh.", prev = "I dare say it's one of the reasons he's risen so far at the Ministry.", items = {
+    { id = "GeorgeOsric_10146", after = "Have you seen this?", items = {
         { delay = 0.9, text = "Osric glances away." },
-    } },
-    { after = "I haven't seen this.", items = {
-        { delay = 0.9, text = "Osric holds out a newspaper. Its headline reads: Goblin Rebellion?" },
+        { delay = 1.4, text = "Osric holds out a newspaper. Its headline reads: Goblin Rebellion?" },
     } },
     { id = "EleazarFig_12973", after = "Miriam? How?", items = {
         { delay = 0.9, text = "Fig stares, stunned." },
     } },
-    { id = "GeorgeOsric_10149", after = "She wrote to me about Ranrok before she died – wondering what the Ministry knew about his activities.", items = {
+    { id = "GeorgeOsric_10150", after = "Before I could respond, I received this. It was the last thing she sent me, Eleazar.", items = {
         { delay = 0.9, text = "Fig looks down sadly." },
     } },
     { id = "PlayerFemale_32116", after = "What's that glow?", items = {
@@ -65,36 +63,38 @@ return {
         { delay = 0.9, text = "In a dim cave, you wince, holding the green potion Fig handed you." },
         { delay = 5.9, text = "You raise the vial and drink." },
     } },
-    { id = "PlayerFemale_32344", after = "How far did that Portkey take us?", items = {
+    { id = "EleazarFig_12942", after = "I would. But stay close. We've no idea who created this Portkey – or why.", items = {
         { delay = 0.9, text = "You follow Fig through the cave toward a bright opening." },
         { delay = 5.9, text = "Outside, a tall rock spire rises from a misty sea below the cliffs." },
     } },
     { id = "EleazarFig_13011", after = "Farther from London than the carriage travelled. We're somewhere in the Scottish Highlands.", items = {
         { delay = 0.9, text = "Fig gazes out." },
     } },
-    { id = "EleazarFig_13016", after = "Mind your step.", items = {
+    { id = "EleazarFig_13015", after = "Good. Let's see if we can find a path – however faded it may be.", items = {
         { delay = 0.9, text = "Fig leads you along a narrow cliff path beside a waterfall." },
     } },
-    { after = "Get to yourself!", prev = "Close now, it's just ahead.", items = {
+    { id = "EleazarFig_13161", after = "We're close now. It's just ahead.", items = {
         { delay = 0.9, text = "Ahead, crumbling ruins crown a sea stack, reached by a stone causeway." },
-        { delay = 8.3, text = "You and Fig brace on the causeway, arms raised against a gust of wind." },
-        { delay = 13.3, text = "A dark cloud of dust swirls around the ruins as you both shield your faces." },
-        { delay = 18.3, text = "Huge stones settle around the ruins as the dust clears." },
+        { delay = 13.4, text = "You and Fig brace on the causeway, arms raised against a gust of wind." },
+        { delay = 18.4, text = "A dark cloud of dust swirls around the ruins as you both shield your faces." },
+        { delay = 23.4, text = "Huge stones settle around the ruins as the dust clears." },
     } },
-    { id = "PlayerFemale_34184", after = "Hello?", items = {
+    { id = "EleazarFig_13020", after = "I don't believe it.", items = {
         { delay = 0.9, text = "Now you stand in a vast marble hall." },
         { delay = 8.9, text = "Fig joins you on the patterned marble floor." },
     } },
-    { id = "PrivateGoblinBanker_10049", after = "Just a moment. (mumbles)", items = {
+    { id = "PlayerFemale_34184", after = "Hello?", items = {
         { delay = 0.9, text = "You and Fig stand before a tall counter holding an open ledger, beneath a crystal chandelier." },
         { delay = 5.9, text = "Fig peers up at the counter behind its gilded grille. No one is visible." },
         { delay = 10.9, text = "Fig turns to you, puzzled." },
         { delay = 15.9, text = "A goblin banker, bald with long pointed ears, jerks upright behind the ledger." },
         { delay = 20.9, text = "He peers down at you over the book, long nails curled on its edge." },
         { delay = 25.9, text = "Fig gazes up at him, unimpressed." },
-        { delay = 32.1, text = "The goblin ducks down behind the counter." },
-        { delay = 37.1, text = "Fig waits beside you, frowning slightly." },
-        { delay = 42.1, text = "The goblin, in a green waistcoat, waddles out to you." },
+    } },
+    { id = "PrivateGoblinBanker_10049", after = "Just a moment. (mumbles)", items = {
+        { delay = 0.9, text = "The goblin ducks down behind the counter." },
+        { delay = 5.9, text = "Fig waits beside you, frowning slightly." },
+        { delay = 10.9, text = "The goblin, in a green waistcoat, waddles out to you." },
     } },
     { id = "PrivateGoblinBanker_10020", after = "Welcome to Gringotts Wizarding Bank.", items = {
         { delay = 0.9, text = "He bows, then straightens." },
@@ -108,19 +108,21 @@ return {
     { id = "EleazarFig_12944", after = "Oh, yes. Of course.", items = {
         { delay = 0.9, text = "Fig hands the key to the goblin banker." },
     } },
-    { id = "PrivateGoblinBanker_10025", after = "After you.", items = {
+    { id = "PrivateGoblinBanker_10024", after = "This way, then.", items = {
         { delay = 0.9, text = "The goblin banker hops down from his tall desk and leads the way." },
         { delay = 5.9, text = "You and Fig follow him into a dark cavern." },
         { delay = 10.9, text = "Overhead, a lamp glows at the top of a round stone shaft." },
     } },
-    { id = "PrivateGoblinBanker_10026", after = "Keep your hands inside the cart if you don't wish to lose them. (chuckles)", items = {
+    { id = "PrivateGoblinBanker_10025", after = "After you.", items = {
         { delay = 0.9, text = "On a dim platform beside the tracks, the banker waves you and Fig ahead." },
         { delay = 5.9, text = "A cart with a great glowing headlamp waits beneath a crystal chandelier." },
-        { delay = 14.4, text = "You and Fig sit in the cart. The banker works the controls." },
-        { delay = 19.4, text = "The cart rolls off into the dark." },
-        { delay = 24.4, text = "It speeds into a tunnel." },
     } },
-    { id = "PrivateGoblinBanker_10058", after = "You’ll want to take a breath.", items = {
+    { id = "PrivateGoblinBanker_10026", after = "Keep your hands inside the cart if you don't wish to lose them. (chuckles)", items = {
+        { delay = 0.9, text = "You and Fig sit in the cart. The banker works the controls." },
+        { delay = 5.9, text = "The cart rolls off into the dark." },
+        { delay = 10.9, text = "It speeds into a tunnel." },
+    } },
+    { id = "PrivateGoblinBanker_10057", after = "They are most uncommon. Only one with great wealth or power – or both – could have arranged for such a service.", items = {
         { delay = 0.9, text = "The cart plunges down a sheer cavern." },
     } },
     { id = "EleazarFig_12994", after = "A what?", items = {
@@ -134,13 +136,15 @@ return {
     { id = "GringottsGoblinGuard_10003", after = "Vault number?", items = {
         { delay = 0.9, text = "The banker leans forward, grinning." },
     } },
-    { id = "GringottsGoblinGuard_10004", after = "On your way.", items = {
+    { id = "PrivateGoblinBanker_10052", after = "Momentous day.", items = {
         { delay = 0.9, text = "The guard glares, a red band on his sleeve." },
-        { delay = 6.1, text = "The guard waves the cart on." },
-        { delay = 11.1, text = "The cart rolls away, the banker at the controls beside you." },
-        { delay = 16.1, text = "You glance back." },
-        { delay = 21.1, text = "The cart passes a huge round vault door of brass gears." },
-        { delay = 26.1, text = "Fig leans in close to you." },
+    } },
+    { id = "GringottsGoblinGuard_10004", after = "On your way.", items = {
+        { delay = 0.9, text = "The guard waves the cart on." },
+        { delay = 5.9, text = "The cart rolls away, the banker at the controls beside you." },
+        { delay = 10.9, text = "You glance back." },
+        { delay = 15.9, text = "The cart passes a huge round vault door of brass gears." },
+        { delay = 20.9, text = "Fig leans in close to you." },
     } },
     { id = "EleazarFig_12946", after = "Like the glow you saw on the Portkey container?", items = {
         { delay = 0.9, text = "You turn to Fig." },
@@ -152,7 +156,7 @@ return {
     { id = "PrivateGoblinBanker_10042", after = "Here we are.", items = {
         { delay = 0.9, text = "The cart halts at the platform. Fig looks toward the door." },
     } },
-    { id = "PrivateGoblinBanker_10065", after = "Vault twelve.", items = {
+    { id = "PrivateGoblinBanker_10064", after = "In that time, no one has visited vault twelve – until today.", items = {
         { delay = 0.9, text = "The banker walks up to a tall, ornate bronze vault door." },
         { delay = 5.9, text = "He traces a finger down its surface." },
     } },
@@ -160,22 +164,20 @@ return {
         { delay = 0.9, text = "The door stands open on a candlelit room. Fig steps inside past the banker." },
         { delay = 12.6, text = "You follow him in." },
     } },
-    { after = "Wait.", prev = "The instructions for Vault 12 indicate that I am to grant access to the holder of the key and then close the door.", items = {
+    { id = "EleazarFig_13263", after = "Wait!", items = {
         { delay = 0.9, text = "The door shuts. Fig presses his hand to it." },
     } },
-    { after = "That was certainly unexpected.", items = {
+    { id = "EleazarFig_13034", after = "That was certainly unexpected.", items = {
         { delay = 0.9, text = "Fig turns." },
     } },
-    { after = "Let me think.", prev = "That was certainly unexpected.", items = {
+    { id = "EleazarFig_13035", after = "Let me think. There must be something here. Hmm. Revelio, perhaps.", items = {
+        { delay = 0.9, text = "Fig looks around." },
         { delay = 0.9, text = "Fig ponders." },
     } },
-    { after = "There must be something here.", items = {
-        { delay = 0.9, text = "Fig looks around." },
-    } },
-    { after = "Ready your wand and focus.", items = {
+    { id = "EleazarFig_13264", after = "Let's see what we're missing, shall we? Ready your wand and focus.", items = {
         { delay = 0.9, text = "You raise your wand." },
     } },
-    { after = "This is no ordinary vault.", items = {
+    { after = "Lead the way.", prev = "If what you can see reveals the way forward, then I dare say we are about to discover the secret of this vault.", items = {
         { delay = 0.9, text = "You and Fig stand before a carved door bearing a glowing silver symbol." },
         { delay = 5.9, text = "The scene fades out." },
     } },
@@ -183,21 +185,23 @@ return {
         { delay = 0.9, text = "In a dark chamber, a pale stone knight grips a sword, its reflection shimmering on the glassy floor." },
         { delay = 5.9, text = "You raise your wand." },
     } },
-    { after = "Professor! Professor Fig!", prev = "It does follow the light.", items = {
+    { after = "It does follow the light.", items = {
         { delay = 0.9, text = "You point your lit wand at the knight. Fig stands behind it." },
         { delay = 5.9, text = "Mist swirls. The knight stands alone between braziers of blue flame." },
         { delay = 10.9, text = "Stone knights stir all around you." },
         { delay = 15.9, text = "A knight raises its sword at you." },
         { delay = 20.9, text = "Red spells streak through the knights." },
     } },
-    { after = "But I found this floating above that basin.", items = {
+    { after = "I'm going to have to fight my way out of here.", items = {
         { delay = 0.9, text = "In a vast teal-lit hall, you approach a dark stone basin. The scene fades." },
         { delay = 5.9, text = "A small object floats above the basin. You stand beside it." },
         { delay = 10.9, text = "You hold up a small crystal vial, turning it in your fingers." },
         { delay = 15.9, text = "Vial in hand, you look round toward the far doorway." },
         { delay = 20.9, text = "Fig hurries in through dark curtains, staring about." },
         { delay = 25.9, text = "Fig gazes upward." },
-        { delay = 31.5, text = "You hold out the vial." },
+    } },
+    { after = "But I found this floating above that basin.", items = {
+        { delay = 0.9, text = "You hold out the vial." },
     } },
     { after = "That is no mere basin.", items = {
         { delay = 0.9, text = "You hold a locket." },
@@ -205,7 +209,7 @@ return {
     { after = "That is a pensive for viewing memories.", items = {
         { delay = 0.9, text = "Fig eyes the locket you hold." },
     } },
-    { after = "I wonder...", prev = "That is a pensive for viewing memories.", items = {
+    { after = "What do you use well, Hidden?", items = {
         { delay = 0.9, text = "Fig leans toward you, eyes on the locket." },
         { delay = 5.9, text = "He takes it and holds it up, studying it closely." },
         { delay = 10.9, text = "From high above, Fig and you stand at the Pensieve, a wide basin of glowing silver liquid." },
@@ -295,10 +299,10 @@ return {
     { after = "wanted someone with your ability...", items = {
         { delay = 0.9, text = "Fig smiles." },
     } },
-    { after = "We have a sorting ceremony to get to.", items = {
+    { after = "to end up here.", items = {
         { delay = 0.9, text = "Fig looks ahead; you stand behind him." },
     } },
-    { after = "Missed the sorting ceremony.", items = {
+    { after = "We have a sorting ceremony to get to.", items = {
         { delay = 0.9, text = "Fig turns and leads you away through the dark forest." },
         { delay = 5.9, text = "Fog drifts between gnarled trees." },
         { delay = 10.9, text = "Now, lights glimmer in a deep, wooded valley under a stormy sky." },
@@ -313,9 +317,11 @@ return {
         { delay = 65.9, text = "Inside, you and Fig cross a vast vaulted hall toward tall wooden doors flanked by braziers." },
         { delay = 70.9, text = "Fig peers at the carved doors." },
     } },
-    { after = "I'm no expert, but that seems more appropriate.", items = {
+    { after = "Missed the sorting ceremony.", items = {
         { delay = 0.9, text = "Fig smiles warmly." },
-        { delay = 7.7, text = "You now wear school robes." },
+    } },
+    { after = "I'm no expert, but that seems more appropriate.", items = {
+        { delay = 0.9, text = "You now wear school robes." },
     } },
     { after = "Thank you.", prev = "Of course, sir.", items = {
         { delay = 0.9, text = "Fig nods." },
@@ -333,7 +339,7 @@ return {
     { after = "the Headmaster.", prev = "Prepare yourself to meet...", items = {
         { delay = 0.9, text = "The doors stand open. Black, the bearded headmaster, waits in the gap." },
     } },
-    { after = "If you're lucky, we might still be able to get you sorted.", items = {
+    { after = "I've no time for rumors, Fig, and I'm rapidly losing whatever patience I had left.", items = {
         { delay = 0.9, text = "Black looks aside." },
     } },
     { after = "We'll be able to get you sorted this evening.", items = {
@@ -353,7 +359,7 @@ return {
     { after = "expectations.", prev = "Certain...", items = {
         { delay = 0.9, text = "The Sorting Hat sits low on your head, waiting." },
     } },
-    { after = "Mmm.", prev = "But your professors have a great deal to teach you as well.", items = {
+    { after = "But your professors have a great deal to teach you as well.", items = {
         { delay = 0.9, text = "The hat ponders." },
     } },
     { after = "I wonder...", prev = "Mmm.", items = {
@@ -365,11 +371,11 @@ return {
     { after = "An eagerness for power.", items = {
         { delay = 0.9, text = "The hat frowns." },
     } },
-    { after = "You belong in...", prev = "Perhaps you belong in Slytherin.", items = {
+    { after = "Perhaps you belong in Slytherin.", items = {
         { delay = 0.9, text = "The hat's folds twitch as it decides." },
         { delay = 5.9, text = "Glittering green sparks swirl beside the frowning hat." },
     } },
-    { after = "Oh, and one more thing.", items = {
+    { after = "Slytherin!", prev = "You belong in...", items = {
         { delay = 0.9, text = "The hat's brim curls into a grin." },
         { delay = 5.9, text = "You rise from the stool. Weasley lifts the hat away, wand in hand. Black looks on." },
         { delay = 10.9, text = "Weasley points her wand at you. Your robes are now trimmed in green." },
@@ -381,22 +387,22 @@ return {
     { after = "I'm sure you will have plenty to do before classes begin tomorrow.", items = {
         { delay = 0.9, text = "Gryffindor boys stare, startled." },
     } },
-    { after = "Quite an entrance.", prev = "I said I'm sure you will have plenty to do before classes begin tomorrow.", items = {
+    { after = "I said I'm sure you will have plenty to do before classes begin tomorrow.", items = {
         { delay = 0.9, text = "Black stands on the dais before the great windows as students on the benches turn away." },
     } },
-    { after = "As I was saying, I'm Professor Weasley.", items = {
+    { after = "I shall see to it, sir.", items = {
         { delay = 0.9, text = "Black stands alone, watching you." },
     } },
-    { after = "It's quite uncommon for a student to begin as a fifth-year.", items = {
+    { after = "Right this way.", prev = "it is my distinct honor to show you to your common room.", items = {
         { delay = 0.9, text = "Weasley turns and leads you away across the hall, past the long tables." },
     } },
-    { after = "Very well.", prev = "Aspiration.", items = {
+    { after = "Aspiration.", prev = "In order to enter, one must simply speak the correct password.", items = {
         { delay = 0.9, text = "In a stone corridor, Weasley gestures." },
     } },
-    { after = "Aspiration.", prev = "Very well.", items = {
+    { after = "Very well.", prev = "Aspiration.", items = {
         { delay = 0.9, text = "You face the wall, waiting." },
     } },
-    { after = "Well done.", prev = "Aspiration.", items = {
+    { after = "Aspiration.", prev = "Very well.", items = {
         { delay = 0.9, text = "A huge stone serpent carved into the wall uncoils and slides aside." },
         { delay = 5.9, text = "A hidden doorway opens. Weasley watches by a torch." },
     } },
@@ -412,16 +418,16 @@ return {
     { after = "Can I help you?", items = {
         { delay = 0.9, text = "He looks you over, curious." },
     } },
-    { after = "It was dreadful, certainly, but...", items = {
+    { after = "Glad you and Fig are all right.", items = {
         { delay = 0.9, text = "Sebastian watches you, waiting for more." },
     } },
     { after = "We can talk more later.", items = {
         { delay = 0.9, text = "Sebastian gives you an easy, friendly smile." },
     } },
-    { after = "Are you saying some spells aren't taught at Hogwarts?", items = {
+    { after = "assigned textbooks.", prev = "But not every spell you may need can be found in our...", items = {
         { delay = 0.9, text = "Sebastian smiles knowingly." },
     } },
-    { after = "Not going to move there, are you?", items = {
+    { after = "Do that if I were you.", items = {
         { delay = 0.9, text = "A girl leans over the chessboard." },
     } },
     { after = "Told you.", prev = "Checkmate.", items = {
@@ -442,19 +448,19 @@ return {
     { after = "Why does no one else see it?", items = {
         { delay = 0.9, text = "Imelda stands, facing you." },
     } },
-    { after = "I heard one.", prev = "Nice meeting you.", items = {
+    { after = "Nice meeting you.", prev = "Goodbye, Imelda.", items = {
         { delay = 0.9, text = "Two students peer through the underwater window." },
     } },
-    { after = "Doubt mermaids find us that interesting.", items = {
+    { after = "I heard one.", prev = "Nice meeting you.", items = {
         { delay = 0.9, text = "One taps the glass. A pale boy leans nearby, smiling." },
     } },
-    { after = "Well, if I'm going to make my mark here, I had to start right away.", items = {
+    { after = "Well, you certainly had a memorable arrival.", items = {
         { delay = 0.9, text = "Ominis, a slender Slytherin boy, smiles faintly at you." },
     } },
-    { after = "Did that student say he thought he heard a mermaid?", items = {
+    { after = "As you navigate your first days here, though, I doubt you'll need it.", items = {
         { delay = 0.9, text = "Ominis stands by a brass telescope at the window, waiting." },
     } },
-    { after = "Were you expecting to be sorted into Slytherin?", items = {
+    { after = "They're known to keep some first years on the lookout for hours.", items = {
         { delay = 0.9, text = "Ominis waits, smiling." },
     } },
     { after = "Unfortunately, most of his descendants do not fall far from that tree.", items = {
@@ -463,13 +469,13 @@ return {
     { after = "Don't be a stranger.", items = {
         { delay = 0.9, text = "The scene fades out." },
     } },
-    { after = "Good morning.", prev = "Revelio!", items = {
+    { after = "Revelio!", prev = "Professor Weasley's waiting for you just by the stairs.", items = {
         { delay = 0.9, text = "Professor Weasley waits." },
     } },
     { after = "Here you are.", prev = "After much discussion with the Headmaster and the Department of Magical Education at the Ministry, we've devised something extraordinary to ensure your success.", items = {
-        { delay = 5.9, text = "You take a thick leather-bound book, a gold Hogwarts crest on its cover." },
-        { delay = 10.9, text = "Loose pages burst from the book and whirl through the air around you." },
-        { delay = 15.9, text = "The pages swirl up past the stone arches as you watch, Professor Weasley beside you." },
+        { delay = 0.9, text = "You take a thick leather-bound book, a gold Hogwarts crest on its cover." },
+        { delay = 5.9, text = "Loose pages burst from the book and whirl through the air around you." },
+        { delay = 10.9, text = "The pages swirl up past the stone arches as you watch, Professor Weasley beside you." },
     } },
     { after = "It will help you to keep track of what you are learning so that you master all that's expected of a fifth year.", items = {
         { delay = 0.9, text = "You study the book." },
@@ -477,13 +483,13 @@ return {
     { after = "You would be wise to take full advantage of this exceptionally valuable resource.", items = {
         { delay = 0.9, text = "You hold the field guide to your chest, facing Professor Weasley." },
     } },
-    { after = "Clever, isn't it?", prev = "And see what details the Field Guide can provide.", items = {
+    { after = "And see what details the Field Guide can provide.", items = {
         { delay = 0.9, text = "A swirl of blue light rises from the coiled kelpie statue, and a parchment page flutters to you. Weasley watches." },
     } },
     { after = "Open it up and find Central Hall.", items = {
         { delay = 0.9, text = "Between two suits of armour, Weasley waits beside a small green flame flickering in a wall niche." },
     } },
-    { after = "That should be all for now.", items = {
+    { after = "Our King's Cross Station, so to speak.", items = {
         { delay = 0.9, text = "Students bustle past." },
     } },
     { after = "To replace the supplies you lost on the way here.", items = {
@@ -510,7 +516,7 @@ return {
     { after = "for those supplies.", prev = "And we'll see if we can't get you to Hogsmeade", items = {
         { delay = 0.9, text = "The scene fades." },
     } },
-    { after = "It's good to see you, Professor.", items = {
+    { after = "Revelio.", prev = "for those supplies.", items = {
         { delay = 0.9, text = "You walk with Fig." },
     } },
     { after = "Regarding our late arrival?", items = {
@@ -565,7 +571,7 @@ return {
     { after = "Very good.", prev = "Stay focused.", items = {
         { delay = 0.9, text = "Another sphere rolls toward you." },
     } },
-    { after = "Very good.", prev = "Excellent control there.", items = {
+    { after = "Excellent control there.", prev = "Very good.", items = {
         { delay = 0.9, text = "You summon the third sphere. It stops midway down the court." },
     } },
     { after = "Come on up.", prev = "a bit of a challenge?", items = {
@@ -630,7 +636,7 @@ return {
     { after = "Well done.", prev = "Good, both of you.", items = {
         { delay = 0.9, text = "The professor smiles at you both. The scene fades out." },
     } },
-    { after = "Well done back there.", items = {
+    { after = "Gather your things on the way out.", items = {
         { delay = 0.9, text = "Miss Onai turns to face you among the desks." },
     } },
     { after = "I promise.", prev = "It gets easier.", items = {
@@ -645,32 +651,34 @@ return {
     { after = "that seemed to be floating in midair.", items = {
         { delay = 0.9, text = "She waits, eyes on you." },
     } },
-    { after = "Spells cast without a wand", items = {
+    { after = "Hardly anyone at Wagadu uses one.", items = {
         { delay = 0.9, text = "Miss Onai waits. Behind her, a robed professor stands by the stairs." },
     } },
-    { after = "It's nice to learn about another wizarding school.", items = {
+    { after = "It seems very dramatic.", items = {
         { delay = 0.9, text = "Natsai Onai smiles warmly." },
     } },
     { after = "Until next time.", prev = "Better not keep him waiting.", items = {
         { delay = 0.9, text = "The scene fades out." },
     } },
-    { after = "Hello there.", prev = "that I am preparing for you.", items = {
+    { after = "that I am preparing for you.", items = {
         { delay = 0.9, text = "You walk between rows of empty benches in a dim, wood-panelled hall." },
     } },
     { after = "You certainly seem to hold your own in charms.", items = {
         { delay = 0.9, text = "Samantha Dale, a Ravenclaw girl, waits for your answer." },
     } },
-    { after = "You'll get us all detention.", items = {
+    { after = "Was the Minister a boot or the Minister a flack?", items = {
         { delay = 0.9, text = "Peeves the poltergeist hovers." },
     } },
-    { after = "Be good enough to blast each other to pieces on your own time.", items = {
+    { after = "In my opinion, divination is a load of rubbish.", items = {
         { delay = 0.9, text = "In a sunlit common room, you walk toward a black cat. The scene fades." },
         { delay = 5.9, text = "You kneel and stroke the cat." },
         { delay = 9.9, text = "You rise and walk away from the cat." },
-        { delay = 75.9, text = "You reach a heavy wooden door flanked by lamps shaped like eyes." },
-        { delay = 80.9, text = "Now, in a classroom, a student shelters inside a crackling blue shield as another hurls a spell." },
-        { delay = 85.9, text = "Sebastian Sallow, a Slytherin boy, grins as he casts." },
-        { delay = 90.9, text = "A horned dragon skull and spine hang from the rafters." },
+    } },
+    { after = "Oh.", prev = "In my opinion, divination is a load of rubbish.", items = {
+        { delay = 0.9, text = "You reach a heavy wooden door flanked by lamps shaped like eyes." },
+        { delay = 5.9, text = "Now, in a classroom, a student shelters inside a crackling blue shield as another hurls a spell." },
+        { delay = 10.9, text = "Sebastian Sallow, a Slytherin boy, grins as he casts." },
+        { delay = 15.9, text = "A horned dragon skull and spine hang from the rafters." },
     } },
     { after = "Knowledge.", prev = "largest poacher ring in eastern Wales and lived to boast about it.", items = {
         { delay = 0.9, text = "Elderly Professor Hecat lights up the dragon skeleton." },

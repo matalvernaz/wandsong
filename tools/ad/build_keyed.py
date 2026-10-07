@@ -24,7 +24,7 @@ import sys
 work, desc_dir, out = sys.argv[1:4]
 logs = sys.argv[4:]
 
-tr = json.load(open(os.path.join(work, "transcript.json"), encoding="utf-8"))
+tr = json.load(open(os.path.join(work, "transcript_timed.json" if os.path.exists(os.path.join(work, "transcript_timed.json")) else "transcript.json"), encoding="utf-8"))
 
 
 def words(text):
@@ -108,25 +108,43 @@ for f in sorted(glob.glob(os.path.join(desc_dir, "batch_*.json"))):
     slots.extend(json.load(open(f, encoding="utf-8")))
 slots.sort(key=lambda s: (s.get("line") if s.get("line") is not None else 10 ** 9, s["slot"]))
 
+ANCHOR_SECONDS = 30.0
+
+
+def anchor(li):
+    """The game line to hang a description on, and seconds to add to its delays. A transcript
+    line the game never says as such (speech-to-text heard words in a snore, or split a line
+    differently) hangs off the last matched line before it, if that ended recently."""
+    if li in best:
+        return best[li][1], best[li][2], 0.0
+    for j in range(li - 1, max(-1, li - 12), -1):
+        if j in best:
+            gap = tr[li]["end"] - tr[j]["end"]
+            if 0 <= gap <= ANCHOR_SECONDS:
+                return best[j][1], best[j][2], gap
+            break
+    return None, None, 0.0
+
+
 entries, by_key = [], {}
+n_anchored = 0
 for s in slots:
     li = s.get("line")
     items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
     if li is None or not items:
         continue
-    if li in best:
-        key = ("id", best[li][1])
-    else:
-        key = ("line", li)
+    gid, gtext, shift = anchor(li)
+    if gid and li not in best:
+        n_anchored += 1
+    key = ("id", gid) if gid else ("line", li)
     e = by_key.get(key)
     if not e:
-        e = {"line": li, "id": best[li][1] if li in best else None,
-             "after": best[li][2] if li in best else tr[li]["text"],
+        e = {"line": li, "id": gid, "after": gtext or tr[li]["text"],
              "prev": tr[li - 1]["text"] if li > 0 else None, "items": []}
         by_key[key] = e
         entries.append(e)
     for it in items:
-        e["items"].append((round(float(it["offset"]) + 0.4, 1), it["text"].strip()))
+        e["items"].append((round(float(it["offset"]) + 0.4 + shift, 1), it["text"].strip()))
 
 
 def lua(s):
@@ -155,4 +173,5 @@ for e in entries:
 lines.append("}")
 open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
 print("%d game sessions, %d transcript lines matched to game lines" % (len(sessions), len(best)))
-print("%d entries (%d keyed to a game line ID), %d descriptions" % (len(entries), n_keyed, n_items))
+print("%d entries (%d keyed to a game line ID; %d slots hung off an earlier matched line), %d descriptions"
+      % (len(entries), n_keyed, n_anchored, n_items))

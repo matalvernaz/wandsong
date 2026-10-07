@@ -17,7 +17,7 @@ import sys
 work, frames_dir, out = sys.argv[1:4]
 CHUNK = float(sys.argv[4]) if len(sys.argv) > 4 else 90.0
 
-tr = json.load(open(os.path.join(work, "transcript.json"), encoding="utf-8"))
+tr = json.load(open(os.path.join(work, "transcript_timed.json" if os.path.exists(os.path.join(work, "transcript_timed.json")) else "transcript.json"), encoding="utf-8"))
 spans = json.load(open(os.path.join(work, "hud.json")))["cutscenes"]
 speech = json.load(open(os.path.join(work, "speech.json")))
 

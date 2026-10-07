@@ -17,7 +17,7 @@ import re
 import sys
 
 work, pass2, out_desc, out_batches = sys.argv[1:5]
-tr = json.load(open(os.path.join(work, "transcript.json"), encoding="utf-8"))
+tr = json.load(open(os.path.join(work, "transcript_timed.json" if os.path.exists(os.path.join(work, "transcript_timed.json")) else "transcript.json"), encoding="utf-8"))
 speech = json.load(open(os.path.join(work, "speech.json")))
 
 
@@ -70,7 +70,7 @@ for b in sorted(batch_list, key=lambda b: b["t0"]):
         for i in items:
             slots[li]["items"].append({"offset": round(float(i["offset"]) + shift, 1), "text": i["text"]})
     else:
-        slots[li] = {"after": s.get("after") or b.get("after"), "items": items, "t0": b["t0"], "span": b.get("span")}
+        slots[li] = {"after": tr[li]["text"], "items": items, "t0": b["t0"], "span": b.get("span")}
 
 added, dropped, replaced = 0, 0, 0
 for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):

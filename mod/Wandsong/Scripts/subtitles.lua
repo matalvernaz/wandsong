@@ -71,11 +71,18 @@ for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(
 -- Several back, not one: the game interleaves lines the recording's transcript didn't have.
 local before = {}   -- the last few spoken lines, newest last
 local function after_prev(prev)
+    -- A short line before ("Revelio.") must be that line, not a word inside a longer one
+    -- ("Hmm. Revelio, perhaps." fired a much later scene's description in the vault, Oct 7).
+    local _, n = words(prev)
     for i = math.max(1, #before - 2), #before do
-        if similarity(before[i], prev, "contain") >= 0.5 then return true end
+        if similarity(before[i], prev, n >= 4 and "contain" or true) >= 0.5 then return true end
     end
     return false
 end
+-- Descriptions run in story order, so a text match far from the last description that
+-- played belongs to another scene with similar words. Entries keyed by line ID are exempt.
+local NEAR_ENTRIES = 40
+local last_match = nil
 -- The player's own lines carry the chosen voice in their ID (PlayerFemale_32116): compare them
 -- without it, so a description keyed in one playthrough fires for either voice.
 local function same_line(a, b)
@@ -93,7 +100,8 @@ local function match(text, id)
     local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
         -- Player lines may also differ by voice number: they keep the text match as a fallback.
-        if d.after and (not d.id or d.id:find("^Player")) then
+        if d.after and (not d.id or d.id:find("^Player"))
+           and (not last_match or math.abs(i - last_match) <= NEAR_ENTRIES) then
             local s = similarity(text, d.after)
             if s > best_s and (not d.prev or after_prev(d.prev)) then best, best_s = i, s end
         end
@@ -116,7 +124,11 @@ local recent = {}
 local skip_requested = false
 local line_ends = -1       -- when the last line was due to finish
 -- A description held back by lines spoken over its moment is dropped once it is this late.
-local MAX_LATE = 8
+local MAX_LATE = 15
+-- Consecutive cutscenes leave cinematic mode for a moment between them (the walk to the
+-- Gringotts cart and the ride, Oct 7): only an exit that lasts this long ends the scene.
+local SCENE_EXIT_GRACE = 2.0
+local exit_since = nil
 local binding = require("bindings")
 local skip_vk = binding.virtual_key(binding.key("UMGSkipCinematicOrConversation", "Delete"))
 keys.observe(function(_, key)
@@ -135,9 +147,14 @@ local function on_line(e)
     -- silence its descriptions were written for never comes. A line spoken in a silence (an
     -- interjection the recording's transcript missed, "Hang on!") only holds back descriptions
     -- that would talk over it; later ones keep their moment (Oct 6: "Nor do I." dropped two).
-    local cut_short = now < line_ends - 0.5
-    line_ends = now + (e.dur or 0)
-    if cut_short then
+    -- Sound-only lines ("(snoring)", 13 s in the Gringotts lobby) are neither: descriptions
+    -- play over them, and they say nothing about skipping.
+    local sound_only = plain(e.text or ""):match("^%s*%(.*%)%s*$") ~= nil
+    local cut_short = not sound_only and now < line_ends - 0.5
+    if not sound_only then line_ends = now + (e.dur or 0) end
+    if sound_only then
+        -- nothing to hold back
+    elseif cut_short then
         cancel_descriptions()
     else
         local keep = {}
@@ -161,6 +178,7 @@ local function on_line(e)
     if e.text:match("^%s*%(.*%)%s*$") then return end
     local i, s
     if describe and #DESCRIPTIONS > 0 then i, s = match(e.text, e.id) end
+    if i then last_match = i end
     before[#before + 1] = e.text
     if #before > 3 then table.remove(before, 1) end
     if not i then return end
@@ -185,7 +203,7 @@ local function on_line(e)
             local wait = (e.dur or 0) + (it.delay or 0.3)
             log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, it.text))
             local due = now + math.max(0, wait)
-            scheduled[#scheduled + 1] = { due = due, planned = due, text = it.text,
+            scheduled[#scheduled + 1] = { due = due, planned = due, at = now, text = it.text,
                 serial = serial, generation = generation, scene = scene }
         end
     end
@@ -236,16 +254,32 @@ dispatch.every(100, function()
         cancel_descriptions()
         pending, recent, before = {}, {}, {}
     end
-    if generation ~= state.generation or (scene ~= state.scene and not state.cinematic) or state.loading() then
-        generation, scene = state.generation, state.scene
+    if generation ~= state.generation or state.loading() then
+        generation, scene, exit_since = state.generation, state.scene, nil
+        last_match = nil   -- a load can land anywhere in the story
         cancel_descriptions()
         recent, before = {}, {}
         if state.loading() then pending = {}; return end
+    elseif scene ~= state.scene and not state.cinematic then
+        -- Left a scene: if no scene follows within the grace, the descriptions end with it.
+        exit_since = exit_since or now
+        if now - exit_since >= SCENE_EXIT_GRACE then
+            -- Only what the scene queued ends with it; a line spoken since keeps its own.
+            local keep = {}
+            for _, item in ipairs(scheduled) do
+                if item.at >= exit_since then item.scene = state.scene; keep[#keep + 1] = item end
+            end
+            scheduled = keep
+            scene, exit_since = state.scene, nil
+            recent, before = {}, {}
+        end
     elseif scene ~= state.scene then
-        -- The subtitle can arrive just before the gate observes cinematic mode.
-        -- Entering that scene must not discard its opening description.
-        scene = state.scene
+        -- The subtitle can arrive just before the gate observes cinematic mode, and one scene
+        -- can follow another after a moment out of cinematic mode: keep the descriptions.
+        scene, exit_since = state.scene, nil
         for _, item in ipairs(scheduled) do item.scene = scene end
+    else
+        exit_since = nil
     end
     if state.paused then
         for _, item in ipairs(scheduled) do item.due = item.due + elapsed; item.planned = item.planned + elapsed end

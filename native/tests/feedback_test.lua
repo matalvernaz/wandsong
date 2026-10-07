@@ -9,7 +9,12 @@ local speech=require("speech")
 speech.say=function(s) said[#said+1]=s end
 speech.is_muted=function() return muted end
 local reads=0
+local translations={WoundCleaning="Wiggenweld Potion",Menu_NewSpellUnlocked="New Spell Unlocked",Stupefy="Basic Cast"}
 StaticFindObject=function(p)
+    if p=="/Script/Phoenix.Default__PhoenixBPLibrary" then
+        return {IsValid=function() return true end,AVATranslate=function(_,key)
+            return {ToString=function() return translations[key] or ("["..key.."]") end} end}
+    end
     reads=reads+1
     assert(playing and not require("state").loading(),"no widget reads outside gameplay")
     return {IsValid=function() return true end,ButtonPrompt={Visibility=0,RenderOpacity=1},
@@ -63,4 +68,11 @@ events.AddMoneyNotification(ctx("UI_BP_NotificationPanel_C"),{get=function() ret
 assert(said[#said]=="Got 50 Galleons","money announced")
 events.OnAddPickupNotification(ctx("UI_BP_PhoenixHUDWidget_C"),fstr(""),fstr("icon"),val(1),val(false)); t.run(0.2)
 assert(#said==n0+3,"nameless pickups stay silent")
+-- The game hands over keys, not words (Oct 6: "Got 4 WoundCleaning", "Menu_NewSpellUnlocked").
+events.OnAddPickupNotification(ctx("UI_BP_PhoenixHUDWidget_C"),fstr("WoundCleaning"),fstr("icon"),val(4),val(false)); t.run(0.2)
+assert(said[#said]=="Got 4 Wiggenweld Potion","item keys are translated: "..said[#said])
+events.OnAddSpecialItemNotification(ctx("UI_BP_PhoenixHUDWidget_C"),fstr("Stupefy"),fstr("icon"),val(1),fstr("Menu_NewSpellUnlocked")); t.run(0.2)
+assert(said[#said]=="New Spell Unlocked: Basic Cast","unlock messages are translated: "..said[#said])
+events.OnAddPickupNotification(ctx("UI_BP_PhoenixHUDWidget_C"),fstr("UnknownThing"),fstr("icon"),val(1),val(false)); t.run(0.2)
+assert(said[#said]=="Got UnknownThing","an untranslatable key is said as it is")
 print("feedback test passed")

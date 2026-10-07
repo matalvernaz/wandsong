@@ -97,7 +97,9 @@ local claimed_by, spoken_names, logged_names = {}, {}, {}
 local function clear_world(reset_names)
     nearby = {}
     claimed_by = {}
-    if reset_names then spoken_names, logged_names = {}, {} end
+    -- Names learned from subtitles stay: object paths are unique for the whole run, and the
+    -- pause menu's screen load counts as a load (Fig was "Student" again after it, Oct 7).
+    if reset_names then logged_names = {} end
     ctrl_path = nil
     if audio then pcall(audio.stop_all) end
 end

@@ -490,6 +490,23 @@ local function jump()
     end
 end
 
+-- The objective is someone to follow, standing at the destination ("Follow Professor Fig" by
+-- the Gringotts vault door): the story waits until you are beside them, and stopping 4 m short
+-- left you there with nothing happening (Oct 7; the same on the cliffs, Oct 6).
+local function guide_at_dest()
+    if last_objective and last_objective:find("^Follow ") then return true end
+    if not dest or not world.entries or not world.locate then return false end
+    for _, e in ipairs(world.entries()) do
+        if e.kind == "person" and e.dist and e.dist < 3000 then
+            local p = world.locate(e.path)
+            if p and dist2d(p[1], p[2], dest) < 250 and math.abs(p[3] - dest[3]) < ARRIVE_HEIGHT_CM then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function walk_tick()
     if not walking then return end
     if cancel then local c = cancel; cancel = nil; stop(c); return end
@@ -519,7 +536,8 @@ local function walk_tick()
             still_since, still_x, still_y, still_z, jumps = os.clock(), px, py, pz, 0
             return
         end
-    elseif d < (chosen and BESIDE_CM or ARRIVE_CM) and level then
+    elseif d < (chosen and BESIDE_CM or ARRIVE_CM) and level
+           and (chosen or d < BESIDE_CM or not guide_at_dest()) then
         stop("you've arrived")   -- the beacon plays the arrival chime
         return
     end

@@ -77,12 +77,29 @@ hook("AddMoneyNotification", function(ctx, data)
     record("notice", { kind = "money", count = ok and n or nil })
 end)
 
+-- Notifications carry the game's keys, not words: "WoundCleaning" for Wiggenweld Potion,
+-- "Menu_NewSpellUnlocked" (Oct 6). The game's own translator turns a key into its text, and
+-- answers "[key]" for one it doesn't know. A long-lived library object; called on the tick.
+local LIBRARY = "/Script/Phoenix.Default__PhoenixBPLibrary"
+function M.translate(key)
+    if type(key) ~= "string" or key == "" or key:find("%s") then return key end
+    local out
+    pcall(function()
+        local lib = StaticFindObject(LIBRARY)
+        if lib and lib:IsValid() then out = lib:AVATranslate(key, "Wandsong"):ToString() end
+    end)
+    if type(out) == "string" and out ~= "" and not out:match("^%[.*%]$") then return out end
+    return key
+end
+
 -- What a notification says aloud, or nil for one with nothing readable.
 function M.notice_text(d)
-    local n = d.name and d.name ~= "" and d.name or nil
+    local n = d.name and d.name ~= "" and M.translate(d.name) or nil
+    local unlock = d.unlock and d.unlock ~= "" and M.translate(d.unlock) or nil
     local many = type(d.count) == "number" and d.count > 1
     if d.kind == "item" and n then return "Got " .. (many and (d.count .. " ") or "") .. n
-    elseif d.kind == "special" and n then return "New item: " .. n .. ((d.unlock and d.unlock ~= "") and (". " .. d.unlock) or "")
+    elseif d.kind == "special" and n and unlock then return unlock .. ": " .. n
+    elseif d.kind == "special" and n then return "New item: " .. n
     elseif d.kind == "travel" and n then return "Floo Flame discovered: " .. n
     elseif d.kind == "companion" and n then return n .. " grew stronger"
     elseif d.kind == "ticker" and n then return n
