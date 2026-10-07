@@ -185,6 +185,8 @@ function M.cancel_capture() capture = nil end
 
 -- --- The one handler ----------------------------------------------------------------------
 
+local QUIET_KEYS = { W = true, A = true, S = true, D = true, SPACE = true, LEFT_SHIFT = true,
+                     SHIFT = true, LEFT_CONTROL = true, CONTROL = true }
 local function on_press(ctrl, shift, key)
     local short = SHORT[key] or key:lower()
     local combo = (ctrl and "ctrl+" or "") .. (shift and "shift+" or "") .. short
@@ -197,7 +199,11 @@ local function on_press(ctrl, shift, key)
         return
     end
     local id = by_combo[combo_id(ctrl, shift, key)]
-    if not id then return end
+    if not id then
+        -- Game keys too (not movement), so the log shows what opened a menu or started something.
+        if not QUIET_KEYS[key] then log("game key " .. combo) end
+        return
+    end
     local a = actions[id]
     if a.when and not a.when() then diag.trace("key " .. combo .. " -> " .. id .. " (not now)"); return end
     log("pressed " .. combo .. " -> " .. id)

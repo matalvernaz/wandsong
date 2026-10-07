@@ -271,6 +271,9 @@ local SCREEN_READER_KEYS = { CapsLock = true, Insert = true }
 local SCREEN_READER_FIXES = {
     { "LockOn", "Period", "Lock on" },
 }
+-- Menu navigation: the up and down arrows walk the mod's list of the screen (menus.lua), so the
+-- game's own up/down navigation keeps W and S only. Otherwise both cursors move at once.
+local ARROWS_TO_MOD = { { "UMGUINavigateUp", "W", "Up" }, { "UMGUINavigateDown", "S", "Down" } }
 local function fix_screen_reader_keys()
     local actions = read_game()
     if not actions then return end
@@ -289,6 +292,23 @@ local function fix_screen_reader_keys()
         if keyboard > 0 and taken == keyboard and write_game_key(m[1], m[2]) then
             moved[#moved + 1] = m[3] .. " to " .. spoken_ue(m[2])
             log("screen reader key fix: " .. m[1] .. " -> " .. m[2])
+        end
+    end
+    for _, m in ipairs(ARROWS_TO_MOD) do
+        -- Menu navigation isn't in the Controls menu's groups: look in the file directly.
+        local has_arrow = false
+        local f = io.open(INPUT_INI, "r")
+        if f then
+            for line in f:lines() do
+                if line:find('ActionName="' .. m[1] .. '"', 1, true) and line:find("Key=" .. m[3] .. ",", 1, true) then
+                    has_arrow = true
+                end
+            end
+            f:close()
+        end
+        if has_arrow and write_game_key(m[1], m[2]) then
+            log("menu arrows: " .. m[1] .. " keeps only " .. m[2])
+            moved[#moved + 1] = "menu " .. m[3]:lower() .. " navigation to the mod's list"
         end
     end
     if #moved > 0 then

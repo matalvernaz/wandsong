@@ -953,14 +953,25 @@ local function hover(item)
     if fn then pcall(function() owner[fn](owner) end) end
 end
 
-local function select_item(i, edge)
+-- Give the game's keyboard focus to the item, so the game's own keys (Space, F...) act on what
+-- was just read. A call on a widget of the screen that's open right now, after refresh has
+-- checked the screen isn't changing.
+local function focus(item)
+    if not item.button then return end
+    local ok, err = pcall(function() item.button:SetKeyboardFocus() end)
+    if not ok then diag.trace("focus failed: " .. tostring(err)) end
+end
+
+local function select_item(i, edge, with_position)
     editing = nil   -- moving the review cursor ends typing echo
     review_index = i
     local item = review_items[i]
     hover_details = {}
     capture_until = os.clock() + 0.8
     hover(item)
-    speak(describe(item) .. (edge and (", " .. edge) or ""))
+    if with_position then focus(item) end
+    speak(describe(item) .. (edge and (", " .. edge) or "") ..
+          (with_position and string.format(", %d of %d", i, #review_items) or ""))
     if item.weak then
         dispatch.later(300, function()
             if review_items[review_index] ~= item then return end
@@ -993,19 +1004,22 @@ local function read_details()
     speak(#out > 0 and table.concat(out, ". ") or "No description for this item")
 end
 
-local function step(delta, buttons_only)
+local function step(delta, buttons_only, with_position)
     if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     local i = review_index
     repeat
         i = i + delta
     until i < 1 or i > #review_items or not buttons_only or review_items[i].button or review_items[i].action
     if i < 1 or i > #review_items then
-        if review_index >= 1 then select_item(review_index, delta < 0 and "top" or "bottom")
+        if review_index >= 1 then select_item(review_index, delta < 0 and "top" or "bottom", with_position)
         else speak(buttons_only and "No buttons" or "Nothing to read") end
         return
     end
-    select_item(i)
+    select_item(i, nil, with_position)
 end
+-- The up and down arrows walk this list in menus (as in other access mods); in the world the same
+-- keys turn you, so path.lua hands them here whenever you're not in the world.
+state.menu_step = function(delta) step(delta, false, true) end
 
 -- Find the blueprint handler a widget class bound to a button's OnClicked. Its name looks
 -- like BndEvt__<Button>_K2Node_ComponentBoundEvent_N_OnButtonClickedEvent__DelegateSignature.

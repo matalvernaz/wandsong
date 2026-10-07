@@ -713,7 +713,11 @@ dispatch.every(4000, function()
 end, "objective watch")
 
 local function where_am_i()
-    if not world.in_game() then speech.say(world.not_ready_reason()) return end
+    -- In menus the up arrow moves up the list.
+    if not world.in_game() then
+        if state.menu_step then state.menu_step(-1) else speech.say(world.not_ready_reason()) end
+        return
+    end
     local now = facing()
     local px, py, _, yaw = world.position()
     local t = { "Facing " .. compass(now or yaw) }
@@ -734,10 +738,16 @@ keys.action{ id = "turn_left_big", name = "Turn left 90 degrees", group = "In th
              run = function() turn_by(-90) end }
 keys.action{ id = "turn_right_big", name = "Turn right 90 degrees", group = "In the world", default = "shift+right_arrow",
              run = function() turn_by(90) end }
-keys.action{ id = "turn_around", name = "Turn around", group = "In the world", default = "down_arrow",
-             run = function() turn_by(180) end }
+keys.action{ id = "turn_around", name = "Turn around (in menus: next item)", group = "In the world", default = "down_arrow",
+             run = function()
+                 if not world.in_game() then
+                     if state.menu_step then state.menu_step(1) end
+                     return
+                 end
+                 turn_by(180)
+             end }
 keys.action{ id = "where_am_i", name = "Which way you're facing, where the objective is, and your current quest task", group = "In the world",
-             default = "up_arrow", run = where_am_i }
+             default = "up_arrow", run = where_am_i }   -- in menus: previous item
 
 local function face_nearest()
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
