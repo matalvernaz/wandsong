@@ -83,6 +83,11 @@ local function on_line(e)
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
     if read_aloud then speech.say(e.text:gsub("<[^>]*>", ""), true) end
+    -- The speaker's on-screen name names them in the scanner ("Professor Fig", not "Student").
+    local shown = e.text:match("^%s*<Name_Text>(.-):?</>")
+    if shown and e.speaker and e.voice ~= "Player" then
+        pcall(function() require("world").name_actor(e.speaker, (shown:gsub(":%s*$", ""))) end)
+    end
     e.text = plain(e.text)
     local prev_text = last_text
     last_text = e.text
@@ -115,6 +120,12 @@ local function hook_ok(fn, quiet)
             e.id = d.lineID:ToString()
             e.dur = d.DurationSeconds
             e.voice = d.VoiceName:ToString()
+        end)
+        -- Who is speaking, as a path only (nothing is kept): the scanner names them by it.
+        pcall(function()
+            local a = data:get().SpeakingActor:Get()
+            local full = a:GetFullName()
+            e.speaker = full:match("^%S+%s+(.+)$")
         end)
         pending[#pending + 1] = e
     end)

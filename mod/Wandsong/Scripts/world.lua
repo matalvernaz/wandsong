@@ -358,8 +358,25 @@ local function humanize(id)
 end
 
 local logged_names = {}
+-- Names learned from subtitles: the speaker's on-screen name ("Professor Fig") by object path.
+local spoken_names = {}
+
+--- A character's real name, learned when they speak (subtitles.lua). Renames them in the scan.
+function M.name_actor(path, name)
+    if not path or not name or name == "" or spoken_names[path] == name then return end
+    spoken_names[path] = name
+    log("name: " .. name .. " (from subtitles) for " .. path)
+    for _, n in pairs(nearby) do
+        if n.path == path then n.name, n.name_src = name, "subtitles" end
+    end
+end
+
 local function name_of(actor, kind)
     local name, src
+    pcall(function()
+        local p = path_of(actor)
+        if p and spoken_names[p] then name, src = spoken_names[p], "subtitles" end
+    end)
     local function try(label, fn)
         if name then return end
         pcall(function()
@@ -372,7 +389,14 @@ local function name_of(actor, kind)
     -- Characters keep their real identity (ProfessorFig) behind a getter. It's a call on the
     -- actor, made once per character, right after FindAllOf handed it over this tick.
     if kind == "person" or kind == "enemy" or kind == "beast" then
-        try("GetCharacterID", function() return actor:GetCharacterID():ToString() end)
+        try("GetCharacterID", function()
+            local id = actor:GetCharacterID():ToString()
+            if not logged_names["id:" .. tostring(id)] then
+                logged_names["id:" .. tostring(id)] = true
+                log("GetCharacterID gave " .. tostring(id))
+            end
+            return id
+        end)
     end
     if not name then
         local cls = "?"
