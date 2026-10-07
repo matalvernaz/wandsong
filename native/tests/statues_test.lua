@@ -23,12 +23,22 @@ local knight_path = "/Game/Vault.BP_HogwartsProtector_C_1"
 local knight = obj("BP_HogwartsProtector_C", knight_path, { bPuzzleActive = true, bHasBeenReleased = false,
     bStatueVisible = false, bReflectionVisible = false, AlignToAngle = 90, TargetAngle = 180, CurrentAngle = 180,
     VFX_HintLine_Alpha = 0, RootComponent = root, AlignmentCorridor = box, TargetActor = fig })
-local entries = { { path = knight_path, kind = "statue", name = "Knight statue" } }
+-- The world scan's contract: readers registered with on_scan run on fresh objects during a
+-- pass and fill entry.extra; entries are snapshots. Here every entries() call is a pass.
+local reader, passes, extra = nil, 0, {}
 package.loaded.world = {
     in_game = function() return in_game end, position = function() return px, py, pz, 0 end,
-    pawn = function() return pawn end, entries = function() return in_game and entries or {} end,
-    resolve = function(p) if p == knight_path then return knight end end,
-    sounds_enabled = function() return true end,
+    pawn = function() return pawn end, sounds_enabled = function() return true end,
+    on_scan = function(fragment, fn) assert(fragment == "HogwartsProtector"); reader = fn end,
+    entries = function()
+        if not in_game then return {} end
+        local e = { path = knight_path, name = "Knight statue", x = root.RelativeLocation.X,
+                    y = root.RelativeLocation.Y, z = root.RelativeLocation.Z, extra = extra }
+        e.kind = (knight.bPuzzleActive and not knight.bHasBeenReleased) and "statue" or "enemy"
+        passes = passes + 1
+        reader(knight, e)
+        return { e }
+    end,
 }
 package.loaded.audio_bridge = { init = function() return true end,
     play = function(name, x, y, z, vol, pitch) notes[#notes + 1] = { name = name, x = x, y = y, pitch = pitch } end,
@@ -36,6 +46,9 @@ package.loaded.audio_bridge = { init = function() return true end,
     stop = function(id) loops[id] = nil end }
 require("speech").say = function(s) said[#said + 1] = s end
 local statues = require("statues")
+assert(reader, "statues read knights during the world scan's passes")
+local looked = 0
+StaticFindObject = function(p) if tostring(p):find("Vault", 1, true) then looked = looked + 1 end end
 local function heard(fragment)
     for _, s in ipairs(said) do if s:find(fragment, 1, true) then return true end end
     return false
@@ -128,4 +141,5 @@ in_game = false
 notes = {}
 t.run(3)
 assert(#notes == 0 and statues.describe(knight_path) == nil, "silent outside gameplay")
+assert(looked == 0, "statues never look a knight up by path")
 print("statues test passed")

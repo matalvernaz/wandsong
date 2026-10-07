@@ -27,9 +27,9 @@ end
 local world, statues = require("world"), require("statues")
 local px, py, pz, yaw = world.position()
 add(string.format("player %.0f %.0f %.0f yaw %.0f", px, py, pz, yaw))
-local t = statues.target()
-add("statues.target: " .. (t and string.format("%.0f %.0f %.0f %s", t[1], t[2], t[3], t.name) or "none") ..
-    ", in line " .. tostring(statues.in_line()))
+for _, e in ipairs(world.entries()) do
+    if e.kind == "statue" then add("statue entry " .. e.path .. ": " .. tostring(statues.describe(e.path))) end
+end
 for _, k in ipairs(FindAllOf("BP_HogwartsProtector_C") or {}) do
     local n = name(k)
     if not n:find("Default__", 1, true) then

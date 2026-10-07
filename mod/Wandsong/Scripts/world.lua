@@ -4,9 +4,12 @@
 -- camera, like any 3D game.
 --
 -- Rules followed here (from Hogwarts Legacy's own pitfalls):
---   * one FindAllOf per tick at most (each costs ~34 ms), rotating through the classes;
+--   * one FindAllOf per tick at most (each costs ~30 ms);
 --   * nothing runs outside gameplay (menus, loading, pause, the intro flow);
---   * cached objects are re-validated before every use and dropped when the world changes.
+--   * world things are known only from snapshots taken during a scan pass: every property any
+--     module needs is read from the fresh objects in that same tick, and nothing looks a world
+--     actor up again between passes (see "Scanning" below). Only long-lived objects (the
+--     player, the UI manager, the tutorial system) are looked up by path.
 
 local dispatch = require("dispatch")
 local speech = require("speech")
@@ -28,35 +31,44 @@ else
     audio = nil
 end
 
--- What makes a sound, most specific first; each actor is claimed by its first match.
--- Students, ghosts and companions inherit from the enemy class in this game, so they're
--- checked by name before the enemy category sees them.
-local CATEGORIES = {
-    { kind = "person",  sound = "person", every = 2.5, range = 1500, classes = { "BP_Student_C" } },
-    { kind = "enemy",   sound = "enemy",  every = 1.2, range = 2500, classes = { "Enemy_Character" } },
-    { kind = "beast",   sound = "person", every = 3.0, range = 1500, classes = { "Creature_Character" }, pitch = 0.7 },
-    { kind = "chest",   sound = "item",   every = 3.0, range = 1500, classes = { "Container" }, pitch = 0.8 },
-    { kind = "collect", sound = "item",   every = 2.5, range = 1500, classes = { "FieldGuidePage", "CooldownPickup" } },
-    { kind = "door",    sound = "door",   every = 3.5, range = 1200, classes = { "Door" } },
-    { kind = "person",  sound = "person", every = 2.5, range = 1500, classes = { "NPC_Character" } },
-    -- Things to use: levers, pedestals, things to examine. Scanner only for now (no sound):
-    -- which classes really hold what the game prompts for still needs checking in the dumps.
-    { kind = "usable",  sound = nil,      every = 99,  range = 1500,
-      classes = { "InteractiveObjectActor", "SimpleInteractObject", "WorldInteractObject" } },
+-- What each kind of thing sounds like, how often, and from how far.
+local KINDS = {
+    person  = { sound = "person", every = 2.5, range = 1500 },
+    enemy   = { sound = "enemy",  every = 1.2, range = 2500 },
+    beast   = { sound = "person", every = 3.0, range = 1500, pitch = 0.7 },
+    -- Puzzle knights (the Gringotts vault) are enemies too, but until one comes alive it's a
+    -- statue to work out, not something to fight: no growl, no enemy tip, its own scanner
+    -- name. statues.lua plays the puzzle.
+    statue  = { sound = nil,      every = 99,  range = 2500 },
+    chest   = { sound = "item",   every = 3.0, range = 1500, pitch = 0.8 },
+    collect = { sound = "item",   every = 2.5, range = 1500 },
+    door    = { sound = "door",   every = 3.5, range = 1200 },
+    -- Things to use: levers, pedestals, things to examine. Scanner only (no sound).
+    usable  = { sound = nil,      every = 99,  range = 1500 },
+    -- Breakable props (pots, jugs, kitchenware) are interactive objects too, but they're
+    -- scenery to a player looking for what to use: their own category, not "Things to use".
+    prop    = { sound = nil,      every = 99,  range = 1500 },
 }
--- Breakable props (pots, jugs, kitchenware) are interactive objects too, but they're scenery to
--- a player looking for what to use: they get their own category instead of crowding it.
-local PROP = { kind = "prop", sound = nil, every = 99, range = 1500, classes = {} }
+-- Every moving character but the player is an NPC_Character: students, Fig and ghosts
+-- (through the enemy class), enemies, creatures. One query finds them all.
+local CHARACTERS = "NPC_Character"
+-- The rest, one class per pass, in order of precedence: a thing two classes both return
+-- belongs to the earlier one.
+local STATICS = {
+    { cls = "Container", kind = "chest" },
+    { cls = "FieldGuidePage", kind = "collect" },
+    { cls = "CooldownPickup", kind = "collect" },
+    { cls = "Door", kind = "door" },
+    { cls = "InteractiveObjectActor", kind = "usable" },
+    { cls = "SimpleInteractObject", kind = "usable" },
+    { cls = "WorldInteractObject", kind = "usable" },
+}
 local PROP_CLASSES = { "BCProps", "KitchenItems", "Ceramic" }
 -- Class-name fragments that mean "a person, not a foe" even under Enemy_Character.
 local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merchant" }
--- Puzzle knights (the Gringotts vault) are enemies too, but until one comes alive it's a
--- statue to work out, not something to fight: no growl, no enemy tip, its own scanner name.
--- statues.lua plays the puzzle.
-local STATUE = { kind = "statue", sound = nil, every = 99, range = 2500, classes = {} }
 local STATUE_CLASS = "HogwartsProtector"
 
-local SCAN_EVERY_MS = 600      -- one class query per this interval (~30 ms each)
+local SCAN_EVERY_MS = 600      -- one query per this interval (~30 ms each), alternating
 local LISTENER_MS = 100
 local GATE_MS = 250
 local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or dispatcher jitter
@@ -100,12 +112,14 @@ local function call_bool(o, fn)
     return nil
 end
 
-local nearby = {}   -- key -> { obj, kind, sound, every, range, pitch, next_at }
-local claimed_by, spoken_names, logged_names = {}, {}, {}
+-- key (object address) -> { path, kind, name, name_src, x, y, z, dist, seen_at, pass,
+-- priority, sound, every, range, pitch, next_at, extra }: snapshots, never objects.
+local nearby = {}
+local by_path = {}  -- path -> key
+local spoken_names, logged_names = {}, {}
 
 local function clear_world(reset_names)
-    nearby = {}
-    claimed_by = {}
+    nearby, by_path = {}, {}
     -- Names learned from subtitles stay: object paths are unique for the whole run, and the
     -- pause menu's screen load counts as a load (Fig was "Student" again after it, Oct 7).
     if reset_names then logged_names = {} end
@@ -395,14 +409,6 @@ local function update_listener()
     if audio then audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0) end
 end
 
--- --- Rotating scan ----------------------------------------------------------------------
-
-local scan_list = {}
-for _, cat in ipairs(CATEGORIES) do
-    for _, cls in ipairs(cat.classes) do scan_list[#scan_list + 1] = { cls = cls, cat = cat } end
-end
-local scan_i = 0
-
 local function friendly(cls_name)
     for _, frag in ipairs(FRIENDLY) do
         if cls_name:find(frag, 1, true) then return true end
@@ -511,80 +517,147 @@ local function name_of(actor, kind)
     return name, src
 end
 
+-- --- Scanning: snapshots, never lookups -------------------------------------------------
+-- Everything the mod knows about the world's things comes from scan passes: one FindAllOf,
+-- and every property any module needs read from those fresh objects in the same tick (modules
+-- add their own reads with M.on_scan). Nothing looks a world actor up by path between passes:
+-- on Oct 7 the lookup itself (StaticFindObject) crashed the game twice on knights the vault
+-- fight had just destroyed, before any validity check could run. A thing its pass no longer
+-- returns is dropped at once, so it is never touched again: the scan is its own sentinel.
+-- Passes alternate: all characters in one query, then the next static class, so people and
+-- enemies are never more than about 1.2 s old.
+
 -- Things are kept for the scanner up to this far, even when they're too far to make a sound.
 local KEEP_CM = 4000
 
-local function scan_step()
-    if not in_game or state.loading() then return end
-    scan_i = scan_i % #scan_list + 1
-    local entry = scan_list[scan_i]
+local readers = {}   -- { fragment, fn }
+--- Read more from a fresh object during a scan pass: fn(actor, entry) runs for every actor
+--- whose class name contains `fragment`, in the pass's own tick. It may fill entry.extra; it
+--- must never keep the actor.
+function M.on_scan(fragment, fn) readers[#readers + 1] = { fragment = fragment, fn = fn } end
+
+local function enemy_tip()
+    require("tips").once("enemy", function()
+        local t = require("tips")
+        return "An enemy is nearby: the low growl. " .. t.key("face_target") .. " turns you to face " ..
+               "the nearest enemy, " .. require("bindings").spoken("AM_Stupefy", "Slash") ..
+               " casts, " .. require("bindings").spoken("LockOn", "Period") .. " locks on, and " ..
+               require("bindings").spoken("AM_Protego", "Q") .. " blocks."
+    end)
+end
+
+-- One fresh actor from a pass: its snapshot, created or refreshed. Returns true if kept.
+local function take(a, kind, cn, pass, priority, seen)
+    local key = a:GetAddress()
+    if seen[key] then return false end
+    local x, y, z = location(a)
+    if not x then return false end
+    local dx, dy, dz = x - px, y - py, z - pz
+    local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+    local n = nearby[key]
+    -- A thing an earlier (more specific) pass already holds stays with that pass.
+    if n and n.pass ~= pass and (n.priority or 99) < priority then return false end
+    local k = KINDS[kind]
+    if d > math.max(k.range * 1.5, KEEP_CM) then
+        if n and n.path then by_path[n.path] = nil end
+        nearby[key] = nil
+        return false
+    end
+    seen[key] = true
+    if not n or n.kind ~= kind then
+        local was = n
+        n = { next_at = os.clock() + math.random() * k.every, extra = was and was.extra or {} }
+        if cn:find(STATUE_CLASS, 1, true) then
+            n.name, n.name_src = kind == "statue" and "Knight statue" or "Stone knight", "statue"
+        else
+            n.name, n.name_src = name_of(a, kind)
+        end
+        nearby[key] = n
+        if kind == "enemy" then enemy_tip() end
+    end
+    if not n.path then n.path = path_of(a) end
+    if n.path then by_path[n.path] = key end
+    n.kind, n.pass, n.priority = kind, pass, priority
+    n.sound, n.every, n.range, n.pitch = k.sound, k.every, k.range, k.pitch or 1.0
+    n.x, n.y, n.z, n.dist, n.seen_at = x, y, z, d, os.clock()
+    for _, r in ipairs(readers) do
+        if cn:find(r.fragment, 1, true) then
+            local ok, err = pcall(r.fn, a, n)
+            if not ok then diag.trace("scan reader " .. r.fragment .. ": " .. tostring(err)) end
+        end
+    end
+    return true
+end
+
+-- The sentinel: what a pass held and didn't see again is gone, and is never touched again.
+local function drop_unseen(pass, seen)
+    for key, n in pairs(nearby) do
+        if n.pass == pass and not seen[key] then
+            if n.path and by_path[n.path] == key then by_path[n.path] = nil end
+            nearby[key] = nil
+        end
+    end
+end
+
+local function character_kind(a, cn, creature_cls, enemy_cls)
+    if friendly(cn) then return "person" end
+    if cn:find(STATUE_CLASS, 1, true) then
+        -- Only a knight that's a puzzle: the fight after it spawns the same class.
+        if a.bPuzzleActive == true and a.bHasBeenReleased ~= true then return "statue" end
+        return "enemy"
+    end
+    if creature_cls and a:IsA(creature_cls) then return "beast" end
+    if enemy_cls and a:IsA(enemy_cls) then return "enemy" end
+    return "person"
+end
+
+local function run_pass(cls, pass, priority, classify)
     local t0 = os.clock()
-    diag.trace("scan " .. entry.cls .. ": FindAllOf")
-    local ok, actors = pcall(FindAllOf, entry.cls)
-    if not ok or not actors then return end
-    diag.trace("scan " .. entry.cls .. ": reading " .. #actors)
-    local found = 0
-    for i, a in ipairs(actors) do
+    diag.trace("scan " .. cls .. ": FindAllOf")
+    local ok, actors = pcall(FindAllOf, cls)
+    if not ok then return end
+    actors = actors or {}
+    diag.trace("scan " .. cls .. ": reading " .. #actors)
+    local seen, found = {}, 0
+    for _, a in ipairs(actors) do
         pcall(function()
             if not a:IsValid() then return end
-            local key = a:GetAddress()
-            local x, y, z = location(a)
-            if not x then return end
-            local dx, dy, dz = x - px, y - py, z - pz
-            local d = math.sqrt(dx * dx + dy * dy + dz * dz)
-            local cat = entry.cat
-            -- Stations are spots characters stand at to act something out: not for the player.
-            if cat.kind == "usable" then
-                local cn = a:GetClass():GetFName():ToString()
-                if cn:find("Station", 1, true) then return end
-                for _, frag in ipairs(PROP_CLASSES) do
-                    if cn:find(frag, 1, true) then cat = PROP; break end
-                end
-            end
-            local statue_class = false
-            if cat.kind == "enemy" then
-                local cn = a:GetClass():GetFName():ToString()
-                statue_class = cn:find(STATUE_CLASS, 1, true) ~= nil
-                if friendly(cn) then
-                    cat = CATEGORIES[1]   -- a student or ghost: a person
-                elseif statue_class and a.bPuzzleActive == true and a.bHasBeenReleased ~= true then
-                    -- Only a knight that's a puzzle: the fight after it spawns the same class.
-                    cat = STATUE
-                end
-            end
-            -- Earlier (more specific) categories win; don't let a later one relabel. A statue
-            -- that comes alive does become an enemy.
-            local prev = claimed_by[key]
-            if prev and prev ~= cat.kind and prev ~= "person" and prev ~= "statue" and prev ~= "prop" then return end
-            if d > math.max(cat.range * 1.5, KEEP_CM) then nearby[key] = nil; return end
-            claimed_by[key] = cat.kind
-            local n = nearby[key]
-            if not n or n.kind ~= cat.kind then
-                n = { next_at = os.clock() + math.random() * cat.every }
-                if statue_class then
-                    n.name, n.name_src = cat.kind == "statue" and "Knight statue" or "Stone knight", "statue"
-                else
-                    n.name, n.name_src = name_of(a, cat.kind)
-                end
-                nearby[key] = n
-                if cat.kind == "enemy" then
-                    require("tips").once("enemy", function()
-                        local t = require("tips")
-                        return "An enemy is nearby: the low growl. " .. t.key("face_target") .. " turns you to face " ..
-                               "the nearest enemy, " .. require("bindings").spoken("AM_Stupefy", "Slash") ..
-                               " casts, " .. require("bindings").spoken("LockOn", "Period") .. " locks on, and " ..
-                               require("bindings").spoken("AM_Protego", "Q") .. " blocks."
-                    end)
-                end
-            end
-            n.path, n.kind, n.sound, n.every, n.range, n.pitch = path_of(a), cat.kind, cat.sound, cat.every, cat.range, cat.pitch or 1.0
-            n.dist = d
-            found = found + 1
+            local cn = a:GetClass():GetFName():ToString()
+            local kind = classify(a, cn)
+            if kind and take(a, kind, cn, pass, priority, seen) then found = found + 1 end
         end)
     end
-    diag.trace("scan " .. entry.cls .. ": done")
+    drop_unseen(pass, seen)
+    diag.trace("scan " .. cls .. ": done")
     local ms = math.floor((os.clock() - t0) * 1000 + 0.5)
-    if found > 0 or ms > 50 then log(string.format("scan %s: %d nearby (%d ms)", entry.cls, found, ms)) end
+    if found > 0 or ms > 50 then log(string.format("scan %s: %d nearby (%d ms)", cls, found, ms)) end
+end
+
+local turn, static_i = 0, 0
+local function scan_step()
+    if not in_game or state.loading() then return end
+    turn = turn + 1
+    if turn % 2 == 1 then
+        -- Native classes are never destroyed: safe to look up, fresh each pass anyway.
+        local creature_cls, enemy_cls
+        pcall(function() creature_cls = StaticFindObject("/Script/Phoenix.Creature_Character") end)
+        pcall(function() enemy_cls = StaticFindObject("/Script/Phoenix.Enemy_Character") end)
+        if not valid(creature_cls) then creature_cls = nil end
+        if not valid(enemy_cls) then enemy_cls = nil end
+        run_pass(CHARACTERS, "characters", 0, function(a, cn) return character_kind(a, cn, creature_cls, enemy_cls) end)
+    else
+        static_i = static_i % #STATICS + 1
+        local st = STATICS[static_i]
+        run_pass(st.cls, st.cls, static_i, function(_, cn)
+            if st.kind ~= "usable" then return st.kind end
+            -- Stations are spots characters stand at to act something out: not for the player.
+            if cn:find("Station", 1, true) then return nil end
+            for _, frag in ipairs(PROP_CLASSES) do
+                if cn:find(frag, 1, true) then return "prop" end
+            end
+            return "usable"
+        end)
+    end
 end
 
 -- --- Ambient sounds ---------------------------------------------------------------------
@@ -604,21 +677,16 @@ local function ambient()
         if rank > MAX_AUDIBLE or played >= 1 then break end
         if now >= n.next_at then
             n.next_at = now + n.every
-            diag.trace("ambient " .. n.kind .. " " .. tostring(n.path))
-            local ok = pcall(function()
-                local obj = resolve(n.path)
-                if not obj then error("gone") end
-                local x, y, z = location(obj)
-                if not x then error("no position") end
-                local dx, dy, dz = x - px, y - py, z - pz
-                if math.sqrt(dx * dx + dy * dy + dz * dz) > n.range then return end
+            -- From the last pass's snapshot: no lookup of the thing itself.
+            local x, y, z = n.x, n.y, n.z
+            local dx, dy, dz = x - px, y - py, z - pz
+            if math.sqrt(dx * dx + dy * dy + dz * dz) <= n.range then
                 audio.play(n.sound, x, y, z + 60, 0.7, n.pitch)
                 local names = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
                                 collect = "Collectible", door = "Door" }
                 state.cue((names[n.kind] or n.kind) .. " " .. state.where(px, py, yaw_now, x, y))
                 played = played + 1
-            end)
-            if not ok then nearby[key] = nil; claimed_by[key] = nil end
+            end
         end
     end
 end
@@ -662,15 +730,17 @@ function M.pawn()
     return resolve(pawn_path)
 end
 
---- Everything the world scan is tracking, for the scanner: { key, path, kind, name,
---- name_src, dist (at the last scan, cm) }. Positions must be looked up fresh (M.locate).
+--- Everything the world scan is tracking: { key, path, kind, name, name_src, x, y, z, dist
+--- (cm, at the last pass), seen_at, extra (what M.on_scan readers recorded) }. All of it is a
+--- snapshot from the last pass that saw the thing.
 function M.entries()
     local out = {}
     if not in_game or state.loading() then return out end
     for key, n in pairs(nearby) do
         if n.path then
             out[#out + 1] = { key = tostring(key), path = n.path, kind = n.kind, name = n.name,
-                              name_src = n.name_src, dist = n.dist }
+                              name_src = n.name_src, x = n.x, y = n.y, z = n.z, dist = n.dist,
+                              seen_at = n.seen_at, extra = n.extra }
         end
     end
     return out
@@ -679,37 +749,28 @@ end
 --- Last known player position (cm) and camera yaw (degrees), as the listener uses them.
 function M.position() return px, py, pz, yaw_now end
 
---- Position of the nearest tracked thing of one kind ("person", ...) within max_cm, looked
---- up fresh; nil if there's none.
+--- Position of the nearest tracked thing of one kind ("person", ...) within max_cm (from the
+--- last passes, measured from where the player is now); nil if there's none.
 function M.nearest(kind, max_cm)
     if not in_game or state.loading() then return nil end
-    local best
+    local best, best_d
     for _, n in pairs(nearby) do
-        if n.kind == kind and n.dist and n.dist <= max_cm and (not best or n.dist < best.dist) then best = n end
+        if n.kind == kind and n.x then
+            local d = math.sqrt((n.x - px) ^ 2 + (n.y - py) ^ 2 + (n.z - pz) ^ 2)
+            if d <= max_cm and (not best or d < best_d) then best, best_d = n, d end
+        end
     end
     if not best then return nil end
-    local p = M.locate(best.path)
-    if not p then return nil end
-    return p, best.path
+    return { best.x, best.y, best.z }, best.path
 end
 
---- An actor by its path, looked up fresh and checked to still be that object, during
---- gameplay only (nil otherwise). Use it within one task; never keep it.
-function M.resolve(path)
-    if not in_game or state.loading() then return nil end
-    return resolve(path)
-end
-
---- Current position of an actor by its path, or nil if it's gone. Nothing is kept.
+--- Where a tracked thing was at the last pass that saw it, by its path, or nil once a pass no
+--- longer finds it. Nothing is looked up.
 function M.locate(path)
     if not in_game or state.loading() or not path then return nil end
-    local x, y, z
-    pcall(function()
-        local obj = resolve(path)
-        if obj then x, y, z = location(obj) end
-    end)
-    if not x then return nil end
-    return { x, y, z }
+    local n = nearby[by_path[path]]
+    if not n or n.path ~= path or not n.x then return nil end
+    return { n.x, n.y, n.z }
 end
 
 --- Play one of the world sounds centred, for the sound legend.

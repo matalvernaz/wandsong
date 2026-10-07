@@ -77,17 +77,54 @@ fighter.GetClass=function() return {GetFName=function() return {ToString=functio
 local knight=obj("BP_HogwartsProtector_C","/Game/Vault.Knight",{bHasBeenReleased=false,bPuzzleActive=true,
     RootComponent={RelativeLocation={X=600,Y=230,Z=340}}})
 knight.GetClass=function() return {GetFName=function() return {ToString=function() return "BP_HogwartsProtector_C" end} end} end
-FindAllOf=function(cls) if cls=="Enemy_Character" then return {knight,fighter} end return {} end
-local function kind_of(path) for _,e in ipairs(world.entries()) do if e.path==path then return e.kind,e.name end end end
+-- Every character comes from one NPC_Character pass, sorted by class.
+local classes={}
+local function class_obj(name) classes[name]=classes[name] or {IsValid=function() return true end,name=name}; return classes[name] end
+local real_find=StaticFindObject
+StaticFindObject=function(p)
+    local c=p:match("^/Script/Phoenix%.(.+)$")
+    if c then return class_obj(c) end
+    return real_find(p)
+end
+local function is(o,...) local set={} for _,n in ipairs({...}) do set[n]=true end
+    o.IsA=function(_,c) return set[c.name]==true end end
+is(knight,"Enemy_Character"); is(fighter,"Enemy_Character")
+local wolf=obj("BP_Wolf_C","/Game/Forest.Wolf",{RootComponent={RelativeLocation={X=900,Y=230,Z=340}}})
+wolf.GetClass=function() return {GetFName=function() return {ToString=function() return "BP_Wolf_C" end} end} end
+is(wolf,"Creature_Character")
+local reads=0
+world.on_scan("HogwartsProtector",function(a,e) reads=reads+1; e.extra.puzzle=a.bPuzzleActive end)
+local queried={}
+FindAllOf=function(cls) queried[cls]=(queried[cls] or 0)+1; if cls=="NPC_Character" then return {knight,fighter,wolf} end return {} end
+local function kind_of(path) for _,e in ipairs(world.entries()) do if e.path==path then return e.kind,e.name,e end end end
 t.run(8)
-local kind,name=kind_of("/Game/Vault.Knight")
+local kind,name,entry=kind_of("/Game/Vault.Knight")
 assert(kind=="statue" and name=="Knight statue","a kneeling puzzle knight is a statue, not an enemy")
-assert(world.resolve("/Game/Vault.Knight")==knight,"statues are looked up fresh by path")
+assert(entry.extra.puzzle==true and reads>0,"readers record from the fresh object during the pass")
+assert(entry.x==600 and world.locate("/Game/Vault.Knight")[1]==600,"positions come from the pass's snapshot")
 assert(kind_of("/Game/Vault.Fighter")=="enemy","a knight of the same class that isn't a puzzle is an enemy")
+assert(kind_of("/Game/Forest.Wolf")=="beast","creatures are sorted by class")
+assert(world.resolve==nil,"there is no lookup of world things by path")
+assert(queried.NPC_Character>=3 and not queried.Enemy_Character and not queried.BP_Student_C,"one query for all characters")
+-- Nothing between passes touches a thing: a moved knight is where the last pass saw it.
+local before=world.locate("/Game/Vault.Knight")[1]
+knight.RootComponent.RelativeLocation.X=700
+local looked=0
+local find=StaticFindObject
+StaticFindObject=function(p) if p:find("Vault",1,true) then looked=looked+1 end return find(p) end
+t.run(0.3)
+assert(looked==0,"world things are never looked up by path")
+StaticFindObject=find
+t.run(1.5)
+assert(world.locate("/Game/Vault.Knight")[1]==700,"the next pass refreshes the snapshot")
 knight.bHasBeenReleased=true
-t.run(8)
+t.run(1.5)
 kind,name=kind_of("/Game/Vault.Knight")
 assert(kind=="enemy" and name=="Stone knight","a knight that comes alive becomes an enemy")
+-- The sentinel: a thing its pass no longer returns is gone at once.
+FindAllOf=function(cls) if cls=="NPC_Character" then return {knight,wolf} end return {} end
+t.run(1.5)
+assert(kind_of("/Game/Vault.Fighter")==nil and world.locate("/Game/Vault.Fighter")==nil,"a vanished fighter is dropped")
 
 -- Generic interactables take the name the level designer gave them; pots go to Objects.
 local function cls_of(o, name) o.GetClass=function() return {GetFName=function() return {ToString=function() return name end} end} end end
@@ -101,7 +138,7 @@ cls_of(anon,"BP_INT_Interact_C")
 local pot=obj("BP_Int_BCProps_Pot_001_W_C","/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7",{RootComponent={RelativeLocation={X=650,Y=230,Z=340}}})
 cls_of(pot,"BP_Int_BCProps_Pot_001_W_C")
 FindAllOf=function(c) if c=="SimpleInteractObject" then return {door,glow,anon,pot} end return {} end
-t.run(8)
+t.run(10)
 kind,name=kind_of("/Game/Vault.Interact_VaultDoor")
 assert(kind=="usable" and name=="Vault Door","placed name instead of Interact: "..tostring(name))
 kind,name=kind_of("/Game/Vault.BP_INT_Interact_C_2147450001")

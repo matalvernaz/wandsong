@@ -20,9 +20,9 @@
 --     a knight) says which way the knight and its reflection face.
 -- No spot is marked and nothing walks you there: finding it is the puzzle (Matt, Oct 7).
 --
--- Rules kept: knights come from the world scan (no extra FindAllOf), are looked up by path
--- every time, and only their properties are read. Hooks (by event name, registered once at
--- startup) record an event name and a path, nothing else.
+-- Rules kept: knights are read only inside the world scan's pass (world.on_scan), from fresh
+-- objects, and never looked up afterwards; only their properties are read. Hooks (by event
+-- name, registered once at startup) record an event name and a path, nothing else.
 
 local dispatch, state, diag = require("dispatch"), require("state"), require("diag")
 local speech, world = require("speech"), require("world")
@@ -151,50 +151,47 @@ end
 M.inside = inside
 
 -- --- Reading the knights ----------------------------------------------------------------
-
--- Only a knight that is a puzzle right now is read beyond its two flags: the fight after the
--- first puzzle spawns knights of the same class, and reading deeper into them (their light,
--- its components) as they spawned and shattered crashed the game (Oct 7, 09:16). Each step
--- leaves a breadcrumb in trace.log.
-local function read(path, pawn_path)
-    diag.trace("statue lookup " .. path)
-    local o = world.resolve and world.resolve(path)
-    if not o then return nil end
-    local s = { path = path }
-    diag.trace("statue flags " .. path)
+-- Knights are read during the world scan's own pass (world.on_scan), from the fresh objects
+-- in that tick, and this module works from those snapshots: nothing here looks a knight up.
+-- (Looking knights up by path while the fight shattered them crashed the game twice, Oct 7.)
+-- Only a knight that is a puzzle right now is read beyond its two flags; the fighters of the
+-- same class aren't.
+local function read_knight(o, entry)
+    local s = {}
     pcall(function() s.active = o.bPuzzleActive == true end)
     pcall(function() s.released = o.bHasBeenReleased == true end)
-    if not s.active or s.released then return s end
-    pcall(function() s.statue_visible = o.bStatueVisible == true end)
-    pcall(function() s.reflection_visible = o.bReflectionVisible == true end)
-    pcall(function() s.align_to = o.AlignToAngle end)
-    pcall(function() s.target_angle = o.TargetAngle end)
-    pcall(function() s.current = o.CurrentAngle end)
-    pcall(function() s.hint = o.VFX_HintLine_Alpha end)
-    diag.trace("statue root " .. path)
-    pcall(function() s.root = vec(o.RootComponent.RelativeLocation) end)
-    pcall(function() s.yaw = o.RootComponent.RelativeRotation.Yaw end)
-    -- Whose light the reflection follows: the player's own (TargetActor is the player), or
-    -- someone else's (Fig's). Only the path is compared; nothing of that actor is read.
-    diag.trace("statue light " .. path)
-    pcall(function()
-        local t = o.TargetActor
-        if valid(t) then s.target = path_of(t) end
-    end)
-    if num(s.hint) and s.hint > 0.05 then
-        diag.trace("statue corridor " .. path)
-        pcall(function() s.cor = corridor(o) end)
+    if s.active and not s.released then
+        pcall(function() s.statue_visible = o.bStatueVisible == true end)
+        pcall(function() s.reflection_visible = o.bReflectionVisible == true end)
+        pcall(function() s.align_to = o.AlignToAngle end)
+        pcall(function() s.target_angle = o.TargetAngle end)
+        pcall(function() s.current = o.CurrentAngle end)
+        pcall(function() s.hint = o.VFX_HintLine_Alpha end)
+        pcall(function() s.yaw = o.RootComponent.RelativeRotation.Yaw end)
+        -- Whose light the reflection follows: only its path is kept, to compare with the player.
+        pcall(function()
+            local t = o.TargetActor
+            if valid(t) then s.target = path_of(t) end
+        end)
+        if num(s.hint) and s.hint > 0.05 then pcall(function() s.cor = corridor(o) end) end
     end
+    entry.extra.statue = s
+end
+world.on_scan(CLASS, read_knight)
+
+-- A knight's snapshot, with what depends on the player now.
+local function view(e, pawn_path)
+    local snap = e.extra and e.extra.statue
+    if not snap then return nil end
+    local s = { path = e.path, root = e.x and { e.x, e.y, e.z } or nil }
+    for k, v in pairs(snap) do s[k] = v end
     s.mine = s.target ~= nil and s.target == pawn_path
     if num(s.current) and num(s.align_to) then s.off = wrap(s.current - s.align_to) end
     s.visible = (s.statue_visible or s.reflection_visible) and s.active and not s.released
     return s
 end
 
-local known = {}                 -- path -> { base, next_at, said_hidden, said_intro, aligned, gone }
--- Knights that have come alive are never looked up again this load: Fig shatters them seconds
--- later, and the world scan may still list one as a statue until its next pass.
-local gone = {}
+local known = {}                 -- path -> { base, next_at, said_hidden, said_intro, aligned }
 local knights = {}               -- the visible puzzle knights at the last check
 local generation = state.generation
 local playing_since = nil        -- uninterrupted gameplay since
@@ -223,7 +220,7 @@ end
 local function tick()
     if generation ~= state.generation then
         generation = state.generation
-        known, knights, playing_since, gone = {}, {}, nil, {}
+        known, knights, playing_since = {}, {}, nil
         stop_loops()
     end
     if not world.in_game() then
@@ -240,13 +237,8 @@ local function tick()
     local now = os.clock()
     local seen, hums = {}, {}
     for _, e in ipairs(world.entries and world.entries() or {}) do
-        -- Only what the world scan, reading fresh objects, found to be a live puzzle knight.
-        -- Looking up every knight of the class (the fight's too, as they shattered) crashed
-        -- the game twice (Oct 7, 09:16 and 09:26): a destroyed object can come back from the
-        -- lookup, and UE4SS 3.0.1's IsValid then dereferences freed memory.
-        if e.kind == "statue" and not gone[e.path] then
-            local s = read(e.path, pawn_path)
-            if s and s.released then gone[s.path] = true end
+        if e.kind == "statue" then
+            local s = view(e, pawn_path)
             if s and not s.released then
                 local k = known[s.path]
                 if not k then
@@ -333,10 +325,12 @@ end
 
 --- What a sighted player sees of a knight: which way it faces, and its reflection.
 function M.describe(path)
-    if not world.in_game() or gone[path] then return nil end
-    local px, py, pz = world.position()
+    if not world.in_game() then return nil end
     local pawn = world.pawn and world.pawn()
-    local s = read(path, pawn and path_of(pawn))
+    local s
+    for _, e in ipairs(world.entries()) do
+        if e.path == path then s = view(e, pawn and path_of(pawn)) end
+    end
     if not s or not num(s.yaw) then return nil end
     if s.released then return "standing, alive" end
     if not s.statue_visible and s.reflection_visible then
@@ -364,9 +358,6 @@ for _, event in ipairs(EVENTS) do
             pcall(function() p = path_of(ctx:get()) end)
             if p and p:find(CLASS, 1, true) and #pending < 64 then
                 pending[#pending + 1] = { event = event, path = p, generation = state.generation }
-            end
-            if p and (event == "StandingArrived" or event == "Branch to Release" or event == "SignalForRelease") then
-                gone[p] = true
             end
         end)
         if not ok then log("hook failed " .. event .. ": " .. tostring(err)) end
