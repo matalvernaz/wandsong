@@ -59,7 +59,7 @@ local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or di
 -- up again (StaticFindObject is a quick hash lookup) every time it's needed.
 local ui_path, pawn_path, ctrl_path, ts_path
 local in_game, stable, world_key = false, 0, nil
-local ui_playing = false   -- world features switched off, but the UI says gameplay
+local ui_playing = false   -- the UI shows no menu, pause or load (gameplay or a scene), world gate aside
 
 local function valid(o)
     if not o then return false end
@@ -211,6 +211,7 @@ local function gate_check()
     end
     -- Ask the long-lived UI manager first; only look at the player once it says "playing".
     local why = ui_blocker()
+    ui_playing = why == nil
     if why then close_gate(why); return end
     diag.trace("gate: player")
     local pawn = resolve(pawn_path)
@@ -254,9 +255,10 @@ local function gate_check()
 end
 
 function M.in_game() return in_game and enabled and not state.loading() end
---- True in gameplay even while world features are switched off: menu code must not walk
---- widget trees then. in_game() alone is false whenever the world layer is off.
-function M.gameplay() return M.in_game() or (not enabled and ui_playing and not state.loading()) end
+--- True whenever no menu is up: gameplay, a scene or dialogue, the gate still settling, or
+--- world features off. Menu code must not walk widget trees then; in_game() alone is false in
+--- all of those, and up arrow walking the HUD crashed the game twice (Oct 6).
+function M.gameplay() return M.in_game() or (ui_playing and not state.loading()) end
 function M.sounds_enabled() return sounds_on and not speech.is_muted() end
 
 --- True while the game is swapping screens (opening or closing a menu, loading one): widget
@@ -279,6 +281,7 @@ function M.not_ready_reason()
                keys.describe_combo(keys.combo_of("review_next")) .. " and press " ..
                keys.describe_combo(keys.combo_of("press")) .. "."
     end
+    if state.cinematic then return "That works once this scene ends." end
     return "That works in the world, not in menus or scenes."
 end
 

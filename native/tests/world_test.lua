@@ -42,6 +42,8 @@ t.run(0.3)
 pawn.InCinematic=true
 t.run(1)
 assert(require("state").cinematic and not world.in_game(),"cutscene suppresses world")
+assert(world.gameplay(),"a cutscene is not a menu: arrow keys must not walk widgets")
+assert(world.not_ready_reason():find("scene",1,true),"the player hears it is a scene")
 pawn.InCinematic=false; t.run(6)
 assert(world.in_game(),"gameplay resumes after cutscene")
 local generation=require("state").generation
