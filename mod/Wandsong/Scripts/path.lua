@@ -731,7 +731,6 @@ end
 -- The tracked quest and its current task, from the game's mission manager (a long-lived
 -- object, asked only on a key press). GetMissionLogDataBP returns every quest's log entry and
 -- the tracked one's index through an out parameter.
-local mm_path
 local last_quest_line = nil
 -- Logs each distinct failure once per session (the objective watch asks every 4 s).
 local logged_once = {}
@@ -750,28 +749,50 @@ local function visible(w)
     local ok, v = pcall(function() return w:IsValid() and w:IsVisible() end)
     return ok and v == true
 end
-local function objective_text()
-    if world.ui_busy and world.ui_busy() then return nil end
-    local tasks, seen = {}, {}
-    for _, cb in ipairs(FindAllOf("UI_BP_MissionBannerCheckbox_C") or {}) do
-        if visible(cb) then
-            local t
-            pcall(function() t = widget_text(cb.CheckboxText) end)
-            if t and not seen[t] then seen[t] = true; tasks[#tasks + 1] = t end
+-- Where the HUD's quest widgets live, so most checks are a quick StaticFindObject; a full
+-- FindAllOf (about 50 ms) only every 15 s or when the remembered ones are gone.
+local quest_paths, quest_scan_at = nil, -100
+local function quest_widgets()
+    local found = {}
+    if quest_paths and os.clock() - quest_scan_at < 15 then
+        for _, p in ipairs(quest_paths) do
+            local o
+            pcall(function() o = StaticFindObject(p.path) end)
+            if o and visible(o) then found[#found + 1] = { kind = p.kind, obj = o } end
+        end
+        if #found > 0 then return found end
+    end
+    quest_paths, quest_scan_at = {}, os.clock()
+    for kind, cls in pairs({ task = "UI_BP_MissionBannerCheckbox_C", banner = "UI_BP_MissionBanner_New_C" }) do
+        for _, o in ipairs(FindAllOf(cls) or {}) do
+            if visible(o) then
+                found[#found + 1] = { kind = kind, obj = o }
+                local p = path_of(o)
+                if p then quest_paths[#quest_paths + 1] = { kind = kind, path = p } end
+            end
         end
     end
-    local title
-    for _, b in ipairs(FindAllOf("UI_BP_MissionBanner_New_C") or {}) do
-        if not title and visible(b) then pcall(function() title = widget_text(b.StepTitleText) end) end
+    return found
+end
+local function objective_text()
+    if world.ui_busy and world.ui_busy() then return nil end
+    local tasks, seen, title = {}, {}, nil
+    for _, w in ipairs(quest_widgets()) do
+        if w.kind == "task" then
+            local t
+            pcall(function() t = widget_text(w.obj.CheckboxText) end)
+            if t and not seen[t] then seen[t] = true; tasks[#tasks + 1] = t end
+        elseif not title then
+            pcall(function() title = widget_text(w.obj.StepTitleText) end)
+        end
     end
     if #tasks == 0 and not title then once_log("quest text: no visible quest on the HUD") return nil end
     once_log("quest text from the HUD: " .. tostring(title) .. " | " .. table.concat(tasks, "; "))
     return "Quest: " .. (title or "current quest") .. (#tasks > 0 and (". " .. table.concat(tasks, ". ")) or "")
 end
 
--- New objectives are announced as the game changes them (checked every 4 s in the world; a
--- call on the long-lived mission manager). Only text that reads as words is spoken: if the
--- game hands back localisation keys, they're logged instead.
+-- New objectives are announced as the game changes them (checked every 4 s in the world).
+-- Only text that reads as words is spoken: localisation keys are logged instead.
 local function looks_like_words(t) return t and t:find("%a") and not t:find("_", 1, true) end
 dispatch.every(4000, function()
     if not world.in_game() or state.loading() then return end
@@ -900,7 +921,7 @@ dispatch.every(500, function()
     if generation ~= state.generation then
         generation = state.generation
         if walking then stop("loading") end
-        route, dest, trail, chosen, crumb, guide_path, mgr_path, mm_path, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil, nil
+        route, dest, trail, chosen, crumb, guide_path, mgr_path, quest_paths, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil, nil
         source, last_quest_line, last_objective, arrived_at, face = nil, nil, nil, nil, nil
         next_mgr_search = 0
     end
