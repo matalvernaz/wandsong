@@ -3,7 +3,9 @@
 # Key names: num0-num9, space, esc, enter, up/down/left/right, f, r, lbr ([), rbr (]),
 # bslash (\), quote ('), semi (;), minus, equals, pageup/pagedown/home/end, grave (`), comma, period,
 # slash, f1-f12; prefix ctrl+ or shift+. Suffix @ms holds the key that long ("space@2500").
-param([string[]]$Keys, [int]$DelayMs = 700)
+# -Probe first checks that injected letters land (it types an unbound B: never use it while a
+# text field such as a character name has focus).
+param([string[]]$Keys, [int]$DelayMs = 700, [switch]$Probe)
 # powershell -File passes "a,b" as one string: split it.
 $Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
@@ -72,7 +74,7 @@ foreach ($k in $Keys) {
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"
-    if (-not $script:probed) {
+    if ($Probe -and -not $script:probed) {
         # Some minutes after a launch, a Windows overlay (Game Bar's launch panel, it seems)
         # can swallow injected letters, digits, space, enter and arrows while F-keys and
         # modifiers still pass (Oct 7). Probe once with an unused key pair before sending.

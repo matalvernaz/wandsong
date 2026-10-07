@@ -291,8 +291,11 @@ local function tick()
     -- while you circle it.
     for _, s in ipairs(seen) do
         local k = s.k
+        -- ...and only within the corridor's reach (1.1 to 7.1 m out for the vault's knights):
+        -- in line but further off, the game does nothing.
+        local reach = s.root and dist2(s.root, me) or 0
         local aligned = s.mine and num(s.target_angle) and num(s.align_to)
-            and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG
+            and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG and reach >= 80 and reach <= 800
         if aligned and not k.aligned then speech.say(#seen > 1 and "That knight is lined up." or "Lined up.") end
         k.aligned = aligned
     end

@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 [-Native] [-Win64 <path>]
 #
 # The game loads scripts at startup: restart it afterwards (never hot-reload while playing).
-param([switch]$Native, [string]$Win64 = "", [string]$InputBridge = "")
+param([switch]$Native, [string]$Win64 = "", [string]$InputBridge = "", [string]$AudioBridge = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if (Get-Process -Name HogwartsLegacy -ErrorAction SilentlyContinue) {
@@ -33,6 +33,7 @@ $mod = Join-Path $Win64 "Mods\Wandsong"
 $scripts = Join-Path $mod "Scripts"
 if (-not (Test-Path $scripts)) { throw "UE4SS mod folder missing: $scripts (run the installer first)" }
 if ($InputBridge -and -not (Test-Path $InputBridge)) { throw "Input module missing: $InputBridge" }
+if ($AudioBridge -and -not (Test-Path $AudioBridge)) { throw "Audio module missing: $AudioBridge" }
 if ($Native) {
     foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
         if (-not (Test-Path (Join-Path $root "native\build\Release\$dll"))) { throw "Build the native modules first: $dll is missing" }
@@ -46,6 +47,10 @@ if ($Native) {
         Copy-Item (Join-Path $root "native\build\Release\$dll") $scripts -Force
     }
     Write-Host "native modules -> $scripts"
+}
+if ($AudioBridge) {
+    Copy-Item $AudioBridge (Join-Path $scripts "audio_bridge.dll") -Force
+    Write-Host "audio module -> $scripts"
 }
 if ($InputBridge) {
     Copy-Item $InputBridge (Join-Path $scripts "input_bridge.dll") -Force
