@@ -74,7 +74,7 @@ local function read_prompt(path)
         local action = widget.ActionText.Text:ToString()
         action = action:gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
         if action == "" then return end
-        return action .. ": " .. bindings.spoken("AM_Interact", "F")
+        return "Press " .. bindings.spoken("AM_Interact", "F") .. " to " .. action:lower() .. "."
     end)
     if ok and text then
         if text ~= last_prompt then

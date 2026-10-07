@@ -391,6 +391,7 @@ local function release()
     jump_token = jump_token + 1
 end
 
+local PAUSED = "the game paused or a scene started"
 local function stop(why, sound)
     if not walking then return end
     walking, waiting = false, false
@@ -409,7 +410,9 @@ local function stop(why, sound)
     local said = (why == "you've arrived" and "Arrived at the objective.")
               or (why == "caught up" and "Caught up. You're beside them.")
               or ("Autowalk stopped" .. (why ~= "" and (", " .. why) or ""))
-    speech.say(said)
+    -- A pause or scene stops autowalk because something else just started talking (a tutorial,
+    -- a line of dialogue): queue behind it rather than cut it off.
+    speech.say(said, why == PAUSED)
 end
 
 -- Movement keys the player presses stop autowalk (not W: that's the key being held).
@@ -489,7 +492,7 @@ end
 local function walk_tick()
     if not walking then return end
     if cancel then local c = cancel; cancel = nil; stop(c); return end
-    if not world.in_game() then stop("the game paused or a scene started"); return end
+    if not world.in_game() then stop(PAUSED); return end
     if route_failure then stop(route_failure); return end
     if not input or not input.focused() then
         release()   -- alt-tabbed: let go, and pick up again when the game has focus

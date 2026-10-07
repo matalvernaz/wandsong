@@ -42,7 +42,7 @@ muted=false; playing=false
 events.ShowButtonInfo(ctx("UI_BP_InteractBlip_C"),val(true)); t.run(0.3)
 assert(reads==0,"prompt deferred until gameplay")
 playing=true; t.run(0.3)
-assert(said[#said]=="Examine: f","prompt includes interaction key")
+assert(said[#said]=="Press f to examine.","prompt says which key to press")
 n=#said
 for i=1,3 do events.ShowButtonInfo(ctx("UI_BP_InteractBlip_C"),val(true)); t.run(3) end
 assert(#said==n,"standing at a prompt does not repeat it")
