@@ -214,6 +214,7 @@ local function stabilise(regions)
     return out
 end
 
+local terrain
 local function walls()
     local pawn = world.pawn()
     if not pawn or not audio then stop_walls(); return end
@@ -292,7 +293,9 @@ local function cue_once(kind, x, y, z, sound, pitch, text, yaw, px, py)
         drop = "Those falling notes mean the ground drops away ahead.",
     })[kind] .. " " .. require("tips").key("what_was_that") .. " names the last sounds.")
     local off = math.abs(norm(math.deg(math.atan(y - py, x - px)) - yaw))
-    if off <= 15 then dispatch.later(250, function() audio.play_ui("tick", 0.35) end, "lined up tick") end
+    if off <= 15 then dispatch.later(250, function()
+        if world.in_game() and (not world.sounds_enabled or world.sounds_enabled()) then audio.play_ui("tick", 0.35) end
+    end, "lined up tick") end
     diag.event("terrain", text)
 end
 
@@ -318,7 +321,7 @@ function terrain(k, pawn, px, py, pz, yaw)
         local top_d, _, _, top_z = ray(k, pawn, hx + cx * 30, hy + cy * 30, feet + 110, hx + cx * 30, hy + cy * 30, feet)
         local h = top_z and (top_z - feet) or 50
         cue_once("hop", hx, hy, feet + h, "hop", 1.0,
-                 string.format("Low obstacle ahead, %d centimetres high: space jumps over it", math.floor(h / 10 + 0.5) * 10),
+                 string.format("Low obstacle ahead, %d centimetres high: %s jumps over it", math.floor(h / 10 + 0.5) * 10, require("bindings").spoken("AM_Jump", "SpaceBar")),
                  yaw, px, py)
         drop_seen = 0
         return
@@ -332,7 +335,7 @@ function terrain(k, pawn, px, py, pz, yaw)
             local h = top_d and top_z and (top_z - feet) or nil
             if h and h > 100 and h <= 300 then
                 cue_once("climb", hx, hy, top_z, "climb", 1.0,
-                         string.format("Ledge ahead, %.1f metres up: walk into it and press space to climb", h / 100),
+                         string.format("Ledge ahead, %.1f metres up: walk into it and press %s to climb", h / 100, require("bindings").spoken("AM_Jump", "SpaceBar")),
                          yaw, px, py)
             end
         end
@@ -389,11 +392,13 @@ local function status()
 end
 
 dispatch.every(TICK_MS, function()
-    if not world.in_game() then stop_walls(); last_x = nil; return end
+    if not world.in_game() or (world.sounds_enabled and not world.sounds_enabled()) or speech.is_muted() then
+        stop_walls(); last_x = nil; return
+    end
     body()
 end, "body sounds")
 dispatch.every(WALL_MS, function()
-    if not world.in_game() then stop_walls(); return end
+    if not world.in_game() or (world.sounds_enabled and not world.sounds_enabled()) or speech.is_muted() then stop_walls(); return end
     walls()
 end, "walls")
 dispatch.every(10000, function() if world.in_game() then status() end end, "surroundings status")

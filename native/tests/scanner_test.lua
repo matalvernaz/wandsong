@@ -29,6 +29,11 @@ package.loaded["world"] = {
     not_ready_reason = function() return "not now" end,
 }
 local said = {}
+local faced
+package.loaded.path = {
+    face_to = function(path) faced = path end,
+    objective = function() return nil end,
+}
 local speech = require("speech")
 speech.say = function(t) said[#said + 1] = t end
 
@@ -50,6 +55,7 @@ assert(said[#said]:find("^Professor fig"), "wraps to the first: " .. said[#said]
 -- Repeat gives a fresh distance after walking closer.
 px = 200
 run.scan_repeat()
+assert(faced == "/Game/Fig", "Home faces the selected actor")
 assert(said[#said]:find("^Professor fig, 2 metres"), "fresh distance: " .. said[#said])
 
 -- Categories.

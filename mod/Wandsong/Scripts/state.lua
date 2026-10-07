@@ -5,10 +5,22 @@ local M = {}
 -- Nothing may touch world objects (actors, the player) during a load: they're being torn
 -- down and rebuilt, and touching one mid-teardown crashes inside UE4SS.
 M.loading_until = -1
+M.generation = 0
+M.scene = 0
+M.cinematic = false
+M.paused = false
 
 function M.loading() return os.clock() < M.loading_until end
 
-function M.mark_loading(seconds) M.loading_until = math.max(M.loading_until, os.clock() + (seconds or 10)) end
+function M.mark_loading(seconds)
+    if not M.loading() then M.generation = M.generation + 1; M.scene = M.scene + 1 end
+    M.loading_until = math.max(M.loading_until, os.clock() + (seconds or 10))
+end
+
+function M.set_cinematic(value)
+    value = value == true
+    if value ~= M.cinematic then M.scene = M.scene + 1; M.cinematic = value end
+end
 
 -- Set when a modal tutorial (one that pauses play until you continue) has been read; the
 -- world gate then checks the game's tutorial system and stays closed while it's up.

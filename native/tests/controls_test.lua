@@ -1,71 +1,57 @@
--- Runs controls.lua and keys.lua outside the game with UE4SS stubbed out, against a COPY of
--- the player's Input.ini (pointed to by LOCALAPPDATA). Usage, from native\build\Release:
---   set LOCALAPPDATA=<temp dir containing "Hogwarts Legacy\Saved\Config\WindowsNoEditor\Input.ini">
---   luahost.exe controls_test.lua
-
--- Never run against the player's real settings: this test rebinds keys and applies presets.
-if not (os.getenv("LOCALAPPDATA") or ""):lower():find("temp", 1, true) then
-    print("controls test skipped: point LOCALAPPDATA at a temp copy of the game's config first (see above)")
-    return
-end
-
-local scripts = "C:/claudeProjects/wandsong/mod/Wandsong/Scripts"
-package.path = scripts .. "/?.lua;" .. package.path
-
--- Minimal UE4SS stand-ins.
-LoopAsync = function() end
-ExecuteInGameThread = function(f) f() end
-local binds = 0
-RegisterKeyBind = function() binds = binds + 1 end
-ModifierKey = { SHIFT = 1, CONTROL = 2, ALT = 3 }
-Key = { OEM_FOUR = 219, OEM_SIX = 221, OEM_FIVE = 220, OEM_ONE = 186, OEM_SEVEN = 222,
-        OEM_TWO = 191, OEM_MINUS = 189, OEM_PLUS = 187, F9 = 120, ESCAPE = 27, J = 74,
-        NINE = 57, DEL = 46, INS = 45, NUM_FIVE = 101 }
-
-local keys = require("keys")
-print("binds registered: " .. binds)
-
--- A couple of mod actions, as menus.lua would declare them.
-keys.action{ id = "press", name = "Press the current item", group = "Menus and screens", default = "\\", run = function() end }
-keys.action{ id = "scan", name = "What's around me", group = "In the world", default = "f9", run = function() end }
-
-local controls = require("controls")
-local items = controls.items()
-print("items: " .. #items)
-for i = 1, math.min(18, #items) do print("  " .. items[i].text) end
-
--- Simulate rebinding the basic cast to Slash through the menu's own flow.
-local said = {}
-local speech = require("speech")
-speech.say = function(t) said[#said + 1] = t end
-for _, it in ipairs(items) do
-    if it.text:find("^Basic cast") then
-        it.on_press()
-        print("prompt: " .. said[#said])
-        -- Pretend the player pressed J (the game's quest key): expect a clash warning? J is a
-        -- single game key, so the game binding is allowed with a note.
-        keys.capture_next(nil)
-        break
+local t = dofile("native/tests/testlib.lua")
+local files = require("files")
+local f = assert(io.open(files.input(), "w"))
+f:write([[ActionMappings=(ActionName="AM_Stupefy",Key=LeftMouseButton,GroupName="SpellsActions")
+ActionMappings=(ActionName="AM_Dodge",Key=LeftControl,GroupName="OnFoot")
+ActionMappings=(ActionName="AM_Jump",Key=J,GroupName="OnFoot")
+ActionMappings=(ActionName="UMGMapScreenToggle",Key=M,GroupName="AccessingMenus")
+AxisMappings=(AxisName="MoveForward",Key=I,Scale=1.000000)
+AxisMappings=(AxisName="MoveForward",Key=K,Scale=-1.000000)
+]])
+f:close()
+local keys, said = require("keys"), {}
+require("speech").say = function(s) said[#said+1]=s end
+keys.action{id="test_action",name="Test mod action",group="Tests",default="f8",run=function() end}
+keys.action{id="shift_only",name="Shift only action",group="Tests",default="shift+f7",run=function() end}
+local controls, bindings = require("controls"), require("bindings")
+assert(bindings.forward()=="I" and bindings.virtual_key(bindings.key("AM_Jump","SpaceBar"))==74)
+assert(bindings.movement_vk(75) and not bindings.movement_vk(nil))
+assert(bindings.key("AM_Stupefy","Slash")==nil,"mouse-only action does not invent a key")
+local capture
+keys.capture_next=function(fn) capture=fn end
+local function choose(prefix)
+    for _,item in ipairs(controls.items()) do
+        if item.text:sub(1,#prefix)==prefix then item.on_press(); return end
     end
+    error("missing control "..prefix)
 end
--- Drive the capture directly: press Slash.
-local capture_fn
-local real_capture = keys.capture_next
-keys.capture_next = function(fn) capture_fn = fn end
-for _, it in ipairs(controls.items()) do
-    if it.text:find("^Basic cast") then it.on_press(); break end
+local function rejected(combo,enum,expected)
+    local n=#said
+    capture(combo,enum)
+    local found=false
+    for i=n+1,#said do if said[i]:find(expected,1,true) then found=true end end
+    assert(found,"missing conflict explanation: "..expected)
 end
-capture_fn("/", "OEM_TWO")
-print("after slash: " .. said[#said])
-for _, it in ipairs(controls.items()) do
-    if it.text:find("^Basic cast") then print("  now: " .. it.text) end
+choose("Test mod action:")
+rejected("ctrl+shift+m","M","the game would react to it too")
+rejected("shift+i","I","the game would react to it too")
+rejected("insert","INS","belongs to your screen reader")
+assert(keys.combo_of("test_action")=="f8","rejections preserve current key")
+capture("shift+f6","F6")
+assert(keys.combo_of("test_action")=="shift+f6")
+choose("Dodge:")
+rejected("f7","F7","Wandsong's key")
+choose("Jump:")
+capture("l","L")
+assert(bindings.key("AM_Jump","SpaceBar")=="J","active key stays correct until restart")
+assert(bindings.conflict("L")=="AM_Jump","next-launch key persisted")
+local real_open=io.open
+io.open=function(path,mode)
+    if path==files.runtime("keys.ini",true) and mode=="w" then return nil,"read only" end
+    return real_open(path,mode)
 end
--- NVDA key and a mod-key clash.
-for _, it in ipairs(controls.items()) do
-    if it.text:find("^Dodge") then it.on_press(); break end
-end
-capture_fn("insert", "INS")
-print("insert: " .. said[#said])
-capture_fn("\\", "OEM_FIVE")
-print("backslash: " .. said[#said])
-keys.capture_next = real_capture
+assert(not keys.rebind("test_action","f5"),"failed save reported")
+assert(keys.combo_of("test_action")=="shift+f6","failed save restores original binding")
+io.open=real_open
+assert(io.open(files.input()..".wandsong-backup","r")):close()
+print("controls test passed")

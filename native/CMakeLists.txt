@@ -14,6 +14,10 @@ list(REMOVE_ITEM LUA_SOURCES ${LUA_SRC}/lua.c ${LUA_SRC}/luac.c ${LUA_SRC}/onelu
 add_library(lua54 STATIC ${LUA_SOURCES})
 target_include_directories(lua54 PUBLIC ${LUA_SRC})
 target_compile_definitions(lua54 PRIVATE _CRT_SECURE_NO_WARNINGS)
+if(UNIX)
+    target_compile_definitions(lua54 PRIVATE LUA_USE_LINUX)
+    target_link_libraries(lua54 PUBLIC m ${CMAKE_DL_LIBS})
+endif()
 
 # Speech: loads prism.dll from beside itself at runtime.
 add_library(prism_bridge SHARED prism_bridge.c)

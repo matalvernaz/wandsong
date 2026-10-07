@@ -105,7 +105,7 @@ local function rebuild()
 end
 
 local function load_saved()
-    SAVE = script_dir() .. "\\keys.ini"
+    SAVE = require("files").runtime("keys.ini", true)
     local saved = {}
     local f = io.open(SAVE, "r")
     if f then
@@ -164,10 +164,11 @@ end
 
 function M.rebind(id, combo)
     local a = actions[id]
-    if not a then return false end
+    if not a or not parse(combo) then return false end
+    local old = a.combo
     a.combo = combo
+    if not save() then a.combo = old; return false end
     rebuild()
-    save()
     return true
 end
 

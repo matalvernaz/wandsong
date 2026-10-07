@@ -1,3 +1,5 @@
+local test_time = 0
+os.clock = function() return test_time end
 -- Offline test for surroundings.lua: fake world, fake pawn and a fake LineTraceSingle that
 -- reports a wall on the right that ends, and a drop-off ahead. Run with luahost.exe.
 local here = (debug.getinfo(1, "S").source:gsub("^@", ""):gsub("\\", "/"):match("^(.*)/[^/]+$")) or "."
@@ -73,7 +75,7 @@ local function run(seconds, walk)
         if walk then x = x + 15 end
         step = math.floor((os.clock() - t0) / 0.2)
         loop()
-        local t = os.clock() while os.clock() - t < 0.05 do end
+        test_time = test_time + 0.05
     end
 end
 local function count()

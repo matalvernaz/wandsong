@@ -18,9 +18,9 @@ local function mod_dir()
     src = src:gsub("^@", ""):gsub("/", "\\")
     return src:match("^(.*)\\[Ss]cripts\\[^\\]+$") or "."
 end
-M.dir = mod_dir()
-local LOG = M.dir .. "\\Wandsong.log"
-local TRACE = M.dir .. "\\trace.log"
+M.dir = require("files").mod
+local LOG = require("files").runtime("Wandsong.log")
+local TRACE = require("files").runtime("trace.log")
 local TRACE_MAX = 4 * 1024 * 1024   -- start a fresh trace file past this (only the tail matters)
 
 local function rotate(path)

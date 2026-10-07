@@ -30,13 +30,19 @@ static int l_focused(lua_State *L) {
 static int l_key(lua_State *L) {
     UINT vk = (UINT)luaL_checkinteger(L, 1);
     int down = lua_toboolean(L, 2);
+    if (vk == 0 || vk > 255) { lua_pushboolean(L, 0); return 1; }
     /* A release is always allowed (never leave a key stuck); a press needs focus. */
     if (down && !game_focused()) { lua_pushboolean(L, 0); return 1; }
     INPUT in;
     ZeroMemory(&in, sizeof(in));
     in.type = INPUT_KEYBOARD;
-    in.ki.wScan = (WORD)MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+    UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX);
+    if (!scan) { lua_pushboolean(L, 0); return 1; }
+    in.ki.wScan = (WORD)(scan & 0xff);
     in.ki.dwFlags = KEYEVENTF_SCANCODE | (down ? 0 : KEYEVENTF_KEYUP);
+    /* Remapped arrows and right-hand modifiers use extended scan codes. Without this
+       flag an up arrow becomes numpad 8, and right control becomes left control. */
+    if ((scan & 0xff00) == 0xe000) in.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
     lua_pushboolean(L, SendInput(1, &in, sizeof(in)) == 1);
     return 1;
 }

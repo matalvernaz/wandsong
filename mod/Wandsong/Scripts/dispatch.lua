@@ -3,7 +3,8 @@
 -- Every UE4SS ExecuteInGameThread call sets up its own Lua state, and another access mod found
 -- that doing that from many loops and key binds at once races. So nothing in the mod calls
 -- ExecuteInGameThread or ExecuteWithDelay directly: key binds, hooks and timers queue work
--- here, and a single loop runs all of it inside one ExecuteInGameThread per tick.
+-- here. Blueprint actor/widget ticks drive the queue on the game thread. A bounded
+-- fallback covers startup and screens with no Blueprint ticks.
 --
 --   dispatch.run(fn)             run fn on the game thread at the next tick
 --   dispatch.later(ms, fn)       run fn on the game thread after ms milliseconds
@@ -16,9 +17,6 @@ local state = require("state")
 
 local M = {}
 
--- 100 ms, not faster: every ExecuteInGameThread call leaves a reference in the Lua registry
--- that UE4SS never releases (about 36,000 an hour at this rate), and the registry is shared
--- with UE4SS's async thread. Two game freezes on Oct 6 came with it at 32,000 and 70,000.
 local TICK_MS = 100
 
 local queue = {}     -- functions to run at the next tick
@@ -40,12 +38,17 @@ local SLOW_MS = 40
 -- during_load = true lets a task run while the game is loading. Everything else waits until
 -- the load is over: touching game objects mid-load is what crashes.
 function M.run(fn, label, during_load)
-    queue[#queue + 1] = { fn = fn, label = label or where(fn), during_load = during_load }
+    queue[#queue + 1] = { fn = fn, label = label or where(fn), during_load = during_load, generation = state.generation }
 end
 
 function M.later(ms, fn, label, during_load)
-    timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, label = label or where(fn), during_load = during_load }
+    local timer = { due = os.clock() + ms / 1000, fn = fn, label = label or where(fn), during_load = during_load,
+                    generation = state.generation }
+    timers[#timers + 1] = timer
+    return timer
 end
+
+function M.cancel(timer) if timer then timer.cancelled = true end end
 
 function M.every(ms, fn, label, during_load)
     timers[#timers + 1] = { due = os.clock() + ms / 1000, fn = fn, every = ms, label = label or where(fn),
@@ -114,51 +117,119 @@ end
 
 local function tick()
     -- Take what's queued now; anything queued while running waits for the next tick.
-    local loading = state.loading()
     local now_queue = queue
     queue = {}
     for _, t in ipairs(now_queue) do
-        if loading and not t.during_load then queue[#queue + 1] = t else call(t.fn, t.label) end
+        if t.generation == state.generation then
+            if state.loading() and not t.during_load then queue[#queue + 1] = t else call(t.fn, t.label) end
+        end
     end
 
     local now = os.clock()
     local keep = {}
     local due = {}
     for _, t in ipairs(timers) do
-        if now >= t.due and (t.during_load or not loading) then due[#due + 1] = t else keep[#keep + 1] = t end
+        if not t.cancelled and (t.every or t.during_load or t.generation == state.generation) then
+            if now >= t.due and (t.during_load or not state.loading()) then due[#due + 1] = t else keep[#keep + 1] = t end
+        end
     end
     timers = keep
     for _, t in ipairs(due) do
-        local stop = call(t.fn, t.label)
-        if t.every and stop ~= true then
+        local stop
+        if t.cancelled or (not t.every and not t.during_load and t.generation ~= state.generation) then stop = true
+        elseif state.loading() and not t.during_load then timers[#timers + 1] = t; stop = true
+        else stop = call(t.fn, t.label) end
+        if t.every and stop ~= true and not t.cancelled then
             t.due = now + t.every / 1000
             timers[#timers + 1] = t
         end
     end
 end
 
--- One function object for every ExecuteInGameThread call: UE4SS 3.0.1 keeps a registry
--- reference to each callback it's given, so a fresh closure per call would pin a new closure
--- 20 times a second; the same function pins nothing new.
--- Stall watch: the async loop notes when the game thread last ran our tick. A gap of more
--- than 8 s (the game frozen, or a very long load) goes in the trace once, and so does the
--- recovery, so a hang can be told apart from a crash and timed.
 local last_ran, stall_logged = os.clock(), false
+local running, pending = false, false
+local next_tick, last_hook = 0, -math.huge
+local driver, fallback_calls, callback_freed, callback_missed = "starting", 0, 0, 0
 local function game_tick()
+    if running or os.clock() < next_tick then return end
+    running = true
+    next_tick = os.clock() + TICK_MS / 1000
     if stall_logged then
         diag.trace(string.format("game thread running the mod again after %.0f s", os.clock() - last_ran))
         stall_logged = false
     end
     last_ran = os.clock()
     local ok, err = xpcall(tick, debug.traceback)
+    running = false
     if not ok then log("tick failed: " .. tostring(err)) end
+end
+
+-- These named Blueprint events are invoked on the game thread for actors and widgets.
+-- They need no object access, survive level changes, and are registered only once.
+-- Do not return game_tick's result: a hook return value could change the game's event.
+local function on_tick()
+    last_hook = os.clock()
+    if driver ~= "Blueprint tick" then driver = "Blueprint tick"; log("dispatcher: " .. driver) end
+    game_tick()
+end
+if type(RegisterCustomEvent) == "function" then
+    for _, name in ipairs({ "ReceiveTick", "Tick" }) do
+        local ok, err = pcall(RegisterCustomEvent, name, on_tick)
+        if not ok then log("dispatcher hook " .. name .. " unavailable: " .. tostring(err)) end
+    end
+end
+
+-- UE4SS 3.0.1 releases the temporary thread reference but leaks the callback reference.
+-- Capture only luaL_ref's possible slots and release the exact, unique callback when it
+-- executes. Never scan the registry, never release the thread (UE4SS owns it). A newer
+-- engine's bookkeeping is left alone. At most one fallback may be outstanding.
+local clean_callback = false
+pcall(function()
+    local a, b, c = UE4SS.GetVersion()
+    clean_callback = a == 3 and b == 0 and c == 1
+end)
+local function fallback()
+    if pending then return end
+    pending = true
+    local reg, candidates
+    if clean_callback then
+        reg = debug.getregistry()
+        local head, len = rawget(reg, 3), rawlen(reg)
+        candidates = { len + 1, len + 2, len + 3 }
+        if math.type(head) == "integer" and head > 3 then table.insert(candidates, 1, head) end
+    end
+    local callback
+    callback = function()
+        if reg then
+            local found = false
+            for _, slot in ipairs(candidates) do
+                if rawequal(rawget(reg, slot), callback) then
+                    rawset(reg, slot, nil); callback_freed = callback_freed + 1; found = true; break
+                end
+            end
+            if not found then callback_missed = callback_missed + 1 end
+        end
+        -- Keep pending set during work, including any nested ProcessEvent calls.
+        game_tick()
+        pending = false
+    end
+    fallback_calls = fallback_calls + 1
+    local ok, err = pcall(ExecuteInGameThread, callback)
+    if not ok then pending = false; log("dispatcher scheduling failed: " .. tostring(err)) end
+end
+
+function M.driver_stats()
+    return driver, fallback_calls, callback_freed, callback_missed
 end
 LoopAsync(TICK_MS, function()
     if not stall_logged and os.clock() - last_ran > 8 then
         stall_logged = true
         diag.trace("game thread hasn't run the mod for 8 s (frozen, or a long load)")
     end
-    if #queue > 0 or #timers > 0 then ExecuteInGameThread(game_tick) end
+    if (#queue > 0 or #timers > 0) and os.clock() - last_hook > 0.3 then
+        if driver ~= "fallback" then driver = "fallback"; log("dispatcher: fallback (no Blueprint ticks)") end
+        fallback()
+    end
     return false
 end)
 

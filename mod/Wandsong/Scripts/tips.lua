@@ -8,11 +8,7 @@ local keys = require("keys")
 
 local M = {}
 
-local FILE = (function()
-    local src = debug.getinfo(1, "S").source or ""
-    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
-    return dir .. "\\..\\tips_seen.txt"
-end)()
+local FILE = require("files").runtime("tips_seen.txt", false)
 
 local seen = {}
 do

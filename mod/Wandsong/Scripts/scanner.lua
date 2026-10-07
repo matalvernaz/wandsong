@@ -45,6 +45,7 @@ local cat_i = 1
 local list = {}                  -- { path, name, kind, x, y, z, d }
 local built_at, built_x, built_y = -100, 0, 0
 local selected = nil             -- path of the selected entry
+local generation = state.generation
 
 local function metres(cm) return math.floor(cm / 100 + 0.5) end
 
@@ -113,6 +114,10 @@ local function describe(i)
 end
 
 local function ready()
+    if generation ~= state.generation then
+        generation = state.generation
+        list, selected, built_at = {}, nil, -100
+    end
     if not world.in_game() then return false end
     return true
 end
@@ -138,6 +143,7 @@ end
 
 local function current()
     if not ready() then return end
+    if stale() or CATEGORIES[cat_i].kind == "objective" then build() end
     local i = selected and index_of(selected)
     if not i then
         build()
@@ -170,6 +176,7 @@ end
 
 local function with_selected(fn)
     if not ready() then return end
+    if stale() or CATEGORIES[cat_i].kind == "objective" then build() end
     local i = selected and index_of(selected)
     if not i then speech.say("Nothing selected. Use page down to pick something first.") return end
     fn(list[i])
@@ -187,15 +194,11 @@ keys.action{ id = "scan_cat_prev", name = "Previous scanner category", group = "
              run = function() category(-1) end }
 keys.action{ id = "scan_walk", name = "Walk to the current thing", group = "Scanner", default = "shift+home",
              run = function() with_selected(function(e)
-                 if e.point then require("path").walk_objective() else require("path").walk_to(e.path, e.name) end
+                 if e.point then require("path").walk_objective() else require("path").walk_to(e.path, e.name, e.kind) end
              end) end }
 
 -- Developer: everything the world scan is tracking, with name sources and positions.
-local DUMP = (function()
-    local src = debug.getinfo(1, "S").source or ""
-    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
-    return dir .. "\\..\\scan_dump.txt"
-end)()
+local DUMP = require("files").runtime("scan_dump.txt", false)
 keys.action{ id = "scan_dump", name = "Developer: write what the scanner sees to a file", group = "Scanner",
              default = "shift+f9", run = function()
     if not ready() then speech.say(world.not_ready_reason()) return end

@@ -49,8 +49,8 @@ local FRIENDLY = { "Student", "Ghost", "Companion", "Professor", "Vendor", "Merc
 
 local SCAN_EVERY_MS = 600      -- one class query per this interval (~30 ms each)
 local LISTENER_MS = 100
-local GATE_MS = 1000
-local GATE_STABLE = 5
+local GATE_MS = 250
+local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or dispatcher jitter
 
 -- --- Gameplay gate --------------------------------------------------------------------
 
@@ -87,9 +87,12 @@ local function call_bool(o, fn)
 end
 
 local nearby = {}   -- key -> { obj, kind, sound, every, range, pitch, next_at }
+local claimed_by, spoken_names, logged_names = {}, {}, {}
 
-local function clear_world()
+local function clear_world(reset_names)
     nearby = {}
+    claimed_by = {}
+    if reset_names then spoken_names, logged_names = {}, {} end
     ctrl_path = nil
     if audio then pcall(audio.stop_all) end
 end
@@ -113,12 +116,9 @@ end
 -- Crash fuse: a marker file exists exactly while world sounds are active in gameplay. If
 -- the game crashes then, the marker survives, and the next launch starts with world sounds
 -- off (and says so) instead of crashing again.
-local FUSE = (function()
-    local src = debug.getinfo(1, "S").source or ""
-    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
-    return dir .. "\\world_active.flag"
-end)()
+local FUSE = require("files").runtime("world_active.flag", true)
 local enabled = true
+local sounds_on = true
 local fuse_blown = false
 do
     local f = io.open(FUSE, "r")
@@ -153,9 +153,8 @@ local function gate_check()
         if fuse_blown and not state.loading() then
             fuse_blown = false
             dispatch.later(8000, function()
-                speech.say("Wandsong world sounds are off, because the game stopped while they " ..
-                           "were running last time. Press " .. keys.describe_combo(keys.combo_of("world_toggle")) ..
-                           " to turn them back on.", true)
+                speech.say("Wandsong world features are paused after the previous game stopped. Press " ..
+                           keys.describe_combo(keys.combo_of("world_resume")) .. " to resume them.", true)
             end)
         end
         close_gate("switched off")
@@ -165,7 +164,7 @@ local function gate_check()
     if state.loading() then
         if in_game or pawn_path then log("loading: pausing the world layer") end
         close_gate("loading")
-        clear_world()
+        clear_world(true)
         pawn_path = nil
         return
     end
@@ -174,9 +173,11 @@ local function gate_check()
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
     if not ui_manager then close_gate("no UI manager"); return end
+    state.paused = false
     for _, fn in ipairs({ "IsInPreGameplayState", "IsAsyncScreenLoadInProgress",
                           "GetInMenuTransition", "InPauseMode" }) do
         if call_bool(ui_manager, fn) == true then
+            state.paused = fn == "InPauseMode" or fn == "GetInMenuTransition"
             if fn == "IsAsyncScreenLoadInProgress" then state.mark_loading(5) end
             close_gate(fn)
             return
@@ -205,28 +206,33 @@ local function gate_check()
     local blocked = not valid(pawn)
     if not blocked then
         local okc, cine = pcall(function() return pawn.InCinematic end)
+        if okc then state.set_cinematic(cine) end
         if okc and cine == true then close_gate("cutscene"); return end
     end
     -- A new player object means a new world (level load, fast travel): drop everything held.
     local key
     pcall(function() key = pawn:GetAddress() end)
     if key and key ~= world_key then
-        if world_key then log("player object changed: dropping cached objects") end
+        if world_key then
+            log("player object changed: dropping cached objects")
+            state.generation = state.generation + 1
+        end
+        clear_world(world_key ~= nil)
         world_key = key
-        clear_world()
     end
     if blocked then
         diag.event("world gate", "closed: no player")
         stable = 0
         if in_game then in_game = false; log("gate closed"); if audio then pcall(audio.stop_all) end end
     else
-        stable = stable + 1
-        diag.event("world gate", in_game and "open" or ("settling " .. math.min(stable, GATE_STABLE)))
-        if not in_game and stable >= GATE_STABLE then
+        if stable == 0 then stable = os.clock() end
+        local elapsed = os.clock() - stable
+        diag.event("world gate", in_game and "open" or string.format("settling %.1f s", elapsed))
+        if not in_game and elapsed >= GATE_SETTLE_SECONDS then
             in_game = true
             fuse_set(true)
             log("gate open: in gameplay")
-            if audio then audio.play_ui("chime", 0.4) end
+            if audio and sounds_on and not speech.is_muted() then audio.play_ui("chime", 0.4) end
             dispatch.later(2500, function()
                 require("tips").once("welcome", require("guide").welcome)
             end, "welcome tip")
@@ -234,7 +240,8 @@ local function gate_check()
     end
 end
 
-function M.in_game() return in_game end
+function M.in_game() return in_game and enabled and not state.loading() end
+function M.sounds_enabled() return sounds_on and not speech.is_muted() end
 
 --- True while the game is swapping screens (opening or closing a menu, loading one): widget
 --- trees are being torn down then, and reading them crashed the game (Oct 6, pause menu).
@@ -249,7 +256,7 @@ function M.enabled() return enabled end
 function M.not_ready_reason()
     if not enabled then
         return "World features are off, after the game stopped while they were running. Press " ..
-               keys.describe_combo(keys.combo_of("world_toggle")) .. " to turn them back on."
+               keys.describe_combo(keys.combo_of("world_resume")) .. " to resume them."
     end
     if state.modal_since then
         return "A tutorial is open. Hold space for a moment to continue, or find Continue with " ..
@@ -294,7 +301,7 @@ local function movement(pawn)
 end
 
 local function update_listener()
-    if not in_game or not audio or state.loading() then return end
+    if not in_game or state.loading() then return end
     diag.trace("listener")
     local pawn = resolve(pawn_path)
     if not pawn then return end
@@ -315,7 +322,7 @@ local function update_listener()
     if yaw == nil then pcall(function() yaw = pawn.RootComponent.RelativeRotation.Yaw end) end
     yaw_now = yaw or 0
     local r = math.rad(yaw or 0)
-    audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0)
+    if audio then audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0) end
 end
 
 -- --- Rotating scan ----------------------------------------------------------------------
@@ -325,7 +332,6 @@ for _, cat in ipairs(CATEGORIES) do
     for _, cls in ipairs(cat.classes) do scan_list[#scan_list + 1] = { cls = cls, cat = cat } end
 end
 local scan_i = 0
-local claimed_by = {}   -- actor address -> kind, for most-specific-first claiming
 
 local function friendly(cls_name)
     for _, frag in ipairs(FRIENDLY) do
@@ -357,9 +363,7 @@ local function humanize(id)
     return out:sub(1, 1):upper() .. out:sub(2)
 end
 
-local logged_names = {}
 -- Names learned from subtitles: the speaker's on-screen name ("Professor Fig") by object path.
-local spoken_names = {}
 
 --- A character's real name, learned when they speak (subtitles.lua). Renames them in the scan.
 function M.name_actor(path, name)
@@ -454,7 +458,9 @@ local function scan_step()
                     require("tips").once("enemy", function()
                         local t = require("tips")
                         return "An enemy is nearby: the low growl. " .. t.key("face_target") .. " turns you to face " ..
-                               "the nearest enemy, forward slash casts, period locks on, and Q blocks."
+                               "the nearest enemy, " .. require("bindings").spoken("AM_Stupefy", "Slash") ..
+                               " casts, " .. require("bindings").spoken("LockOn", "Period") .. " locks on, and " ..
+                               require("bindings").spoken("AM_Protego", "Q") .. " blocks."
                     end)
                 end
             end
@@ -474,7 +480,7 @@ end
 -- overlapping cues from everything in range were hard to tell apart.
 local MAX_AUDIBLE = 8
 local function ambient()
-    if not in_game or not audio or speech.is_muted() or state.loading() then return end
+    if not in_game or not audio or not M.sounds_enabled() or state.loading() then return end
     local now = os.clock()
     local order = {}
     for key, n in pairs(nearby) do if n.sound then order[#order + 1] = key end end   -- silent kinds: scanner only
@@ -517,6 +523,8 @@ local function status()
     for k, v in pairs(counts) do parts[#parts + 1] = k .. "=" .. v end
     table.sort(parts)
     local q, t = dispatch.counts()
+    local driver, posts, freed, missed = dispatch.driver_stats()
+    diag.log(string.format("dispatcher: %s, fallback posts %d, callbacks freed %d, missed %d", driver, posts, freed, missed))
     diag.log(string.format(
         "status: world %s%s%s, at %.0f %.0f %.0f facing %.0f, tracking %d (%s), lua %.0f KB, tasks %d queued %d timers",
         enabled and "on" or "OFF", in_game and " in game" or " gate shut", state.loading() and " loading" or "",
@@ -594,14 +602,21 @@ keys.action{
     id = "world_toggle", name = "Turn world sounds off or on", group = "In the world",
     default = "shift+f5",
     run = function()
-        enabled = not enabled
-        if not enabled then close_gate("switched off"); nearby = {} end
-        log("world sounds switched " .. (enabled and "on" or "off") .. " by the player")
-        speech.say("World sounds " .. (enabled and "on" or "off"))
+        sounds_on = not sounds_on
+        if not sounds_on and audio then audio.stop_all() end
+        speech.say("World sounds " .. (sounds_on and "on" or "off"))
+    end,
+}
+keys.action{
+    id = "world_resume", name = "Resume world features after a crash", group = "In the world",
+    default = "shift+f8", run = function()
+        enabled, fuse_blown = true, false
+        fuse_set(false)
+        speech.say("World features enabled.")
     end,
 }
 
-dispatch.every(GATE_MS, gate_check, "world gate")
+dispatch.every(GATE_MS, gate_check, "world gate", true)
 dispatch.every(LISTENER_MS, update_listener, "world listener")
 dispatch.every(SCAN_EVERY_MS, scan_step, "world scan")
 dispatch.every(250, ambient, "world ambient")

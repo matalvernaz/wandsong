@@ -4,6 +4,7 @@
 
 local tips = require("tips")
 local k = tips.key
+local g = require("bindings").spoken
 
 local M = { title = "Wandsong guide" }
 
@@ -20,8 +21,8 @@ local function sections()
           "The objective beacon pings along the game's route to your objective. Press " .. k("sounds") ..
           " to hear every sound with its meaning, and " .. k("what_was_that") .. " to have the last sounds named." },
         { "Jumping, climbing and drops",
-          "A quick two-note hop means something low ahead: press space to jump over it. Four rising notes mean " ..
-          "a ledge you can climb: walk into it and press space. Falling notes mean the ground drops away ahead. " ..
+          "A quick two-note hop means something low ahead: press " .. g("AM_Jump", "SpaceBar") .. " to jump over it. Four rising notes mean " ..
+          "a ledge you can climb: walk into it and press " .. g("AM_Jump", "SpaceBar") .. ". Falling notes mean the ground drops away ahead. " ..
           "A soft tick right after means it's straight ahead of you." },
         { "What's around you: the scanner",
           k("scan_next") .. " and " .. k("scan_prev") .. " go through the things around you, nearest first, " ..
@@ -31,15 +32,18 @@ local function sections()
           k("scan_repeat") .. " also turns you to face it, and " .. k("scan_walk") .. " walks you there." },
         { "Getting where you're going",
           k("autowalk") .. " walks you along the game's route to your objective, or follows the person " ..
-          "leading you when there is one; any movement key stops it. W A S D move you yourself. " ..
-          k("turn_left") .. " and " .. k("turn_right") .. " turn you 45 degrees, with shift for 90, and " ..
+          "leading you when there is one; any movement key stops it. Your game's movement keys move you yourself. " ..
+          k("turn_left") .. " and " .. k("turn_right") .. " turn you 45 degrees, " ..
+          k("turn_left_big") .. " and " .. k("turn_right_big") .. " turn you 90 degrees, and " ..
           k("turn_around") .. " turns you round. " .. k("where_am_i") .. " says which way you face and where " ..
           "the objective is. " .. k("beacon_toggle") .. " turns the beacon off or on. Stuck? " ..
           k("teleport") .. " moves you to the route just short of the objective." },
         { "Spells and fighting",
-          k("face_target") .. " turns you to the nearest enemy. Forward slash casts your basic spell at " ..
-          "whatever is in front of you, period locks on to a target, Q blocks, and left control dodges. " ..
-          "1 to 4 cast your other spells." },
+          k("face_target") .. " turns you to the nearest enemy. " .. g("AM_Stupefy", "Slash") .. " casts your basic spell at " ..
+          "whatever is in front of you, " .. g("LockOn", "Period") .. " locks on, " .. g("AM_Protego", "Q") .. " blocks, and " .. g("AM_Dodge", "LeftControl") .. " dodges. " ..
+          g("AM_SpellButton1", "One") .. ", " .. g("AM_SpellButton2", "Two") .. ", " ..
+          g("AM_SpellButton3", "Three") .. " and " .. g("AM_SpellButton4", "Four") .. " cast your other spells. " ..
+          "A high warning means block, a lower warning means dodge. " .. k("gauges") .. " reads health and healing potions." },
         { "Menus and screens",
           "In menus, " .. k("review_next") .. " and " .. k("review_prev") .. " go through everything on the " ..
           "screen, " .. k("press") .. " presses the current item, and " .. k("back") .. " goes back. " ..

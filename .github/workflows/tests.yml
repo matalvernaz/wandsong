@@ -1,0 +1,34 @@
+name: Mod tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Lua 5.4.4 and test isolated mod logic
+        run: python tools/run_tests.py
+      - name: Build Windows input module
+        if: runner.os == 'Windows'
+        run: cmake --build native/build-tests --config Release --target input_bridge
+      - name: Check deployment scripts parse
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($file in @('tools/deploy.ps1', 'tools/update_for_testing.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+          }

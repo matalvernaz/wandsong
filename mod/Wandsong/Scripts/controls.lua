@@ -16,8 +16,8 @@ local M = {}
 
 local function log(s) print("[Wandsong controls] " .. s .. "\n") end
 
-local INPUT_INI = (os.getenv("LOCALAPPDATA") or "") ..
-    "\\Hogwarts Legacy\\Saved\\Config\\WindowsNoEditor\\Input.ini"
+local INPUT_INI = require("files").input()
+local bindings = require("bindings") -- capture currently active keys before automatic edits
 
 -- Friendly names for the game's actions; anything missing is derived from its id.
 local NAMES = {
@@ -131,6 +131,8 @@ local function game_user_of(ue_key, except)
             for _, k in ipairs(a.keys) do if k == ue_key then return a end end
         end
     end
+    local id = bindings.conflict(ue_key, except)
+    if id then return { id = id, name = NAMES[id] or humanize(id) } end
     return nil
 end
 
@@ -198,14 +200,17 @@ local function rebind_mod(a)
             return rebind_mod(a)
         end
         local ue = to_ue(enum_name)
-        local game = ue and not combo:find("+", 1, true) and game_user_of(ue)
+        local game = ue and game_user_of(ue)
         if game then
             speech.say(spoken .. " is the game's key for " .. game.name ..
                        "; the game would react to it too. Press another key, or Escape.")
             return rebind_mod(a)
         end
-        keys.rebind(a.id, combo)
-        speech.say(a.name .. " is now " .. spoken .. ".")
+        if keys.rebind(a.id, combo) then
+            speech.say(a.name .. " is now " .. spoken .. ".")
+        else
+            speech.say("Couldn't save that key. Your previous binding is unchanged.")
+        end
     end)
 end
 
@@ -222,7 +227,8 @@ local function rebind_game(a)
             speech.say(spoken .. " belongs to your screen reader. Press another key, or Escape.")
             return rebind_game(a)
         end
-        local mod = keys.mod_user_of(combo)
+        local mod = keys.mod_user_of(combo) or keys.mod_user_of("shift+" .. combo)
+                    or keys.mod_user_of("ctrl+" .. combo) or keys.mod_user_of("ctrl+shift+" .. combo)
         if mod then
             speech.say(spoken .. " is Wandsong's key for " .. mod.name .. ". Press another key, or Escape.")
             return rebind_game(a)
@@ -259,9 +265,9 @@ local function apply_no_mouse()
         if a then for _, k in ipairs(a.keys) do if not k:find("Mouse") then has_keyboard = true end end end
         if a and not has_keyboard and write_game_key(m[1], m[2]) then done = done + 1 end
     end
-    speech.say("No-mouse controls applied to " .. done .. " actions. Slash casts, right shift aims, " ..
-               "9 and 0 change spell sets, and delete skips cutscenes and conversations. " ..
-               "They take effect the next time you start the game. Your mouse still works too.")
+    speech.say("No-mouse controls applied to " .. done .. " actions. " ..
+               "The Controls menu lists their assigned keys. Changes take effect the next time you start the game. " ..
+               "Existing keyboard and mouse bindings stay as they are.")
 end
 
 -- Game actions whose only keyboard keys belong to the screen reader (NVDA takes Caps Lock,

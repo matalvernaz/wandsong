@@ -95,6 +95,7 @@ local function one_line(text)
 end
 
 local function emit(text, interrupt)
+    if require("files").test_dir then return end
     if native then
         pcall(native.output, text, interrupt)
     else
@@ -118,11 +119,13 @@ end
 
 --- Stop any speech in progress.
 function M.stop()
+    if require("files").test_dir then return end
     if native then pcall(native.stop) else send("S|") end
 end
 
 --- Put text on the Windows clipboard. Newlines are kept.
 function M.copy(text)
+    if require("files").test_dir then return end
     if native then
         pcall(native.copy, tostring(text))
     else
@@ -149,6 +152,7 @@ function M.is_muted() return muted end
 
 --- Pick a speech route and start it.
 function M.start()
+    if require("files").test_dir then return end
     local ok, mod = pcall(require, "prism_bridge")
     if ok and type(mod) == "table" and mod.is_ready and mod.is_ready() then
         native = mod

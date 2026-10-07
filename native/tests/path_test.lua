@@ -1,3 +1,5 @@
+local test_time = 0
+os.clock = function() return test_time end
 -- Offline test for path.lua: a fake route around a corner, a fake controller that records
 -- camera turns, and a fake input module. Checks the beacon pings along the route, autowalk
 -- holds and releases the forward key, steers toward the route, and stops on arrival.
@@ -71,7 +73,7 @@ local function run(seconds, move, each)
         end
         loop()
         if os.getenv('PATHDBG') and os.clock() - last > 0.5 then last = os.clock(); print(string.format('  at %.0f %.0f yaw %.0f', px, py, yaw)) end
-        local t = os.clock() while os.clock() - t < 0.02 do end
+        test_time = test_time + 0.02
     end
 end
 
@@ -119,7 +121,7 @@ gx, gy = px + 3000, py
 route[1], route[2] = { X = px, Y = py, Z = 0 }, { X = px + 3000, Y = py, Z = 0 }
 run(1.2)
 walk()
-run(5.5)
+run(6.2)
 local jumps = 0
 for _, k in ipairs(vks) do if k.vk == 0x20 and k.down then jumps = jumps + 1 end end
 assert(jumps == 2, "two jumps when blocked, got " .. jumps)

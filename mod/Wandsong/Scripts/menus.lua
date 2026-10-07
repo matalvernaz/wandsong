@@ -133,7 +133,7 @@ local REWRITES = {
                " turn you, " .. key_name("where_am_i") .. " says which way you face." end },
     { "Use your camera Mouse to select an active target%.?", function()
         return "Turn toward an enemy to make it your target: " .. key_name("face_target") ..
-               " turns you to the nearest one, and period locks on." end },
+               " turns you to the nearest one, and " .. require("bindings").spoken("LockOn", "Period") .. " locks on." end },
     { "The Minimap shows your surroundings.-middle%.", function()
         return "The minimap shows your surroundings to sighted players. With Wandsong, " ..
                key_name("where_am_i") .. " says your quest, its current task and which way the objective is." end },
@@ -148,7 +148,7 @@ local REWRITES = {
         return t .. ". " .. key_name("face_target") .. " turns you to the nearest enemy first." end },
     { "A white outline indicates your active target.-precision%.", function(t)
         return t .. " With Wandsong: " .. key_name("face_target") ..
-               " turns you to the nearest enemy, and period locks on to it." end },
+               " turns you to the nearest enemy, and " .. require("bindings").spoken("LockOn", "Period") .. " locks on to it." end },
 }
 local function rewrite(text)
     for _, r in ipairs(REWRITES) do
@@ -173,7 +173,10 @@ local function send_action_early(action)
     local mgr = FindFirstOf("UMGInputManager")
     if not (mgr and mgr:IsValid()) then return false end
     local ok = pcall(function() mgr:OnInputAction(action, 0) end)
-    dispatch.later(50, function() pcall(function() mgr:OnInputAction(action, 1) end) end)
+    dispatch.later(50, function()
+        local fresh = FindFirstOf("UMGInputManager")
+        pcall(function() if fresh and fresh:IsValid() then fresh:OnInputAction(action, 1) end end)
+    end)
     return ok
 end
 local label_for
@@ -280,6 +283,7 @@ local function on_read_menu(widget)
             -- a long notice), read that too, after the summary.
             local wpath = path_of(widget)
             dispatch.later(400, function()
+                if state.loading() or require("world").in_game() or require("world").ui_busy() then return end
                 local widget = resolve(wpath)
                 local ok_v, still = pcall(function() return widget and widget:IsInViewport() end)
                 if not (ok_v and still) then return end
@@ -323,10 +327,15 @@ end
 RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
     diag.trace("hook ReadMenu")
     local p = path_of(ctx:get())
+    -- Raise the guard before queued world work can run. Do not inspect a widget tree here.
+    if p and (p:find("LoadingScreen", 1, true) or p:find("UI_BP_PSO_FS", 1, true)) then
+        state.mark_loading(6)
+    end
     if p then dispatch.run(function()
         local widget = resolve(p)
         if widget then on_read_menu(widget) end
-    end, "ReadMenu " .. (p:match("[^%.:]+$") or p)) end
+    end, "ReadMenu " .. (p:match("[^%.:]+$") or p),
+        p:find("LoadingScreen", 1, true) ~= nil or p:find("UI_BP_PSO_FS", 1, true) ~= nil) end
 end)
 
 -- A finished map load also counts as loading for a few seconds (the new world settles).
@@ -360,6 +369,7 @@ dispatch.every(200, function()
     -- a closed menu) may already be freed: polling it crashed the game while standing still.
     -- Menus opened from gameplay announce themselves through ReadMenu.
     if require("world").in_game() then current_screen = nil; return end
+    if require("world").ui_busy() then return end
     local w = resolve(current_screen)
     if not w then current_screen = nil; return end
     local item = clean(table.concat(gather(w, 1) or {}, ", "))
@@ -760,10 +770,12 @@ local function current_tops()
 end
 
 local review_items, review_index, review_top = {}, 0, nil
+local review_title = "this screen"
 
 forget_screens = function()
     screens = {}
     current_screen = nil
+    editing = nil
     review_items, review_index, review_top = {}, 0, nil
 end
 
@@ -892,7 +904,8 @@ local function refresh()
     for _, t in ipairs(tops) do walk(t, items, nil, 0) end
     walk_trace = false
     finish_labels(items)
-    if addr(top) ~= addr(review_top) then
+    local top_key = type(top) == "userdata" and path_of(top) or top
+    if top_key ~= review_top then
         -- Keep the user's place if the same item is still there under the new screen set.
         local prev = review_items[review_index]
         review_index = 0
@@ -902,7 +915,8 @@ local function refresh()
             end
         end
     end
-    review_top, review_items = top, items
+    review_title = type(top) == "userdata" and humanize(cls_name(top):gsub("^UI_BP_", ""):gsub("_C$", "")) or "this screen"
+    review_top, review_items = top_key, items
     if review_index > #items then review_index = #items end
     return true
 end
@@ -985,6 +999,7 @@ end
 -- Description / hover text for the current item: what the game showed when we hovered it,
 -- else the button's tooltip, else whatever its widget tells the native reader at depth 2.
 local function read_details()
+    if not refresh() then nothing_to_read("No menu is open."); return end
     local item = review_items[review_index]
     if not item then speak("Nothing selected"); return end
     local seen_t, out = {}, {}
@@ -1054,12 +1069,14 @@ local IE_PRESSED, IE_RELEASED = 0, 1
 
 -- Feed a menu action into the game's UMG input manager, exactly as if its key was pressed.
 local function send_action(action, hold)
+    if state.loading() or require("world").in_game() or require("world").ui_busy() then return false end
     local mgr = FindFirstOf("UMGInputManager")
     if not (mgr and mgr:IsValid()) then log("no UMGInputManager"); return false end
     local ok, err = pcall(function() mgr:OnInputAction(action, IE_PRESSED) end)
     if not ok then log("OnInputAction failed: " .. tostring(err)); return false end
     local function release()
-        pcall(function() mgr:OnInputAction(action, IE_RELEASED) end)
+        local fresh = FindFirstOf("UMGInputManager")
+        pcall(function() if fresh and fresh:IsValid() then fresh:OnInputAction(action, IE_RELEASED) end end)
     end
     if hold and hold > 0 then
         dispatch.later(math.floor(hold * 1000) + 150, release)
@@ -1073,14 +1090,17 @@ end
 -- Typing echo for edit fields: poll the field and speak what changed, like a screen reader.
 local edit_text, edit_name, edit_unfocused, edit_seen_focus = "", "", 0, false
 start_editing = function(item)
-    editing, edit_name, edit_unfocused, edit_seen_focus = item.editable, item.text, 0, false
+    editing, edit_name, edit_unfocused, edit_seen_focus = path_of(item.editable), item.text, 0, false
     edit_text = ""
     pcall(function() edit_text = item.editable:GetText():ToString() end)
     speak("Editing " .. item.text .. ". Type, then press Enter when you're done.")
 end
 dispatch.every(150, function()
-    local w = editing
-    if not w then return end
+    if not editing then return end
+    if state.loading() or require("world").in_game() then editing = nil; return end
+    if require("world").ui_busy() then return end
+    local w = resolve(editing)
+    if not w then editing = nil; return end
     local v
     local ok = pcall(function() v = w:GetText():ToString() end)
     if not ok or v == nil then editing = nil; return end
@@ -1169,7 +1189,7 @@ end
 -- game's own left/right navigation, then read back the new value.
 local ACTION_LEFT, ACTION_RIGHT = 4, 5
 local function adjust(delta)
-    refresh()
+    if not refresh() then nothing_to_read("No menu is open."); return end
     local item = review_items[review_index]
     if not item then nothing_selected(); return end
     local steps = math.abs(delta)
@@ -1185,10 +1205,10 @@ local function adjust(delta)
     end
     local before = item.text
     dispatch.later(250 + steps * STEP_MS, function()
-        refresh()
+        if not refresh() then return end
         local now = review_items[review_index]
         if now and now.text ~= before then speak(describe(now))
-        else speak(describe(item) .. ", unchanged") end
+        elseif now then speak(describe(now) .. ", unchanged") end
     end)
 end
 
@@ -1240,10 +1260,10 @@ end)
 -- Never act on a stale selection: if the screen changed since the item was picked, say so
 -- instead of pressing whatever now sits at that position.
 local function press_current()
-    local before, prev = addr(review_top), review_items[review_index]
-    refresh()
+    local before, prev = review_top, review_items[review_index]
+    if not refresh() then nothing_to_read("No menu is open."); return end
     local item = review_items[review_index]
-    if addr(review_top) ~= before and not (item and prev and item.text == prev.text) then
+    if review_top ~= before and not (item and prev and item.text == prev.text) then
         review_index = 0
         local first = review_items[1] and describe(review_items[1]) or "nothing readable yet"
         speak("The screen has changed, so I didn't press anything. It starts with: " .. first ..
@@ -1290,10 +1310,7 @@ act("read_all", "Read the whole screen", "'", read_all)
 act("copy_all", "Copy the screen text to the clipboard", "shift+'", copy_all)
 local last_help = -10
 local function screen_name()
-    local top = review_top
-    if type(top) ~= "userdata" then return "this screen" end
-    local n = cls_name(top):gsub("^UI_BP_", ""):gsub("_C$", "")
-    return humanize(n)
+    return virtual and virtual.title or review_title
 end
 
 local function contextual_help()
@@ -1342,6 +1359,7 @@ end
 -- Developer aid (Ctrl+Shift+;): log the current item's widget chain with its true/false and
 -- number fields, to find where a game keeps state like "selected". Reads only simple types.
 local function dump_current()
+    if not refresh() then speak("Nothing to dump"); return end
     local item = review_items[review_index]
     if not (item and item.button) then speak("Nothing to dump"); return end
     local o, depth = item.button, 0

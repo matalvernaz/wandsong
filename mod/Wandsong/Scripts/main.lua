@@ -11,6 +11,7 @@ require("world")
 require("surroundings")
 require("path")
 require("gamecues")
+require("feedback")
 require("subtitles")
 
 -- Diagnostics mark: the player says "something odd just happened"; the log records the

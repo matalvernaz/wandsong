@@ -19,6 +19,7 @@ local world = require("world")
 local state = require("state")
 local keys = require("keys")
 local speech = require("speech")
+local bindings = require("bindings")
 
 local M = {}
 
@@ -36,15 +37,16 @@ end
 local LOOK_AHEAD_CM = 800       -- beacon point distance along the route
 local WALK_AHEAD_CM = 300       -- autowalk steers toward a point this far along
 local ARRIVE_CM = 400
+local ARRIVE_HEIGHT_CM = 140    -- actor centres/navmesh floors differ; another floor is not arrival
 local FOLLOW_WAIT_CM = 300      -- following someone: stop this close and wait for them
 local FOLLOW_RESUME_CM = 500    -- ...and walk on once they're this far ahead
 local BESIDE_CM = 170           -- someone standing still: walk right up to them (guides in the
                                 -- intro wait for you to come close before the story moves on)
 local PING_EVERY = 1.3
-local VK_W = 0x57               -- the game's default forward key
-local VK_SPACE = 0x20           -- jump / climb / vault
+local VK_W = bindings.virtual_key(bindings.forward())
+local VK_SPACE = bindings.virtual_key(bindings.key("AM_Jump", "SpaceBar"))
 local BLOCKED_AFTER = 1.0       -- holding forward this long without moving: try a jump
-local STUCK_AFTER = 4.0         -- ...and give up after this long
+local STUCK_AFTER = 5.0         -- allow a held jump/climb and one route retry
 local TURN_GIVE_UP = 5.0        -- turning on the spot this long without facing the way: give up
 
 local beacon_on = true
@@ -87,7 +89,9 @@ end
 local function vec3(v)
     local x, y, z
     pcall(function() x, y, z = v.X, v.Y, v.Z end)
-    if type(x) == "number" then return { x, y, z } end
+    if type(x) == "number" and type(y) == "number" and type(z) == "number"
+       and x == x and y == y and z == z and math.abs(x) < math.huge
+       and math.abs(y) < math.huge and math.abs(z) < math.huge then return { x, y, z } end
     return nil
 end
 
@@ -134,9 +138,13 @@ end
 local function target_moving() return os.clock() - dest_moved_at < MOVING_FOR end
 
 local dest_is_guide = false
+local chosen = nil              -- { path, name, kind }: selected scanner target
 -- The destination is a person (walking now, or walked in the last half minute, or the
 -- nearest-person fallback) rather than a fixed objective.
-local function dest_is_person() return dest_is_guide or os.clock() - dest_moved_at < 30 end
+local function dest_is_person()
+    if chosen then return chosen.kind == "person" or chosen.kind == "enemy" or chosen.kind == "beast" end
+    return dest_is_guide or os.clock() - dest_moved_at < 30
+end
 
 -- Parts of the intro have no objective at all, only someone leading the way: then autowalk
 -- (never the beacon, which would ping at any passer-by) follows the nearest person, and keeps
@@ -145,7 +153,7 @@ local GUIDE_RANGE_CM = 3000
 local guide_path = nil
 local source = nil              -- "route", "mission" or "guide": a change starts a fresh trail
 
-local chosen = nil              -- { path, name }: a scanner entry the player asked to walk to
+-- Forward-declared above for target classification.
 local last_objective = nil      -- the current task, as the game words it (when it does)
 
 -- --- The engine's own pathfinding, when the game gives no route ---------------------------
@@ -154,11 +162,7 @@ local last_objective = nil      -- the current task, as the game words it (when 
 -- a static function, called on its class default object) and the path's points become the
 -- route. Guarded by a crash fuse like the world layer's: a marker file exists only during the
 -- call, and if the game ever dies inside it, path-finding stays off from the next launch.
-local NAV_FUSE = (function()
-    local src = debug.getinfo(1, "S").source or ""
-    local dir = src:gsub("^@", ""):gsub("/", "\\"):match("^(.*)\\[^\\]+$") or "."
-    return dir .. "\\nav_active.flag"
-end)()
+local NAV_FUSE = require("files").runtime("nav_active.flag", true)
 local nav_ok = true
 do
     local f = io.open(NAV_FUSE, "r")
@@ -172,11 +176,13 @@ end
 local walking = false           -- autowalk running (declared early: the route refresh uses it)
 local nav_cache = nil           -- { x, y, z, at, pts }
 local nav_fails = 0
+local route_failure = nil
+local route_from_nav = false
 
 local function nav_route(d, max_age)
-    if not nav_ok then return nil end
+    if not nav_ok then return nil, "pathfinding is paused after a previous crash" end
     if nav_cache and os.clock() - nav_cache.at < max_age and dist3(nav_cache, { d[1], d[2], d[3] }) < 200 then
-        return nav_cache.pts
+        return #nav_cache.pts >= 2 and nav_cache.pts or nil, nav_cache.error
     end
     local pawn = world.pawn()
     if not pawn then return nil end
@@ -195,25 +201,31 @@ local function nav_route(d, max_age)
     if not ok or #pts < 2 then
         nav_fails = nav_fails + 1
         log("nav query: " .. (ok and (#pts .. " points") or ("failed: " .. tostring(err))))
-        return nil
+        nav_cache.error = "no path found"
+        return nil, nav_cache.error
     end
     log(string.format("nav query: %d points to %.0f %.0f %.0f", #pts, d[1] / 100, d[2] / 100, d[3] / 100))
     return pts
 end
 
 local function refresh_route()
+    route_failure, route_from_nav = nil, false
     if chosen then
         -- Walking to something picked in the scanner: it's the destination (followed like a
         -- person if it moves), whatever the quest says.
-        route, dest_is_guide = {}, true
+        route, dest_is_guide = {}, false
         local d = world.locate(chosen.path)
         if not d then dest = nil; return end
         if source ~= "chosen" then trail, dest_moved_at, source = {}, -100, "chosen" end
         dest = d
         note_dest(d)
-        if #trail > 1 then
+        if dest_is_person() and #trail > 1 then
             for i, p in ipairs(trail) do route[i] = p end
             if dist3(trail[#trail], d) > 1 then route[#route + 1] = d end
+        else
+            local nav, err = nav_route(d, walking and 3 or 8)
+            if nav then route, route_from_nav = nav, true
+            elseif not dest_is_person() then route_failure = err or "no path found" end
         end
         return
     end
@@ -258,7 +270,7 @@ local function refresh_route()
             elseif src == "mission" and not target_moving() then
                 -- A fixed objective with no route from the game: ask the navmesh.
                 local nav = nav_route(d, walking and 3 or 8)
-                if nav then for i, p in ipairs(nav) do route[i] = p end end
+                if nav then route, route_from_nav = nav, true end
             end
         else
             dest, trail = nil, {}
@@ -278,11 +290,11 @@ local function point_along(px, py, pz, ahead)
     local best, bi, bx, by, bz = math.huge, 2, route[1][1], route[1][2], route[1][3]
     for i = 1, #route - 1 do
         local a, b = route[i], route[i + 1]
-        local sx, sy = b[1] - a[1], b[2] - a[2]
-        local len2 = sx * sx + sy * sy
-        local t = len2 > 0 and math.max(0, math.min(1, ((px - a[1]) * sx + (py - a[2]) * sy) / len2)) or 0
+        local sx, sy, sz = b[1] - a[1], b[2] - a[2], b[3] - a[3]
+        local len2 = sx * sx + sy * sy + sz * sz
+        local t = len2 > 0 and math.max(0, math.min(1, ((px - a[1]) * sx + (py - a[2]) * sy + (pz - a[3]) * sz) / len2)) or 0
         local qx, qy = a[1] + sx * t, a[2] + sy * t
-        local d = (qx - px) ^ 2 + (qy - py) ^ 2
+        local d = (qx - px) ^ 2 + (qy - py) ^ 2 + (a[3] + sz * t - pz) ^ 2
         if d < best then best, bi, bx, by, bz = d, i + 1, qx, qy, a[3] + (b[3] - a[3]) * t end
     end
     local left = ahead
@@ -303,14 +315,15 @@ end
 -- --- Beacon ---------------------------------------------------------------------------
 
 local function beacon()
-    if not audio or not world.in_game() then return end
+    if not audio or not world.in_game() or (world.sounds_enabled and not world.sounds_enabled()) then return end
+    if speech.is_muted() or not beacon_on then return end
     local px, py, pz, yaw = world.position()
     if not dest or dest_is_guide then return end
     if target_moving() then
         -- Someone leading you: their own person sound says where they are once you're close;
         -- the beacon only calls you along when you fall behind. No arrival chimes.
-        if dist2d(px, py, dest) < FOLLOW_RESUME_CM then return end
-    elseif dist2d(px, py, dest) < ARRIVE_CM then
+        if dist2d(px, py, dest) < FOLLOW_RESUME_CM and math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM then return end
+    elseif dist2d(px, py, dest) < ARRIVE_CM and math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM then
         local key = string.format("%.0f,%.0f", dest[1] / 200, dest[2] / 200)
         if arrived_at ~= key then
             arrived_at = key
@@ -340,7 +353,11 @@ local cancel = nil              -- reason, set from the key observer
 local key_down = false
 local started_at = 0
 local waiting = false           -- following, close behind them: standing still
-local still_since, still_x, still_y = 0, 0, 0   -- where the player last made real progress
+local still_since, still_x, still_y, still_z = 0, 0, 0, 0
+local jump_down = false
+local jump_token = 0
+local ignore_forward_until = 0
+local generation = state.generation
 local jumps = 0                 -- jumps tried at the current blocked spot
 local ignore_space_until = 0    -- our own jump presses must not cancel the walk
 local crumb = nil               -- following: the trail point being walked to (a table in trail)
@@ -350,7 +367,7 @@ local turning_since = nil       -- turning on the spot since
 -- Following: step through the guide's own footprints in order, so the walk takes exactly
 -- the way they went (round rocks and railings) rather than cutting toward the trail.
 local CRUMB_REACHED_CM = 120
-local function next_crumb(px, py)
+local function next_crumb(px, py, pz)
     if #trail < 2 then return nil end
     local idx
     for i, p in ipairs(trail) do if p == crumb then idx = i; break end end
@@ -358,17 +375,20 @@ local function next_crumb(px, py)
         -- Joining the trail: the latest point about as close as the closest one, so the walk
         -- never heads back along it.
         local best = math.huge
-        for _, p in ipairs(trail) do best = math.min(best, dist2d(px, py, p)) end
-        for i, p in ipairs(trail) do if dist2d(px, py, p) <= best + 100 then idx = i end end
+        for _, p in ipairs(trail) do best = math.min(best, dist3({px, py, pz}, p)) end
+        for i, p in ipairs(trail) do if dist3({px, py, pz}, p) <= best + 40 then idx = i end end
     end
-    while idx < #trail and dist2d(px, py, trail[idx]) < CRUMB_REACHED_CM do idx = idx + 1 end
+    while idx < #trail and dist3({px, py, pz}, trail[idx]) < CRUMB_REACHED_CM do idx = idx + 1 end
     crumb = trail[idx]
     return crumb, idx
 end
 
 local function release()
     if key_down and input then pcall(input.key, VK_W, false) end
+    if jump_down and input then pcall(input.key, VK_SPACE, false) end
     key_down = false
+    jump_down = false
+    jump_token = jump_token + 1
 end
 
 local function stop(why, sound)
@@ -378,7 +398,8 @@ local function stop(why, sound)
     log("autowalk stopped: " .. why)
     local was = chosen
     chosen = nil
-    if was and why == "caught up" then
+    if was then route, dest, nav_cache, source = {}, nil, nil, nil end
+    if was and (why == "caught up" or why == "you've arrived") then
         speech.say("Arrived at " .. was.name .. ".")
         return
     end
@@ -393,8 +414,11 @@ end
 local STOP_KEYS = { A = true, S = true, D = true, SPACE = true, ESCAPE = true, LEFT_ARROW = true,
                     RIGHT_ARROW = true, UP_ARROW = true, DOWN_ARROW = true }
 keys.observe(function(combo, key)
-    if not walking or not STOP_KEYS[key] or os.clock() - started_at < 0.3 then return end
-    if key == "SPACE" and os.clock() < ignore_space_until then return end
+    local vk = Key[key]
+    if not walking or not (STOP_KEYS[key] or bindings.movement_vk(vk) or vk == VK_SPACE)
+       or os.clock() - started_at < 0.3 then return end
+    if vk == VK_SPACE and os.clock() < ignore_space_until then return end
+    if vk == VK_W and os.clock() < ignore_forward_until then return end
     cancel = "you moved"
 end)
 
@@ -445,11 +469,18 @@ local function steer(yaw)
     return err
 end
 
--- A low wall, a fence or a gap in the way: tap the jump key, which also climbs and vaults.
+-- Hold jump while moving forward so the game's climb/vault can engage.
 local function jump()
-    ignore_space_until = os.clock() + 0.6
+    if not VK_SPACE or jump_down then return end
+    ignore_space_until = os.clock() + 1
     if input.key(VK_SPACE, true) then
-        dispatch.later(80, function() pcall(input.key, VK_SPACE, false) end, "autowalk jump release", true)
+        jump_down = true
+        jump_token = jump_token + 1
+        local token = jump_token
+        -- Keep forward held through the jump so the game's mantle/vault can engage.
+        dispatch.later(650, function()
+            if token == jump_token and jump_down then pcall(input.key, VK_SPACE, false); jump_down = false end
+        end, "autowalk jump release", true)
     end
 end
 
@@ -464,30 +495,37 @@ local function walk_tick()
     local px, py, pz = world.position()
     if not dest then stop(chosen and "it's gone" or "no objective to walk to"); return end
     local d = dist2d(px, py, dest)
+    local level = math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM
+    if route_failure then stop(route_failure); return end
     local person, moving = dest_is_person(), target_moving()
     if person and not moving then
         -- They're standing still: walk right up beside them (in the intro the story waits
         -- for you to come close).
         waiting = false
-        if d < BESIDE_CM then stop("caught up"); return end
+        if d < BESIDE_CM and level then stop("caught up"); return end
     elseif person then
         -- Walking: stay a few metres behind, wait when close, walk on when they're ahead.
-        if waiting and d > FOLLOW_RESUME_CM then waiting = false
-        elseif not waiting and d < FOLLOW_WAIT_CM then waiting = true end
+        if waiting and (d > FOLLOW_RESUME_CM or not level) then waiting = false
+        elseif not waiting and d < FOLLOW_WAIT_CM and level then waiting = true end
         if waiting then
             release()
-            still_since, still_x, still_y, jumps = os.clock(), px, py, 0
+            still_since, still_x, still_y, still_z, jumps = os.clock(), px, py, pz, 0
             return
         end
-    elseif d < ARRIVE_CM then
+    elseif d < (chosen and BESIDE_CM or ARRIVE_CM) and level then
         stop("you've arrived")   -- the beacon plays the arrival chime
         return
     end
     local p, ci
-    if person then p, ci = next_crumb(px, py) end
+    if route_from_nav and #route > 1 and dist3({px, py, pz}, route[#route]) < 130 then
+        stop(string.format("as close as the path goes, %.1f metres from %s", dist3({px, py, pz}, dest) / 100,
+             chosen and chosen.name or "the objective"))
+        return
+    end
+    if person then p, ci = next_crumb(px, py, pz) end
     -- The last stretch to someone standing still goes straight to them.
-    if person and not moving and ci == #trail then p = dest end
-    if not p then p = point_along(px, py, pz, WALK_AHEAD_CM) end
+    if person and not moving and ci == #trail and level then p = dest end
+    if not p then p = point_along(px, py, pz, level and WALK_AHEAD_CM or 100) end
     if not p then stop("lost the path"); return end
     if os.clock() >= next_walk_log then
         next_walk_log = os.clock() + 1
@@ -511,13 +549,18 @@ local function walk_tick()
     end
     turning_since = nil
     if not key_down then
+        ignore_forward_until = os.clock() + 0.3
         key_down = input.key(VK_W, true)
-        still_since, still_x, still_y = os.clock(), px, py
+        still_since, still_x, still_y, still_z = os.clock(), px, py, pz
     end
     -- Blocked: hardly moved while holding forward. Jump (which climbs and vaults) a couple of
     -- times, then give up.
     if math.sqrt((px - still_x) ^ 2 + (py - still_y) ^ 2) > 60 then
-        still_since, still_x, still_y, jumps = os.clock(), px, py, 0
+        still_since, still_x, still_y, still_z, jumps = os.clock(), px, py, pz, 0
+    elseif pz > still_z + 60 then
+        -- Net ascent is progress. Landing after a jump is not, and must not renew
+        -- the jump budget forever when bouncing against the same obstacle.
+        still_since, still_z = os.clock(), pz
     else
         local t = os.clock() - still_since
         if t > STUCK_AFTER then
@@ -538,6 +581,7 @@ local function walk_tick()
             jumps = jumps + 1
             log("autowalk blocked: jump " .. jumps)
             nav_cache = nil   -- and ask for a fresh path around whatever it is
+            refresh_route()
             jump()
         end
     end
@@ -550,16 +594,17 @@ local function toggle_walk()
         speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
         return
     end
+    if not VK_W then speech.say("Assign a keyboard key to forward movement before using autowalk."); return end
     refresh_route()
     if not dest then
         speech.say("There's no objective or person nearby to walk to. Track a quest first.")
         return
     end
-    local px, py = world.position()
+    local px, py, pz = world.position()
     walking, cancel, waiting, crumb = true, nil, false, nil
     last_dx, last_yaw, turning_since = 0, nil, nil
     started_at, jumps = os.clock(), 0
-    still_since, still_x, still_y = os.clock(), px, py
+    still_since, still_x, still_y, still_z = os.clock(), px, py, pz
     local stop_key = keys.describe_combo(keys.combo_of("autowalk"))
     local metres = math.floor(dist2d(px, py, dest) / 100 + 0.5)
     if dest_is_guide then
@@ -573,21 +618,28 @@ local function toggle_walk()
 end
 
 --- Walk to a scanner entry (by object path).
-function M.walk_to(path, name)
+function M.walk_to(path, name, kind)
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then
         speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
         return
     end
     if walking then stop("") end
-    chosen = { path = path, name = name }
+    if not VK_W then speech.say("Assign a keyboard key to forward movement before using autowalk."); return end
+    chosen = { path = path, name = name, kind = kind }
+    nav_cache = nil
     refresh_route()
     if not dest then chosen = nil; speech.say(name .. " has gone.") return end
-    local px, py = world.position()
+    if route_failure then
+        speech.say("Can't walk to " .. name .. ": " .. route_failure .. ".")
+        chosen, dest, route = nil, nil, {}
+        return
+    end
+    local px, py, pz = world.position()
     walking, cancel, waiting, crumb = true, nil, false, nil
     last_dx, last_yaw, turning_since = 0, nil, nil
     started_at, jumps = os.clock(), 0
-    still_since, still_x, still_y = os.clock(), px, py
+    still_since, still_x, still_y, still_z = os.clock(), px, py, pz
     speech.say(string.format("Walking to %s, %d metres. Press any movement key or %s to stop.", name,
         math.floor(dist2d(px, py, dest) / 100 + 0.5), keys.describe_combo(keys.combo_of("autowalk"))))
     log("autowalk to " .. path)
@@ -712,7 +764,7 @@ end
 -- New objectives are announced as the game changes them (checked every 4 s in the world; a
 -- call on the long-lived mission manager). Only text that reads as words is spoken: if the
 -- game hands back localisation keys, they're logged instead.
-local function looks_like_words(t) return t and t:find(" ", 1, true) and not t:find("_", 1, true) end
+local function looks_like_words(t) return t and t:find("%a") and not t:find("_", 1, true) end
 dispatch.every(4000, function()
     if not world.in_game() or state.loading() then return end
     local q = objective_text()
@@ -835,7 +887,14 @@ dispatch.every(1000, function() if world.in_game() then refresh_route() end end,
 dispatch.every(100, function() beacon(); walk_tick(); face_tick() end, "beacon and autowalk")
 -- If the game stops ticking the dispatcher mid-walk (a load), never leave the key held.
 dispatch.every(500, function()
-    if walking and state.loading() then walking = false; log("autowalk stopped: loading") end
+    if generation ~= state.generation then
+        generation = state.generation
+        if walking then stop("loading") end
+        route, dest, trail, chosen, crumb, guide_path, mgr_path, mm_path, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil, nil
+        source, last_quest_line, last_objective, arrived_at, face = nil, nil, nil, nil, nil
+        next_mgr_search = 0
+    end
+    if walking and state.loading() then stop("loading") end
     if not walking then release() end
 end, "autowalk key guard", true)
 

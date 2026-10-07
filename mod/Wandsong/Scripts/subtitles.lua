@@ -17,6 +17,7 @@ local dispatch = require("dispatch")
 local speech = require("speech")
 local keys = require("keys")
 local diag = require("diag")
+local state = require("state")
 
 local M = {}
 
@@ -58,14 +59,15 @@ end
 
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
-local used = {}   -- descriptions already spoken this session
+-- Deduplicate delivery of a line, not the description for the lifetime of the process.
+-- Replaying a scene must be describable without restarting the game.
 
 -- Short trigger lines ("Ah.", "Accio.") also need the line before them to match (prev).
 local last_text = ""
 local function match(text)
     local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
-        if d.after and not used[i] then
+        if d.after then
             local s = similarity(text, d.after)
             if s > best_s and (not d.prev or similarity(last_text, d.prev) >= 0.5) then best, best_s = i, s end
         end
@@ -74,12 +76,34 @@ local function match(text)
 end
 
 local pending = {}
+local scheduled = {}
+local generation, scene = state.generation, state.scene
+local serial = 0
+local last_tick = os.clock()
 
-local last_id, last_at = nil, -10
+local function cancel_descriptions()
+    serial = serial + 1
+    scheduled = {}
+end
+
+local recent = {}
+local skip_requested = false
+local binding = require("bindings")
+local skip_vk = binding.virtual_key(binding.key("UMGSkipCinematicOrConversation", "Delete"))
+keys.observe(function(_, key)
+    -- Key observers run outside the game thread. Copy only a flag here.
+    if skip_vk and Key[key] == skip_vk then skip_requested = true end
+end)
 local function on_line(e)
+    if e.generation ~= state.generation or state.loading() then return end
     -- Both hooks can report the same line: once is enough.
-    if e.id and e.id == last_id and os.clock() - last_at < 1 then return end
-    last_id, last_at = e.id, os.clock()
+    local now = os.clock()
+    local key = tostring(e.id or "") .. "\0" .. tostring(e.text)
+    if recent[key] and now < recent[key] then return end
+    recent[key] = now + math.max(1, e.dur or 0)
+    for k, until_t in pairs(recent) do if until_t < now then recent[k] = nil end end
+    -- A new spoken line means the previous gap is over, including a skipped line.
+    cancel_descriptions()
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
     -- Read aloud, but not sound-only lines like "(effort sound)" or "(pained cry)".
@@ -97,24 +121,21 @@ local function on_line(e)
     local i, s = match(e.text)
     last_text = e.text
     if not i then return end
-    used[i] = true
     local d = DESCRIPTIONS[i]
     local items = d.items or { { delay = d.delay, text = d.text } }
     for _, it in ipairs(items) do
         if it.text and it.text ~= "" then
             local wait = (e.dur or 0) + (it.delay or 0.3)
             log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, it.text))
-            dispatch.later(math.floor(wait * 1000), function()
-                if describe then speech.say(it.text, true) end
-            end, "audio description", true)
+            scheduled[#scheduled + 1] = { due = now + math.max(0, wait), text = it.text,
+                serial = serial, generation = generation, scene = scene }
         end
     end
 end
 
-local function hook_ok(fn, quiet)
-    local ok, err = pcall(RegisterHook, fn, function(ctx, data, text)
+local function capture(ctx, data, text)
         diag.trace("hook subtitle")
-        local e = {}
+        local e = { generation = state.generation }
         pcall(function() e.text = text:get():ToString() end)
         pcall(function()
             local d = data:get()
@@ -128,26 +149,60 @@ local function hook_ok(fn, quiet)
             local full = a:GetFullName()
             e.speaker = full:match("^%S+%s+(.+)$")
         end)
-        pending[#pending + 1] = e
-    end)
+        if #pending < 64 then pending[#pending + 1] = e end
+end
+local function hook_ok(fn, quiet)
+    local ok, err = pcall(RegisterHook, fn, capture)
     if ok or not quiet then log((ok and "hooked " or "could not hook ") .. fn .. (ok and "" or (": " .. tostring(err)))) end
     return ok
 end
-hook_ok("/Script/Phoenix.Subtitles:BPAddSubtitleEvent")
--- The game calls the Blueprint subtitle screen's own override of that event, which only exists
--- once the HUD has loaded: keep trying to hook it every 3 s until it takes.
-local BP_EVENT = "/Game/UI/HUD/Subtitles/UI_BP_Subtitle.UI_BP_Subtitle_C:BPAddSubtitleEvent"
-local tries = 0
-dispatch.every(3000, function()
-    tries = tries + 1
-    if hook_ok(BP_EVENT, tries % 20 ~= 1) then return true end
-end, "subtitle hook")
+-- A named Blueprint event follows every loaded override, including after a reload.
+-- RegisterHook in 3.0.1 allocates registry references even when the function is absent.
+local custom = type(RegisterCustomEvent) == "function" and pcall(RegisterCustomEvent, "BPAddSubtitleEvent", capture)
+if custom then log("hooked Blueprint subtitle events")
+else
+    hook_ok("/Script/Phoenix.Subtitles:BPAddSubtitleEvent")
+    local BP_EVENT = "/Game/UI/HUD/Subtitles/UI_BP_Subtitle.UI_BP_Subtitle_C:BPAddSubtitleEvent"
+    dispatch.every(3000, function()
+        local ok, fn = pcall(StaticFindObject, BP_EVENT)
+        if ok and fn and fn:IsValid() then hook_ok(BP_EVENT); return true end
+    end, "subtitle hook")
+end
 
 dispatch.every(100, function()
-    if #pending == 0 then return end
+    local now = os.clock()
+    local elapsed = now - last_tick
+    last_tick = now
+    if skip_requested then
+        skip_requested = false
+        cancel_descriptions()
+        pending, recent, last_text = {}, {}, ""
+    end
+    if generation ~= state.generation or (scene ~= state.scene and not state.cinematic) or state.loading() then
+        generation, scene = state.generation, state.scene
+        cancel_descriptions()
+        recent, last_text = {}, ""
+        if state.loading() then pending = {}; return end
+    elseif scene ~= state.scene then
+        -- The subtitle can arrive just before the gate observes cinematic mode.
+        -- Entering that scene must not discard its opening description.
+        scene = state.scene
+        for _, item in ipairs(scheduled) do item.scene = scene end
+    end
+    if state.paused then
+        for _, item in ipairs(scheduled) do item.due = item.due + elapsed end
+        return
+    end
     local batch = pending
     pending = {}
     for _, e in ipairs(batch) do on_line(e) end
+    local keep = {}
+    for _, item in ipairs(scheduled) do
+        if item.serial == serial and item.generation == generation and item.scene == scene and describe then
+            if now >= item.due then speech.say(item.text, true) else keep[#keep + 1] = item end
+        end
+    end
+    scheduled = keep
 end, "subtitles", true)
 
 keys.action{ id = "read_subtitles", name = "Read subtitles aloud, on or off", group = "Speech", default = "shift+f7",
@@ -158,6 +213,7 @@ keys.action{ id = "read_subtitles", name = "Read subtitles aloud, on or off", gr
 keys.action{ id = "audio_description", name = "Audio description of cutscenes, on or off", group = "Speech",
              default = "shift+f6", run = function()
                  describe = not describe
+                 cancel_descriptions()
                  speech.say("Audio description " .. (describe and "on" or "off") ..
                             (#DESCRIPTIONS == 0 and ", but no descriptions are installed yet" or ""))
              end }

@@ -10,6 +10,7 @@ third_party/
 
 # Native build output
 native/build/
+native/build-tests/
 symbols/
 sdk/
 

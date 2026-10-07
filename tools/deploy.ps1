@@ -4,9 +4,12 @@
 #   powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 [-Native] [-Win64 <path>]
 #
 # The game loads scripts at startup: restart it afterwards (never hot-reload while playing).
-param([switch]$Native, [string]$Win64 = "")
+param([switch]$Native, [string]$Win64 = "", [string]$InputBridge = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+if (Get-Process -Name HogwartsLegacy -ErrorAction SilentlyContinue) {
+    throw "Close Hogwarts Legacy normally before deploying. Updating a running game is not supported."
+}
 
 function Find-Win64 {
     $steam = (Get-ItemProperty "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamPath
@@ -29,6 +32,12 @@ if (-not $Win64) { $Win64 = Find-Win64 }
 $mod = Join-Path $Win64 "Mods\Wandsong"
 $scripts = Join-Path $mod "Scripts"
 if (-not (Test-Path $scripts)) { throw "UE4SS mod folder missing: $scripts (run the installer first)" }
+if ($InputBridge -and -not (Test-Path $InputBridge)) { throw "Input module missing: $InputBridge" }
+if ($Native) {
+    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
+        if (-not (Test-Path (Join-Path $root "native\build\Release\$dll"))) { throw "Build the native modules first: $dll is missing" }
+    }
+}
 
 Copy-Item (Join-Path $root "mod\Wandsong\Scripts\*.lua") $scripts -Force
 Write-Host "scripts -> $scripts"
@@ -37,4 +46,8 @@ if ($Native) {
         Copy-Item (Join-Path $root "native\build\Release\$dll") $scripts -Force
     }
     Write-Host "native modules -> $scripts"
+}
+if ($InputBridge) {
+    Copy-Item $InputBridge (Join-Path $scripts "input_bridge.dll") -Force
+    Write-Host "input module -> $scripts"
 }
