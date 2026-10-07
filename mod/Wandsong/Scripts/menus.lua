@@ -128,6 +128,11 @@ end
 
 -- Instructions written for sight or the mouse, said in terms that work for the player.
 local REWRITES = {
+    { "Steady your wand with Mouse.-symbol's path%.$", function()
+        if state.activity and state.activity.instructions then return state.activity.instructions() end
+        return "Spell lesson. Press " .. key_name("press") .. " for tracing assistance, or " ..
+            require("bindings").spoken("UMGStartSpellMiniGame", "SpaceBar") .. " to start the original mouse lesson."
+    end },
     { "^Mouse Look Around%.?$", function()
         return "Look around: " .. key_name("turn_left") .. " and " .. key_name("turn_right") ..
                " turn you, " .. key_name("where_am_i") .. " says which way you face." end },
@@ -209,6 +214,22 @@ local function resolve(path)
 end
 local pending_item = nil   -- focus text seen once, waiting to be confirmed stable
 local loading_screen = nil -- path of a loading screen while one is up
+local tutorial_text = nil -- copied strings only; gameplay tutorials must remain re-readable
+
+local function active_tutorial_items()
+    if not tutorial_text or state.loading() or tutorial_text.generation ~= state.generation then return nil end
+    local current_path
+    pcall(function()
+        local system = FindFirstOf("TutorialSystem")
+        if not system or not system:IsValid() then return end
+        local current = system.CurrentTutorialScreen
+        if current and current:IsValid() and current.Visibility ~= 1 and current.Visibility ~= 2 then
+            current_path = path_of(current)
+        end
+    end)
+    if current_path ~= tutorial_text.path then tutorial_text = nil; return nil end
+    return tutorial_text.items, tutorial_text.path
+end
 
 -- Loading-screen widget classes.
 local function is_loading_class(cls)
@@ -244,6 +265,11 @@ local function on_read_menu(widget)
         if c ~= "" then cleaned[#cleaned + 1] = c end
     end
     local text = rewrite(table.concat(legend_order(cleaned), ", "))
+    if cls:find("Tutorial_NonModal", 1, true) and text ~= "" then
+        local items = {}
+        for _, part in ipairs(legend_order(cleaned)) do items[#items + 1] = { text = rewrite(part) } end
+        tutorial_text = { path = path_of(widget), items = items, generation = state.generation }
+    end
     log("ReadMenu " .. cls .. (first and " [open] " or " ") .. "-> " .. text)
     if is_loading_class(cls) and text ~= "" then
         if tips_heard[text] then
@@ -884,6 +910,12 @@ local function nothing_to_read(msg)
 end
 
 local function refresh()
+    if state.activity and not virtual then
+        local provider = state.activity
+        if review_top ~= provider then review_index = 0 end
+        review_top, review_title, review_items = provider, provider.title, provider.items()
+        return #review_items > 0
+    end
     if virtual then
         local items = virtual.items()
         if review_top ~= virtual then review_index = 0 end
@@ -893,7 +925,17 @@ local function refresh()
     end
     -- No widget walking while loading or in gameplay: old screens may be freed, and menus
     -- opened from gameplay close the world gate and announce themselves through ReadMenu.
-    if state.loading() or require("world").gameplay() then review_items = {}; return false end
+    if state.loading() then review_items = {}; return false end
+    if require("world").gameplay() then
+        -- Read the copied tutorial text, never walk the HUD or a remembered widget tree.
+        -- The tutorial system confirms that the same prompt is still displayed.
+        local items, path = active_tutorial_items()
+        if not items then review_items = {}; return false end
+        if review_top ~= path then review_index = 0 end
+        review_top, review_title, review_items = path, "Tutorial", items
+        if review_index > #items then review_index = #items end
+        return true
+    end
     -- Nor while a screen is opening or closing: its widgets are being torn down.
     if require("world").ui_busy() then
         review_items = {}
@@ -1265,6 +1307,7 @@ end)
 -- Never act on a stale selection: if the screen changed since the item was picked, say so
 -- instead of pressing whatever now sits at that position.
 local function press_current()
+    if state.activity and not virtual and state.activity.press then state.activity.press(); return end
     local before, prev = review_top, review_items[review_index]
     if not refresh() then nothing_to_read("No menu is open."); return end
     local item = review_items[review_index]

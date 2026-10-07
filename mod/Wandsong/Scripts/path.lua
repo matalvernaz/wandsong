@@ -542,7 +542,12 @@ local function walk_tick()
         return
     end
     local p, ci
-    if route_from_nav and #route > 1 and dist3({px, py, pz}, route[#route]) < 130 then
+    -- Reaching the end of a complete path isn't a partial-path failure. The player can
+    -- still be a step short of a waiting guide, who starts moving as we approach (vault 12).
+    local endpoint = route[#route]
+    local partial = endpoint and (dist2d(dest[1], dest[2], endpoint) > BESIDE_CM
+        or math.abs(dest[3] - endpoint[3]) >= ARRIVE_HEIGHT_CM)
+    if route_from_nav and #route > 1 and partial and dist3({px, py, pz}, endpoint) < 130 then
         stop(string.format("as close as the path goes, %.1f metres from %s", dist3({px, py, pz}, dest) / 100,
              chosen and chosen.name or "the objective"))
         return

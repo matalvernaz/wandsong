@@ -52,6 +52,15 @@ assert(said[#said]:find("as close as the path goes"),"partial path is not report
 assert(not pressed[73])
 py=0
 
+-- A complete path may end within a step of a guide's current location. Keep walking that
+-- last step instead of calling it a partial path (observed at the Gringotts vault).
+target={1600,0,0}
+nav={{X=0,Y=0,Z=0},{X=1500,Y=0,Z=0}}
+px=1390; yaw=0; pawn.Controller.ControlRotation.Yaw=0
+path.walk_to("/Game/Fig","Professor Fig","person"); t.run(0.3)
+assert(pressed[73], "a complete path lets the player take the final step toward a guide")
+t.action("autowalk")(); px=0
+
 -- The close-enough rules for following a person must also respect another floor.
 target={150,0,600}; nav=nil
 local before=#said

@@ -9,7 +9,8 @@ $before = (Get-Content $log -Encoding UTF8).Count
 if (-not $Keys) { Start-Sleep -Milliseconds $Wait }   # no keys: just watch the game for -Wait ms
 foreach ($k in $Keys) {
     $out = & "$PSScriptRoot\sendkeys.ps1" -Keys $k -DelayMs $Wait
-    if ($LASTEXITCODE -eq 2) { Write-Output $out; Write-Output "Run stopped."; exit 2 }
+    Write-Output $out
+    if ($LASTEXITCODE -ne 0) { Write-Output "Run stopped."; exit $LASTEXITCODE }
 }
 Get-Content $log -Encoding UTF8 | Select-Object -Skip $before |
     Where-Object { $_ -match '\[Wandsong\] (say|ReadMenu .*\[open\]|click|unlabelled)|subtitles\] line|feedback\] prompt|Fatal|error' } |

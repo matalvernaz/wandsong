@@ -24,6 +24,23 @@ require("speech").say=function() end
 local world=require("world")
 t.run(7)
 assert(world.in_game(),"gameplay gate opened")
+local _, _, _, initial_yaw = world.position()
+assert(initial_yaw == 45, "listener follows the camera heading")
+pawn.Controller.ControlRotation.Yaw = { IsValid = function() return false end }
+pawn.RootComponent.RelativeRotation = { Yaw = 90 }
+t.run(0.3)
+local _, _, _, fallback_yaw = world.position()
+assert(fallback_yaw == 90, "missing camera rotation falls back to the player heading")
+pawn.RootComponent.RelativeRotation.Yaw = {}
+t.run(0.3)
+local _, _, _, held_yaw = world.position()
+assert(held_yaw == 90, "invalid rotation wrappers preserve the last usable heading")
+pawn.Controller.ControlRotation.Yaw = 45
+pawn.RootComponent.RelativeLocation.Y = {}
+t.run(0.3)
+local _, held_y = world.position()
+assert(held_y == 230, "incomplete positions never reach the audio listener")
+pawn.RootComponent.RelativeLocation.Y = 230
 local before=stopped
 t.action("world_toggle")()
 assert(not world.sounds_enabled() and stopped>before,"sound toggle stops loops")

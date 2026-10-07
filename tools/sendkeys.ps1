@@ -18,7 +18,14 @@ public class HaKeys {
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
  [DllImport("user32.dll")] public static extern void keybd_event(byte v,byte s,uint f,UIntPtr e);
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
- public static void Key(ushort vk, bool ext, bool up){ var a=new IN[1]; a[0].type=1; a[0].ki.vk=vk; a[0].ki.scan=(ushort)MapVirtualKey(vk,0); a[0].ki.flags=(uint)((ext?1:0)|(up?2:0)); SendInput(1,a,Marshal.SizeOf(typeof(IN))); }
+ public static void Key(ushort vk, bool ext, bool up){
+  var a=new IN[1]; a[0].type=1;
+  uint scan=MapVirtualKey(vk,4);
+  a[0].ki.scan=(ushort)(scan & 0xff);
+  a[0].ki.flags=(uint)(8|((ext || (scan & 0xff00)==0xe000)?1:0)|(up?2:0));
+  if(scan==0){ a[0].ki.vk=vk; a[0].ki.flags &= ~8u; }
+  if(SendInput(1,a,Marshal.SizeOf(typeof(IN)))!=1) throw new InvalidOperationException("Windows rejected the key input");
+ }
 }
 '@
 
@@ -36,6 +43,7 @@ $extended = @('up','down','left','right','numenter','pageup','pagedown','end','h
 $p = Get-Process HogwartsLegacy -ErrorAction SilentlyContinue | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
 if (-not $p) { Write-Output "Hogwarts Legacy is not running; no keys sent."; exit 1 }
 $hwnd = $p.MainWindowHandle
+if ($hwnd -eq [IntPtr]::Zero) { Write-Output "Hogwarts Legacy has no game window yet; no keys sent."; exit 1 }
 
 # Other windows (like the Claude app) can grab focus back at any moment, so (re)focus the
 # game and confirm it before every key.
@@ -60,21 +68,33 @@ foreach ($k in $Keys) {
     if (-not (Focus-Game)) { Write-Output "ABORT: Hogwarts Legacy lost focus before $k"; exit 2 }
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
+    Write-Output "Game foreground verified (PID $($p.Id)): $k"
     $ctrl = $k -match '(^|\+)ctrl\+'
     $shift = $k -match '(^|\+)shift\+'
     $name = $k -replace '^((ctrl|shift)\+)+',''
-    $hold = 200   # UE4SS polls key state; 90 ms taps were missed
+    $hold = 400   # UE4SS polls key state; even 200 ms taps were missed during game-PC tests
     if ($name -match '^(.+)@(\d+)$') { $name = $matches[1]; $hold = [int]$matches[2] }
     if ($name -eq 'numenter') { $vk = 0x0D }
     elseif ($name -eq 'backspace') { $vk = 0x08 }
     elseif ($name -match '^[a-z0-9]$') { $vk = [int][char]$name.ToUpper() }
     else { $vk = $map[$name] }
-    if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
-    if ($shift) { [HaKeys]::Key(0x10, $false, $false) }
-    [HaKeys]::Key($vk, $extended -contains $name, $false)
-    Start-Sleep -Milliseconds $hold
-    [HaKeys]::Key($vk, $extended -contains $name, $true)
-    if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
-    if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }
+    if (-not $vk) { Write-Output "Unknown key: $name; no keys sent."; exit 1 }
+    $lostFocus = $false
+    try {
+        if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
+        if ($shift) { [HaKeys]::Key(0x10, $false, $false) }
+        [HaKeys]::Key($vk, $extended -contains $name, $false)
+        $held = [Diagnostics.Stopwatch]::StartNew()
+        while ($held.ElapsedMilliseconds -lt $hold) {
+            if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { $lostFocus = $true; break }
+            Start-Sleep -Milliseconds 20
+        }
+    } finally {
+        [HaKeys]::Key($vk, $extended -contains $name, $true)
+        if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
+        if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }
+    }
+    if ($lostFocus) { Write-Output "ABORT: Hogwarts Legacy lost focus while holding $k; keys released."; exit 2 }
     Start-Sleep -Milliseconds $DelayMs
 }
+exit 0

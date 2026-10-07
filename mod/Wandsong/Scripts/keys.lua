@@ -14,6 +14,17 @@
 
 local dispatch = require("dispatch")
 local diag = require("diag")
+local has_input, input = pcall(require, "input_bridge")
+
+local function focused()
+    -- UE4SS key bindings are global: they also fire while typing in another application.
+    -- Native focus checks touch no game objects and are safe on the key polling thread.
+    if not has_input or type(input) ~= "table" or type(input.focused) ~= "function" then
+        return UE4SS == nil -- standalone tests; fail closed in the game without the bridge
+    end
+    local ok, value = pcall(input.focused)
+    return ok and value == true
+end
 
 local M = {}
 
@@ -189,14 +200,18 @@ function M.cancel_capture() capture = nil end
 local QUIET_KEYS = { W = true, A = true, S = true, D = true, SPACE = true, LEFT_SHIFT = true,
                      SHIFT = true, LEFT_CONTROL = true, CONTROL = true }
 local function on_press(ctrl, shift, key)
+    if not focused() then return end
     local short = SHORT[key] or key:lower()
     local combo = (ctrl and "ctrl+" or "") .. (shift and "shift+" or "") .. short
     for _, f in ipairs(observers) do pcall(f, combo, key) end
     if capture then
         local fn = capture
-        capture = nil
         diag.trace("key captured " .. combo)
-        dispatch.run(function() fn(combo, key) end, "key capture")
+        dispatch.run(function()
+            if not focused() or capture ~= fn then return end
+            capture = nil
+            fn(combo, key)
+        end, "key capture")
         return
     end
     local id = by_combo[combo_id(ctrl, shift, key)]
@@ -208,7 +223,10 @@ local function on_press(ctrl, shift, key)
     local a = actions[id]
     if a.when and not a.when() then diag.trace("key " .. combo .. " -> " .. id .. " (not now)"); return end
     log("pressed " .. combo .. " -> " .. id)
-    dispatch.run(a.run, "action " .. id)
+    dispatch.run(function()
+        -- Focus can change between the key event and the game-thread callback.
+        if focused() then a.run() end
+    end, "action " .. id)
 end
 
 local registered = 0

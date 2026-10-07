@@ -23,7 +23,11 @@ local ui = obj("UIManager", "/Game/UI", {
     GetInMenuTransition = function() return false end, InPauseMode = function() return paused end })
 local pawn = obj("Biped_Player", "/Game/Player", { InCinematic = false,
     RootComponent = { RelativeLocation = { X = 0, Y = 0, Z = 0 } }, Controller = { ControlRotation = { Yaw = 0 } } })
-FindFirstOf = function(cls) if cls == "UIManager" then return ui elseif cls == "Biped_Player" then return pawn end end
+local tutorial_system = obj("TutorialSystem", "/Game/Tutorials", {})
+FindFirstOf = function(cls)
+    if cls == "UIManager" then return ui elseif cls == "Biped_Player" then return pawn
+    elseif cls == "TutorialSystem" then return tutorial_system end
+end
 FindAllOf = function() return {} end
 StaticFindObject = function(path) return objects[path] end
 RegisterLoadMapPostHook = function() end
@@ -87,4 +91,24 @@ t.run(1.0)
 assert(ghost_calls.n == n, "a destroyed (renamed) screen is never called")
 t.action("review_next")()
 assert(not said[#said]:find("Select", 1, true), "review keys do not read a destroyed screen")
+
+-- A non-modal tutorial can stop the opening scene until G is pressed. It used to announce
+-- once, then the review keys said there was nothing to read. Keep its strings, not widgets.
+paused = false
+t.run(6)
+local prompt = obj("UI_BP_Tutorial_NonModal_C", "/Game/TutorialPrompt", {
+    Visibility = 0, RenderOpacity = 1, IsInViewport = function() return true end,
+    GatherMenuReaderStrings = function() return { "G to Heal." } end })
+tutorial_system.CurrentTutorialScreen = prompt
+read_menu({ get = function() return prompt end })
+t.run(0.6)
+prompt.GatherMenuReaderStrings = function() error("must not poll tutorial widgets during gameplay") end
+t.action("read_all")()
+assert(said[#said]:find("G to Heal", 1, true), "the active tutorial can be re-read in gameplay")
+t.action("review_next")()
+assert(said[#said]:find("G to Heal", 1, true), "brackets review the active prompt")
+tutorial_system.CurrentTutorialScreen = nil
+t.run(0.6)
+t.action("read_all")()
+assert(not said[#said]:find("G to Heal", 1, true), "dismissed tutorials never linger in review")
 print("menus test passed")

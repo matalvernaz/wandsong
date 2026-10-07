@@ -164,6 +164,7 @@ end
 local UI_SETTLE = 0.75              -- seconds after any UI change in which widgets may still be dying
 local ui_last_why, ui_changed_at = false, -10
 local function ui_blocker()
+    if state.spell_lesson then return "spell lesson" end
     local why
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
@@ -269,7 +270,7 @@ local function gate_check()
     end
 end
 
-function M.in_game() return in_game and enabled and not state.loading() end
+function M.in_game() return in_game and enabled and not state.loading() and not state.spell_lesson end
 --- True whenever no menu is up: gameplay, a scene or dialogue, the gate still settling, or
 --- world features off. Menu code must not walk widget trees then; in_game() alone is false in
 --- all of those, and up arrow walking the HUD crashed the game twice (Oct 6). The UI manager
@@ -294,6 +295,9 @@ end
 function M.enabled() return enabled end
 --- What to tell the player when a world feature can't run right now.
 function M.not_ready_reason()
+    if state.spell_lesson then
+        return "A spell lesson is open. Press " .. keys.describe_combo(keys.combo_of("press")) .. " for tracing assistance."
+    end
     if not enabled then
         return "World features are off, after the game stopped while they were running. Press " ..
                keys.describe_combo(keys.combo_of("world_resume")) .. " to resume them."
@@ -319,7 +323,7 @@ local function location(actor)
         local v = actor.RootComponent.RelativeLocation
         return v.X, v.Y, v.Z
     end)
-    if ok and type(x) == "number" then return x, y, z end
+    if ok and type(x) == "number" and type(y) == "number" and type(z) == "number" then return x, y, z end
     return nil
 end
 
@@ -360,9 +364,14 @@ local function update_listener()
         end
         yaw = controller.ControlRotation.Yaw
     end)
-    if yaw == nil then pcall(function() yaw = pawn.RootComponent.RelativeRotation.Yaw end) end
-    yaw_now = yaw or 0
-    local r = math.rad(yaw or 0)
+    -- UE4SS can return an invalid UObject wrapper for a missing property while possession
+    -- changes. It is truthy, but cannot be used as an angle (seen entering Gringotts).
+    if type(yaw) ~= "number" then
+        ctrl_path = nil
+        pcall(function() yaw = pawn.RootComponent.RelativeRotation.Yaw end)
+    end
+    if type(yaw) == "number" and yaw == yaw and math.abs(yaw) < math.huge then yaw_now = yaw end
+    local r = math.rad(yaw_now)
     if audio then audio.listener(px, py, pz + 60, math.cos(r), math.sin(r), 0) end
 end
 

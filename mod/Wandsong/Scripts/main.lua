@@ -13,6 +13,7 @@ require("path")
 require("gamecues")
 require("feedback")
 require("subtitles")
+require("spells")
 
 -- Diagnostics mark: the player says "something odd just happened"; the log records the
 -- moment, with what was spoken just before, so it's easy to find afterwards.
