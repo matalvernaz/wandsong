@@ -64,7 +64,11 @@ end
 
 local pending = {}
 
+local last_id, last_at = nil, -10
 local function on_line(e)
+    -- Both hooks can report the same line: once is enough.
+    if e.id and e.id == last_id and os.clock() - last_at < 1 then return end
+    last_id, last_at = e.id, os.clock()
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
     if read_aloud then speech.say(e.text, true) end
@@ -89,7 +93,7 @@ local function on_line(e)
     end
 end
 
-local function hook_ok(fn)
+local function hook_ok(fn, quiet)
     local ok, err = pcall(RegisterHook, fn, function(ctx, data, text)
         diag.trace("hook subtitle")
         local e = {}
@@ -102,9 +106,18 @@ local function hook_ok(fn)
         end)
         pending[#pending + 1] = e
     end)
-    log((ok and "hooked " or "could not hook ") .. fn .. (ok and "" or (": " .. tostring(err))))
+    if ok or not quiet then log((ok and "hooked " or "could not hook ") .. fn .. (ok and "" or (": " .. tostring(err)))) end
+    return ok
 end
 hook_ok("/Script/Phoenix.Subtitles:BPAddSubtitleEvent")
+-- The game calls the Blueprint subtitle screen's own override of that event, which only exists
+-- once the HUD has loaded: keep trying to hook it every 3 s until it takes.
+local BP_EVENT = "/Game/UI/HUD/Subtitles/UI_BP_Subtitle.UI_BP_Subtitle_C:BPAddSubtitleEvent"
+local tries = 0
+dispatch.every(3000, function()
+    tries = tries + 1
+    if hook_ok(BP_EVENT, tries % 20 ~= 1) then return true end
+end, "subtitle hook")
 
 dispatch.every(100, function()
     if #pending == 0 then return end
