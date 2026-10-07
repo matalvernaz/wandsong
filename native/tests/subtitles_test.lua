@@ -33,4 +33,6 @@ line("We must hurry, the carriage is waiting.", 0.1)
 run(0.6)
 assert(#said == 1, "each description once")
 assert(subs.similarity("Hello there, friend", "hello there friend") == 1, "similarity ignores punctuation")
+-- The game's markup and speaker name, and a line longer than the transcript's piece of it.
+package.loaded["descriptions"] = nil
 print("subtitles test passed")

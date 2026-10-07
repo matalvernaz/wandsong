@@ -36,13 +36,24 @@ local function words(t)
     end
     return set, n
 end
-local function similarity(a, b)
+-- How much of the shorter text is in the longer one: the game's lines and the recording's
+-- transcript don't split speech the same way ("Take this. It's Wiggenweld Potion. That
+-- stuff'll right you in a second." against "That stuff will write you in a second.").
+local function similarity(a, b, strict)
     local sa, na = words(a)
     local sb, nb = words(b)
     if na == 0 or nb == 0 then return 0 end
     local common = 0
     for w in pairs(sa) do if sb[w] then common = common + 1 end end
-    return common / math.max(na, nb)
+    -- Short lines ("Wait!") would be "contained" in almost anything: compare them whole.
+    return common / ((strict or math.min(na, nb) < 4) and math.max(na, nb) or math.min(na, nb))
+end
+
+-- The game's line without its markup and speaker name:
+-- "<Name_Text>Professor Fig:</> Are you all right?" -> "Are you all right?"
+local function plain(t)
+    t = t:gsub("^%s*<Name_Text>.-</>%s*", ""):gsub("<[^>]*>", "")
+    return t
 end
 
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
@@ -52,7 +63,7 @@ local used = {}   -- descriptions already spoken this session
 -- Short trigger lines ("Ah.", "Accio.") also need the line before them to match (prev).
 local last_text = ""
 local function match(text)
-    local best, best_s = nil, 0.6
+    local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
         if d.after and not used[i] then
             local s = similarity(text, d.after)
@@ -71,7 +82,8 @@ local function on_line(e)
     last_id, last_at = e.id, os.clock()
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
-    if read_aloud then speech.say(e.text, true) end
+    if read_aloud then speech.say(e.text:gsub("<[^>]*>", ""), true) end
+    e.text = plain(e.text)
     local prev_text = last_text
     last_text = e.text
     if not describe or #DESCRIPTIONS == 0 then return end
