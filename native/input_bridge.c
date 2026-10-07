@@ -8,6 +8,8 @@
  *   input_bridge.key(vk, down)     -> true if sent (vk: Windows virtual-key code)
  *   input_bridge.mouse_move(dx, dy) -> true if sent: a relative mouse move, which turns the
  *                                     camera exactly as the player's own mouse does
+ *   input_bridge.down(vk)          -> true while that key is held, and only while this game's
+ *                                     window has focus (steering the wand in a spell lesson)
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -61,8 +63,16 @@ static int l_mouse_move(lua_State *L) {
     return 1;
 }
 
+static int l_down(lua_State *L) {
+    UINT vk = (UINT)luaL_checkinteger(L, 1);
+    if (vk == 0 || vk > 255 || !game_focused()) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, (GetAsyncKeyState((int)vk) & 0x8000) != 0);
+    return 1;
+}
+
 static const luaL_Reg funcs[] = {
     {"focused", l_focused},
+    {"down", l_down},
     {"key", l_key},
     {"mouse_move", l_mouse_move},
     {NULL, NULL},

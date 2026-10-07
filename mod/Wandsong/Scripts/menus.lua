@@ -130,8 +130,8 @@ end
 local REWRITES = {
     { "Steady your wand with Mouse.-symbol's path%.$", function()
         if state.activity and state.activity.instructions then return state.activity.instructions() end
-        return "Spell lesson. Press " .. key_name("press") .. " for tracing assistance, or " ..
-            require("bindings").spoken("UMGStartSpellMiniGame", "SpaceBar") .. " to start the original mouse lesson."
+        return "Spell lesson. Press " .. require("bindings").spoken("UMGStartSpellMiniGame", "SpaceBar") ..
+            " to trace it yourself by ear with the arrow keys, or " .. key_name("press") .. " for tracing assistance."
     end },
     { "Review your objectives to reveal the way forward%.?", function()
         return "Review your objectives: " .. key_name("where_am_i") ..
