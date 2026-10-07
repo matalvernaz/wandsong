@@ -3,7 +3,7 @@
 # the delay is the frame's offset into the silence plus a short pause, counted from the end of
 # that line. Slots with no line before them (the very start of the video) can't be triggered and
 # are left out.
-# Usage: python -I build_descriptions.py <desc dir> <out descriptions.lua>
+# Usage: python -I build_descriptions.py <desc dir> <out descriptions.lua> [batches dir]
 import glob, json, os, sys
 
 desc_dir, out = sys.argv[1], sys.argv[2]
@@ -12,7 +12,7 @@ for f in sorted(glob.glob(os.path.join(desc_dir, "batch_*.json")), key=lambda p:
     slots.extend(json.load(open(f, encoding="utf-8")))
 # The line before each trigger line, from the batches' context, so short trigger lines ("Ah.")
 # can be told apart in game.
-batch_dir = os.path.join(os.path.dirname(os.path.abspath(desc_dir)), "batches")
+batch_dir = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(os.path.abspath(desc_dir)), "batches")
 prev_of = {}
 for f in glob.glob(os.path.join(batch_dir, "batch_*.json")):
     for b in json.load(open(f, encoding="utf-8")):
