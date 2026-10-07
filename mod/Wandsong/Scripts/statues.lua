@@ -157,6 +157,7 @@ M.inside = inside
 -- its components) as they spawned and shattered crashed the game (Oct 7, 09:16). Each step
 -- leaves a breadcrumb in trace.log.
 local function read(path, pawn_path)
+    diag.trace("statue lookup " .. path)
     local o = world.resolve and world.resolve(path)
     if not o then return nil end
     local s = { path = path }
@@ -190,7 +191,10 @@ local function read(path, pawn_path)
     return s
 end
 
-local known = {}                 -- path -> { base, next_at, said_hidden, said_intro, aligned }
+local known = {}                 -- path -> { base, next_at, said_hidden, said_intro, aligned, gone }
+-- Knights that have come alive are never looked up again this load: Fig shatters them seconds
+-- later, and the world scan may still list one as a statue until its next pass.
+local gone = {}
 local knights = {}               -- the visible puzzle knights at the last check
 local generation = state.generation
 local playing_since = nil        -- uninterrupted gameplay since
@@ -219,7 +223,7 @@ end
 local function tick()
     if generation ~= state.generation then
         generation = state.generation
-        known, knights, playing_since = {}, {}, nil
+        known, knights, playing_since, gone = {}, {}, nil, {}
         stop_loops()
     end
     if not world.in_game() then
@@ -240,9 +244,10 @@ local function tick()
         -- Looking up every knight of the class (the fight's too, as they shattered) crashed
         -- the game twice (Oct 7, 09:16 and 09:26): a destroyed object can come back from the
         -- lookup, and UE4SS 3.0.1's IsValid then dereferences freed memory.
-        if e.kind == "statue" then
+        if e.kind == "statue" and not gone[e.path] then
             local s = read(e.path, pawn_path)
-            if s then
+            if s and s.released then gone[s.path] = true end
+            if s and not s.released then
                 local k = known[s.path]
                 if not k then
                     local n = 0
@@ -281,10 +286,13 @@ local function tick()
             end
         end
     end
-    -- "Lined up" once per alignment, as a sighted player would see it.
+    -- "Lined up" once per alignment, as a sighted player would see it: from where the light
+    -- is now (TargetAngle), not the eased reflection, which sweeps through the knight's angle
+    -- while you circle it.
     for _, s in ipairs(seen) do
         local k = s.k
-        local aligned = s.mine and s.off ~= nil and math.abs(s.off) <= ALIGNED_DEG
+        local aligned = s.mine and num(s.target_angle) and num(s.align_to)
+            and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG
         if aligned and not k.aligned then speech.say(#seen > 1 and "That knight is lined up." or "Lined up.") end
         k.aligned = aligned
     end
@@ -322,7 +330,7 @@ end
 
 --- What a sighted player sees of a knight: which way it faces, and its reflection.
 function M.describe(path)
-    if not world.in_game() then return nil end
+    if not world.in_game() or gone[path] then return nil end
     local px, py, pz = world.position()
     local pawn = world.pawn and world.pawn()
     local s = read(path, pawn and path_of(pawn))
@@ -353,6 +361,9 @@ for _, event in ipairs(EVENTS) do
             pcall(function() p = path_of(ctx:get()) end)
             if p and p:find(CLASS, 1, true) and #pending < 64 then
                 pending[#pending + 1] = { event = event, path = p, generation = state.generation }
+            end
+            if p and (event == "StandingArrived" or event == "Branch to Release" or event == "SignalForRelease") then
+                gone[p] = true
             end
         end)
         if not ok then log("hook failed " .. event .. ": " .. tostring(err)) end

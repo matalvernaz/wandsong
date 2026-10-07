@@ -18,6 +18,7 @@ public class HaKeys {
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
  [DllImport("user32.dll")] public static extern void keybd_event(byte v,byte s,uint f,UIntPtr e);
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
+ [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int v);
  // Virtual key plus its scan code, like a real keyboard driver reports. Scan-code-only
  // input (KEYEVENTF_SCANCODE) was never seen by the game or UE4SS for F or Enter (Oct 7).
  public static void Key(ushort vk, bool ext, bool up){
@@ -71,6 +72,20 @@ foreach ($k in $Keys) {
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"
+    if (-not $script:probed) {
+        # Some minutes after a launch, a Windows overlay (Game Bar's launch panel, it seems)
+        # can swallow injected letters, digits, space, enter and arrows while F-keys and
+        # modifiers still pass (Oct 7). Probe once with an unused key pair before sending.
+        $script:probed = $true
+        [HaKeys]::Key(0x7E, $false, $false); Start-Sleep -Milliseconds 40
+        $fkey = [HaKeys]::GetAsyncKeyState(0x7E); [HaKeys]::Key(0x7E, $false, $true)
+        if ($fkey -band 0x8000) {
+            # F15 lands; does a letter? (B: bound by neither the game nor the mod.)
+            [HaKeys]::Key(0x42, $false, $false); Start-Sleep -Milliseconds 40
+            $letter = [HaKeys]::GetAsyncKeyState(0x42); [HaKeys]::Key(0x42, $false, $true)
+            if (-not ($letter -band 0x8000)) { Write-Output "WARNING: injected letters are being swallowed (an overlay holds the keyboard); keys may not reach the game." }
+        }
+    }
     $ctrl = $k -match '(^|\+)ctrl\+'
     $shift = $k -match '(^|\+)shift\+'
     $name = $k -replace '^((ctrl|shift)\+)+',''
