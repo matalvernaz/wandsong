@@ -1,4 +1,4 @@
--- Wandsong: blind accessibility for Hogwarts Legacy.
+﻿-- Wandsong: blind accessibility for Hogwarts Legacy.
 -- Speech goes through the player's screen reader (via wandsong_helper.exe and Prism).
 
 local diag = require("diag")   -- first: it captures every later log line
@@ -32,12 +32,12 @@ keys.action{
     end,
 }
 
--- Developer console (Ctrl+Shift+F12): run dev_eval.lua from the mod folder on the game
+-- Developer console (Ctrl+Shift+F11): run dev_eval.lua from the mod folder on the game
 -- thread and log what it returns. Lets a tester explore live game objects without
 -- restarting the game; does nothing unless that file exists.
 keys.action{
     id = "dev_eval", name = "Developer: run dev_eval.lua and log the result", group = "Menus and screens",
-    default = "ctrl+shift+f12",
+    default = "ctrl+shift+f11",   -- F12 is dev_sdk
     run = function()
         local path = require("files").runtime("dev_eval.lua")
         local chunk, err = loadfile(path)
