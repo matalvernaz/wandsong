@@ -15,6 +15,7 @@ require("feedback")
 require("subtitles")
 require("spells")
 require("statues")
+require("ai_walk")
 
 -- Diagnostics mark: the player says "something odd just happened"; the log records the
 -- moment, with what was spoken just before, so it's easy to find afterwards.

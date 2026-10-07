@@ -414,6 +414,7 @@ local function stop(why, sound)
     local was = chosen
     chosen = nil
     if was then route, dest, nav_cache, source = {}, nil, nil, nil end
+    if why == "handed to the AI walk" then return end   -- ai_walk.lua speaks for itself
     if was and (why == "caught up" or why == "you've arrived") then
         speech.say("Arrived at " .. was.name .. ".")
         return
@@ -638,6 +639,15 @@ local function walk_tick()
                 log(string.format("stuck at %.1f %.1f %.1f heading %.0f; ahead: %s; route: %s", px / 100, py / 100,
                     pz / 100, yaw, require("surroundings").profile(yaw), table.concat(nxt, " ")))
             end)
+            -- A walk the keys can't finish: the game's own AI may (ai_walk.lua, switched off
+            -- unless ai_walk_enabled.txt exists). Once per stuck walk.
+            local ai = package.loaded.ai_walk
+            if ai and ai.enabled and ai.enabled() and dest then
+                local name = chosen and chosen.name or "the objective"
+                local target = { dest[1], dest[2], dest[3] }
+                release()
+                if ai.start(target, name) then stop("handed to the AI walk"); return end
+            end
             stop("stuck", "step_blocked")
         elseif t > BLOCKED_AFTER * (jumps + 1) and jumps < 2 then
             jumps = jumps + 1
@@ -652,6 +662,8 @@ end
 
 local function toggle_walk()
     if walking then stop("") return end
+    local ai = package.loaded.ai_walk
+    if ai and ai.active and ai.active() then ai.stop("walk key"); return end
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then
         speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
