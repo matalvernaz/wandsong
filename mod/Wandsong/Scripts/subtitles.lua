@@ -62,6 +62,28 @@ local function plain(t)
     return t
 end
 
+-- Corrections to the generated descriptions, kept here so rebuilding descriptions.lua with
+-- tools/ad doesn't lose them. The recording's player solved the vault's first knight puzzle at
+-- once, so the knights waking were timed from "It does follow the light."; in play they wake
+-- whenever the puzzle is solved, and Fig's "Look out!" marks it (Oct 7: Matt heard them
+-- described while he was still working the puzzle out).
+local CORRECTIONS = {
+    { after = "It does follow the light.", keep = 1, add = {
+        { id = "EleazarFig_13089", after = "Look out!", items = {
+            { delay = 0.2, text = "Stone knights stir all around you. A knight raises its sword at you." },
+        } },
+    } },
+}
+for _, c in ipairs(CORRECTIONS) do
+    for i, d in ipairs(DESCRIPTIONS) do
+        if d.after == c.after and type(d.items) == "table" then
+            while #d.items > c.keep do table.remove(d.items) end
+            for j, extra in ipairs(c.add or {}) do table.insert(DESCRIPTIONS, i + j, extra) end
+            break
+        end
+    end
+end
+
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
 -- Deduplicate delivery of a line, not the description for the lifetime of the process.
@@ -123,6 +145,9 @@ end
 local recent = {}
 local skip_requested = false
 local line_ends = -1       -- when the last line was due to finish
+--- True once no game line has been playing for `seconds` (for things that shouldn't talk over
+--- the dialogue).
+function M.quiet_for(seconds) return os.clock() - line_ends >= (seconds or 0) end
 -- A description held back by lines spoken over its moment is dropped once it is this late.
 local MAX_LATE = 15
 -- Consecutive cutscenes leave cinematic mode for a moment between them (the walk to the

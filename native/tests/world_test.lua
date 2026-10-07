@@ -71,15 +71,19 @@ assert(not world.in_game() and require("state").generation==generation+1,
 t.run(6)
 assert(world.in_game(),"replacement player settles")
 -- Puzzle knights are statues until they come alive: no growl, no enemy tip, their own name.
-local knight=obj("BP_HogwartsProtector_C","/Game/Vault.Knight",{bHasBeenReleased=false,
+local fighter=obj("BP_HogwartsProtector_C","/Game/Vault.Fighter",{bHasBeenReleased=false,bPuzzleActive=false,
+    RootComponent={RelativeLocation={X=650,Y=230,Z=340}}})
+fighter.GetClass=function() return {GetFName=function() return {ToString=function() return "BP_HogwartsProtector_C" end} end} end
+local knight=obj("BP_HogwartsProtector_C","/Game/Vault.Knight",{bHasBeenReleased=false,bPuzzleActive=true,
     RootComponent={RelativeLocation={X=600,Y=230,Z=340}}})
 knight.GetClass=function() return {GetFName=function() return {ToString=function() return "BP_HogwartsProtector_C" end} end} end
-FindAllOf=function(cls) if cls=="Enemy_Character" then return {knight} end return {} end
+FindAllOf=function(cls) if cls=="Enemy_Character" then return {knight,fighter} end return {} end
 local function kind_of(path) for _,e in ipairs(world.entries()) do if e.path==path then return e.kind,e.name end end end
 t.run(8)
 local kind,name=kind_of("/Game/Vault.Knight")
 assert(kind=="statue" and name=="Knight statue","a kneeling puzzle knight is a statue, not an enemy")
 assert(world.resolve("/Game/Vault.Knight")==knight,"statues are looked up fresh by path")
+assert(kind_of("/Game/Vault.Fighter")=="enemy","a knight of the same class that isn't a puzzle is an enemy")
 knight.bHasBeenReleased=true
 t.run(8)
 kind,name=kind_of("/Game/Vault.Knight")

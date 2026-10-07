@@ -34,6 +34,8 @@ eq(t.rewrite("The Minimap shows your surroundings, with you Map PlayerBlip in th
    "The minimap shows your surroundings to sighted players. With Wandsong, up arrow says your quest, its current task and which way the objective is. This is your current objective. Press and hold V to toggle quest objective details., To continue, hold space for a moment.")
 eq(t.rewrite("Something., Continue: Space"), "Something., To continue, hold space for a moment.")
 eq(t.rewrite("R cast Revelio Revelio."), "R cast Revelio.")
+assert(t.rewrite("Review your objectives to reveal the way forward., Continue: Space"):find("up arrow says your quest", 1, true),
+    "objectives tutorial in the mod's terms")
 eq(t.rewrite("Tap 1 to cast or extinguish Lumos Lumos."), "Tap 1 to cast or extinguish Lumos.")
 eq(t.rewrite("Hold still, then hold the line."), "Hold still, then hold the line.")
 assert(t.rewrite("Steady your wand with Mouse and guide it along the symbol's path to learn the spell. Press the corresponding input when prompted to accelerate your wand's motion along the symbol's path."):find("^Spell lesson"),

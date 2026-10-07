@@ -37,6 +37,16 @@ t.action("gauges")(); assert(said[#said]:find("19 percent. 3 healing potions",1,
 events.ReceiveIndicatorStart(ctx("BP_AttackIndicator_C"),val(true),val(false)); t.run(0.3)
 events.ReceiveIndicatorStart(ctx("BP_AttackIndicator_C"),val(false),val(true)); t.run(0.3)
 assert(#sounds==2 and sounds[1][2]>sounds[2][2],"different block and dodge cues")
+-- The parry callout (the Protego tutorial waits on it with time stopped) is spoken with the key.
+events.BlueprintSetParryType(ctx("UI_BP_CombatParry_ButtonCallout_C"),val(0))
+events.OnIntroStarted(ctx("UI_BP_CombatParry_ButtonCallout_C")); t.run(0.2)
+assert(said[#said]=="Protego, q","the parry callout names the Protego key: "..tostring(said[#said]))
+events.OnIntroStarted(ctx("UI_BP_SomethingElse_C")); t.run(0.7)
+assert(said[#said]=="Protego, q" and #said==#said,"other widgets' intros are ignored")
+local before_dodge=#said
+events.BlueprintSetParryType(ctx("UI_BP_CombatParry_ButtonCallout_C"),val(1))
+events.OnIntroStarted(ctx("UI_BP_CombatParry_ButtonCallout_C")); t.run(0.2)
+assert(#said==before_dodge+1 and said[#said]:find("^Dodge, "),"a dodge callout says dodge")
 enabled=false
 events.ReceiveIndicatorStart(ctx("BP_AttackIndicator_C"),val(true),val(true)); t.run(0.3)
 assert(#sounds==2,"world sound toggle respected")

@@ -547,7 +547,8 @@ local function scan_step()
                 statue_class = cn:find(STATUE_CLASS, 1, true) ~= nil
                 if friendly(cn) then
                     cat = CATEGORIES[1]   -- a student or ghost: a person
-                elseif statue_class and a.bHasBeenReleased ~= true then
+                elseif statue_class and a.bPuzzleActive == true and a.bHasBeenReleased ~= true then
+                    -- Only a knight that's a puzzle: the fight after it spawns the same class.
                     cat = STATUE
                 end
             end

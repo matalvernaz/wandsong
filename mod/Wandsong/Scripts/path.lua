@@ -532,7 +532,9 @@ local function walk_tick()
     local px, py, pz = world.position()
     if not dest then stop(chosen and "it's gone" or "no objective to walk to"); return end
     local d = dist2d(px, py, dest)
-    local level = math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM
+    -- Right on top of it counts even when the marker sits lower or higher than the player's
+    -- centre (the vault's glowing floor: 1.7 m below, and autowalk circled it, Oct 7).
+    local level = math.abs(dest[3] - pz) < ARRIVE_HEIGHT_CM or (d < 150 and math.abs(dest[3] - pz) < 250)
     if route_failure then stop(route_failure); return end
     local person, moving = dest_is_person(), target_moving()
     if person and not moving then

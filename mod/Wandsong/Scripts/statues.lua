@@ -24,7 +24,7 @@
 -- every time, and only their properties are read. Hooks (by event name, registered once at
 -- startup) record an event name and a path, nothing else.
 
-local dispatch, state = require("dispatch"), require("state")
+local dispatch, state, diag = require("dispatch"), require("state"), require("diag")
 local speech, world = require("speech"), require("world")
 
 local M = {}
@@ -152,32 +152,39 @@ M.inside = inside
 
 -- --- Reading the knights ----------------------------------------------------------------
 
-local function read(path, pawn_path, me)
+-- Only a knight that is a puzzle right now is read beyond its two flags: the fight after the
+-- first puzzle spawns knights of the same class, and reading deeper into them (their light,
+-- its components) as they spawned and shattered crashed the game (Oct 7, 09:16). Each step
+-- leaves a breadcrumb in trace.log.
+local function read(path, pawn_path)
     local o = world.resolve and world.resolve(path)
     if not o then return nil end
     local s = { path = path }
+    diag.trace("statue flags " .. path)
     pcall(function() s.active = o.bPuzzleActive == true end)
     pcall(function() s.released = o.bHasBeenReleased == true end)
+    if not s.active or s.released then return s end
     pcall(function() s.statue_visible = o.bStatueVisible == true end)
     pcall(function() s.reflection_visible = o.bReflectionVisible == true end)
     pcall(function() s.align_to = o.AlignToAngle end)
     pcall(function() s.target_angle = o.TargetAngle end)
     pcall(function() s.current = o.CurrentAngle end)
     pcall(function() s.hint = o.VFX_HintLine_Alpha end)
+    diag.trace("statue root " .. path)
     pcall(function() s.root = vec(o.RootComponent.RelativeLocation) end)
     pcall(function() s.yaw = o.RootComponent.RelativeRotation.Yaw end)
+    -- Whose light the reflection follows: the player's own (TargetActor is the player), or
+    -- someone else's (Fig's). Only the path is compared; nothing of that actor is read.
+    diag.trace("statue light " .. path)
     pcall(function()
         local t = o.TargetActor
-        if valid(t) then
-            s.target = path_of(t)
-            local w = world_of(t.RootComponent)
-            if w then s.target_at = w.loc end
-        end
+        if valid(t) then s.target = path_of(t) end
     end)
-    if num(s.hint) and s.hint > 0.05 then pcall(function() s.cor = corridor(o) end) end
-    -- Whose light the reflection follows: the player's own, or someone else's (Fig's).
-    s.mine = s.target ~= nil and (s.target == pawn_path
-        or (s.target_at ~= nil and dist2(s.target_at, me) < 150 and math.abs(s.target_at[3] - me[3]) < 200))
+    if num(s.hint) and s.hint > 0.05 then
+        diag.trace("statue corridor " .. path)
+        pcall(function() s.cor = corridor(o) end)
+    end
+    s.mine = s.target ~= nil and s.target == pawn_path
     if num(s.current) and num(s.align_to) then s.off = wrap(s.current - s.align_to) end
     s.visible = (s.statue_visible or s.reflection_visible) and s.active and not s.released
     return s
@@ -203,10 +210,10 @@ local function snapshot(s, why)
     local function f(v) return num(v) and string.format("%.1f", v) or tostring(v) end
     local function p3(v) return v and string.format("%.0f %.0f %.0f", v[1], v[2], v[3]) or "?" end
     log(string.format("%s %s: active %s released %s statue %s reflection %s; angles align %s target %s current %s off %s; " ..
-        "root %s yaw %s; light %s (%s) at %s; hint line %s", why, s.path:match("[^.:]+$") or s.path,
+        "root %s yaw %s; light %s (%s); hint line %s", why, s.path:match("[^.:]+$") or s.path,
         tostring(s.active), tostring(s.released), tostring(s.statue_visible), tostring(s.reflection_visible),
         f(s.align_to), f(s.target_angle), f(s.current), f(s.off), p3(s.root), f(s.yaw),
-        tostring(s.target), s.mine and "yours" or "not yours", p3(s.target_at), f(s.hint)))
+        tostring(s.target), s.mine and "yours" or "not yours", f(s.hint)))
 end
 
 local function tick()
@@ -230,7 +237,7 @@ local function tick()
     local seen, hums = {}, {}
     for _, e in ipairs(world.entries and world.entries() or {}) do
         if e.kind == "statue" or (e.path and e.path:find(CLASS, 1, true)) then
-            local s = read(e.path, pawn_path, me)
+            local s = read(e.path, pawn_path)
             if s then
                 local k = known[s.path]
                 if not k then
@@ -252,8 +259,11 @@ local function tick()
         end
     end
     knights = seen
-    -- Descriptions wait for play to settle (not over a cutscene's last lines).
-    if settled then
+    -- Descriptions wait for play to settle and the dialogue to pause (not over a cutscene's
+    -- last lines, nor over Fig).
+    local ok_sub, subtitles = pcall(require, "subtitles")
+    local quiet = not (ok_sub and type(subtitles) == "table" and subtitles.quiet_for) or subtitles.quiet_for(1.5)
+    if settled and quiet then
         for _, s in ipairs(seen) do
             local k = s.k
             if s.reflection_visible and not s.statue_visible and not k.said_hidden then
@@ -311,7 +321,7 @@ function M.describe(path)
     if not world.in_game() then return nil end
     local px, py, pz = world.position()
     local pawn = world.pawn and world.pawn()
-    local s = read(path, pawn and path_of(pawn), { px, py, pz })
+    local s = read(path, pawn and path_of(pawn))
     if not s or not num(s.yaw) then return nil end
     if s.released then return "standing, alive" end
     if not s.statue_visible and s.reflection_visible then
@@ -359,7 +369,7 @@ end
 local ok_scanner, scanner = pcall(require, "scanner")
 if ok_scanner and type(scanner) == "table" and scanner.details then scanner.details.statue = M.describe end
 
-dispatch.every(200, tick, "statue puzzle")
+dispatch.every(250, tick, "statue puzzle")
 dispatch.every(200, events, "statue events")
 
 log("loaded")

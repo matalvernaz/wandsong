@@ -133,6 +133,9 @@ local REWRITES = {
         return "Spell lesson. Press " .. key_name("press") .. " for tracing assistance, or " ..
             require("bindings").spoken("UMGStartSpellMiniGame", "SpaceBar") .. " to start the original mouse lesson."
     end },
+    { "Review your objectives to reveal the way forward%.?", function()
+        return "Review your objectives: " .. key_name("where_am_i") ..
+               " says your quest, its current task and which way the objective is." end },
     { "^Mouse Look Around%.?$", function()
         return "Look around: " .. key_name("turn_left") .. " and " .. key_name("turn_right") ..
                " turn you, " .. key_name("where_am_i") .. " says which way you face." end },

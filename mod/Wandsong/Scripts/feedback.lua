@@ -12,6 +12,7 @@ local queue, prompt, active_prompt = {}, nil, nil
 local health, potions, low, critical = nil, nil, false, false
 local generation = state.generation
 local last_attack, last_prompt = -10, nil
+local last_callout = -10
 local audio
 do
     local ok, a = pcall(require, "audio_bridge")
@@ -44,6 +45,19 @@ hook("ReceiveIndicatorStart", function(ctx, parry, unblockable)
     if context_path(ctx, "AttackIndicator") then
         record("attack", { parry = value(parry), unblockable = value(unblockable) })
     end
+end)
+-- The parry and dodge callout ("Q PROTEGO" on screen). In the Protego tutorial the game waits
+-- for it with time stopped and nothing else is said (Oct 7, vault). Its type arrives just
+-- before it shows: 0 parry (Protego), 1 dodge.
+local parry_type = 0
+hook("BlueprintSetParryType", function(ctx, t)
+    if context_path(ctx, "CombatParry") then
+        local v = value(t)
+        if type(v) == "number" then parry_type = v end
+    end
+end)
+hook("OnIntroStarted", function(ctx)
+    if context_path(ctx, "CombatParry_ButtonCallout") then record("callout", parry_type) end
 end)
 hook("ShowButtonInfo", function(ctx, shown)
     local path = context_path(ctx, "UI_BP_InteractBlip")
@@ -169,6 +183,13 @@ dispatch.every(100, function()
                 elseif active_prompt == e.data.path then
                     prompt, last_prompt, active_prompt = nil, nil, nil
                 end
+            elseif e.kind == "callout" and os.clock() - e.at < 2 and os.clock() - last_callout > 0.5 then
+                last_callout = os.clock()
+                local said = e.data == 1 and ("Dodge, " .. bindings.spoken("AM_Dodge", "LeftControl"))
+                    or ("Protego, " .. bindings.spoken("AM_Protego", "Q"))
+                speech.say(said)
+                state.cue(said)
+                print("[Wandsong feedback] callout: " .. said .. "\n")
             elseif e.kind == "notice" then
                 local said = M.notice_text(e.data)
                 if said then speech.say(said, true); print("[Wandsong feedback] " .. said .. "\n") end
