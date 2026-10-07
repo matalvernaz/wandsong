@@ -236,7 +236,11 @@ local function tick()
     local now = os.clock()
     local seen, hums = {}, {}
     for _, e in ipairs(world.entries and world.entries() or {}) do
-        if e.kind == "statue" or (e.path and e.path:find(CLASS, 1, true)) then
+        -- Only what the world scan, reading fresh objects, found to be a live puzzle knight.
+        -- Looking up every knight of the class (the fight's too, as they shattered) crashed
+        -- the game twice (Oct 7, 09:16 and 09:26): a destroyed object can come back from the
+        -- lookup, and UE4SS 3.0.1's IsValid then dereferences freed memory.
+        if e.kind == "statue" then
             local s = read(e.path, pawn_path)
             if s then
                 local k = known[s.path]
