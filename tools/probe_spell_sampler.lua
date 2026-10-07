@@ -1,6 +1,9 @@
 -- Records the spell-learning lesson every 100 ms for 25 s into spell_samples.txt (mod folder):
 -- the wand's input, the spark's position, speed and segment, the chasing spark, checkpoints.
 -- Read-only apart from the file. Run during a lesson with tools\dev.ps1.
+-- It stops by itself when the lesson screen goes. (Its first version called IsValid on the
+-- closed screen and crashed the game, Oct 7 08:45: never IsValid a looked-up widget before
+-- checking that its full name still matches.)
 local dispatch, files = require("dispatch"), require("files")
 local path
 for _, o in ipairs(FindAllOf("SpellMiniGameBase") or {}) do
@@ -16,7 +19,11 @@ local seen_segments = {}
 dispatch.every(100, function()
     if os.clock() - t0 > 25 then out:close(); return true end
     local w = StaticFindObject(path)
-    if not w or not w:IsValid() then out:write(string.format("%.1f gone\n", os.clock() - t0)); out:flush(); return end
+    local full
+    pcall(function() full = w:GetFullName() end)
+    if not full or full:match("^%S+%s+(.+)$") ~= path or not w:IsValid() then
+        out:write(string.format("%.1f lesson closed\n", os.clock() - t0)); out:close(); return true
+    end
     local s, b = w.PlayerSpark, w.BadSpark
     local line = { string.format("%.1f", os.clock() - t0) }
     line[#line + 1] = "wait " .. tostring(pcall(function() return w:GetIsWaitingForStart() end) and w:GetIsWaitingForStart())
