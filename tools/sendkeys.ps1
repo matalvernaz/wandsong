@@ -1,7 +1,8 @@
-# Dev helper: focus Hogwarts Legacy and send keys as real input events.
+﻿# Dev helper: focus Hogwarts Legacy and send keys as real input events.
 # Usage: sendkeys.ps1 -Keys "ctrl+rbr","bslash" [-DelayMs 700]
 # Key names: num0-num9, space, esc, enter, up/down/left/right, f, r, lbr ([), rbr (]),
-# bslash (\), quote ('), semi (;), minus, equals; prefix ctrl+ or shift+.
+# bslash (\), quote ('), semi (;), minus, equals, pageup/pagedown/home/end, grave (`), comma, period,
+# slash, f1-f12; prefix ctrl+ or shift+. Suffix @ms holds the key that long ("space@2500").
 param([string[]]$Keys, [int]$DelayMs = 700)
 
 Add-Type @'
@@ -24,8 +25,11 @@ $map = @{
     'num6'=0x66; 'num7'=0x67; 'num8'=0x68; 'num9'=0x69; 'space'=0x20; 'esc'=0x1B
     'lbr'=0xDB; 'rbr'=0xDD; 'bslash'=0xDC; 'quote'=0xDE; 'semi'=0xBA; 'minus'=0xBD; 'equals'=0xBB
     'up'=0x26; 'down'=0x28; 'left'=0x25; 'right'=0x27; 'enter'=0x0D; 'f'=0x46; 'r'=0x52; 'f9'=0x78; 'f11'=0x7A; 'q'=0x51; 'e'=0x45
+    'pageup'=0x21; 'pagedown'=0x22; 'end'=0x23; 'home'=0x24; 'insert'=0x2D; 'delete'=0x2E; 'tab'=0x09
+    'grave'=0xC0; 'comma'=0xBC; 'period'=0xBE; 'slash'=0xBF
+    'f1'=0x70; 'f2'=0x71; 'f3'=0x72; 'f4'=0x73; 'f5'=0x74; 'f6'=0x75; 'f7'=0x76; 'f8'=0x77; 'f10'=0x79; 'f12'=0x7B
 }
-$extended = @('up','down','left','right','numenter')
+$extended = @('up','down','left','right','numenter','pageup','pagedown','end','home','insert','delete')
 
 $p = Get-Process HogwartsLegacy -ErrorAction SilentlyContinue | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
 if (-not $p) { Write-Output "Hogwarts Legacy is not running; no keys sent."; exit 1 }
@@ -52,6 +56,8 @@ foreach ($k in $Keys) {
     $ctrl = $k -match '(^|\+)ctrl\+'
     $shift = $k -match '(^|\+)shift\+'
     $name = $k -replace '^((ctrl|shift)\+)+',''
+    $hold = 200   # UE4SS polls key state; 90 ms taps were missed
+    if ($name -match '^(.+)@(\d+)$') { $name = $matches[1]; $hold = [int]$matches[2] }
     if ($name -eq 'numenter') { $vk = 0x0D }
     elseif ($name -eq 'backspace') { $vk = 0x08 }
     elseif ($name -match '^[a-z0-9]$') { $vk = [int][char]$name.ToUpper() }
@@ -59,7 +65,7 @@ foreach ($k in $Keys) {
     if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
     if ($shift) { [HaKeys]::Key(0x10, $false, $false) }
     [HaKeys]::Key($vk, $extended -contains $name, $false)
-    Start-Sleep -Milliseconds 90
+    Start-Sleep -Milliseconds $hold
     [HaKeys]::Key($vk, $extended -contains $name, $true)
     if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
     if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }

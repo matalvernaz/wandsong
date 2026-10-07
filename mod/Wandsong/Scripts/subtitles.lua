@@ -46,8 +46,13 @@ local function similarity(a, b, strict)
     if na == 0 or nb == 0 then return 0 end
     local common = 0
     for w in pairs(sa) do if sb[w] then common = common + 1 end end
-    -- Short lines ("Wait!") would be "contained" in almost anything: compare them whole.
-    return common / ((strict or math.min(na, nb) < 4) and math.max(na, nb) or math.min(na, nb))
+    local lo, hi = math.min(na, nb), math.max(na, nb)
+    if strict == "contain" then return common / lo end
+    -- Short lines would be "contained" in almost anything ("It can't be." in a long Ranrok line
+    -- fired his description in the wrong scene): compare them whole. Long ones may be contained,
+    -- but must still share a fair part of the longer line.
+    if strict or lo < 6 or common / hi < 0.3 then return common / hi end
+    return common / lo
 end
 
 -- The game's line without its markup and speaker name:
@@ -62,14 +67,21 @@ for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(
 -- Deduplicate delivery of a line, not the description for the lifetime of the process.
 -- Replaying a scene must be describable without restarting the game.
 
--- Short trigger lines ("Ah.", "Accio.") also need the line before them to match (prev).
-local last_text = ""
+-- Short trigger lines ("Ah.", "Accio.") also need a line shortly before them to match (prev).
+-- Several back, not one: the game interleaves lines the recording's transcript didn't have.
+local before = {}   -- the last few spoken lines, newest last
+local function after_prev(prev)
+    for i = math.max(1, #before - 2), #before do
+        if similarity(before[i], prev, "contain") >= 0.5 then return true end
+    end
+    return false
+end
 local function match(text)
     local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
         if d.after then
             local s = similarity(text, d.after)
-            if s > best_s and (not d.prev or similarity(last_text, d.prev) >= 0.5) then best, best_s = i, s end
+            if s > best_s and (not d.prev or after_prev(d.prev)) then best, best_s = i, s end
         end
     end
     return best, best_s
@@ -114,12 +126,12 @@ local function on_line(e)
         pcall(function() require("world").name_actor(e.speaker, (shown:gsub(":%s*$", ""))) end)
     end
     e.text = plain(e.text)
-    local prev_text = last_text
-    last_text = e.text
-    if not describe or #DESCRIPTIONS == 0 then return end
-    last_text = prev_text
-    local i, s = match(e.text)
-    last_text = e.text
+    -- Sound-only lines ("(snoring)") are neither triggers nor the line before one.
+    if e.text:match("^%s*%(.*%)%s*$") then return end
+    local i, s
+    if describe and #DESCRIPTIONS > 0 then i, s = match(e.text) end
+    before[#before + 1] = e.text
+    if #before > 3 then table.remove(before, 1) end
     if not i then return end
     local d = DESCRIPTIONS[i]
     local items = d.items or { { delay = d.delay, text = d.text } }
@@ -176,12 +188,12 @@ dispatch.every(100, function()
     if skip_requested then
         skip_requested = false
         cancel_descriptions()
-        pending, recent, last_text = {}, {}, ""
+        pending, recent, before = {}, {}, {}
     end
     if generation ~= state.generation or (scene ~= state.scene and not state.cinematic) or state.loading() then
         generation, scene = state.generation, state.scene
         cancel_descriptions()
-        recent, last_text = {}, ""
+        recent, before = {}, {}
         if state.loading() then pending = {}; return end
     elseif scene ~= state.scene then
         -- The subtitle can arrive just before the gate observes cinematic mode.
