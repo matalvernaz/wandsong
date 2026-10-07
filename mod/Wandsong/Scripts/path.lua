@@ -733,6 +733,9 @@ end
 -- the tracked one's index through an out parameter.
 local mm_path
 local last_quest_line = nil
+-- Logs each distinct failure once per session (the objective watch asks every 4 s).
+local logged_once = {}
+local function once_log(s) if not logged_once[s] then logged_once[s] = true; log(s) end end
 local function objective_text()
     local mm
     if mm_path then pcall(function() mm = StaticFindObject(mm_path) end) end
@@ -744,10 +747,13 @@ local function objective_text()
             end
         end)
     end
-    if not mm then return nil end
+    if not mm then once_log("quest text: no MissionManager found") return nil end
     local out, arr = {}, nil
     local ok = dispatch.call_out(function() arr = mm:GetMissionLogDataBP(out) end, out)
-    if not ok or not arr then return nil end
+    if not ok or not arr then
+        once_log("quest text: GetMissionLogDataBP " .. (ok and "returned nothing" or "failed") .. " on " .. tostring(mm_path))
+        return nil
+    end
     local text
     pcall(function()
         local idx = out.OutTrackedMissionIndex
