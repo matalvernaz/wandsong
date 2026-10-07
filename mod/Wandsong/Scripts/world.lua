@@ -165,7 +165,7 @@ local function gate_check()
         if in_game or pawn_path then log("loading: pausing the world layer") end
         close_gate("loading")
         clear_world(true)
-        pawn_path = nil
+        pawn_path, world_key = nil, nil
         return
     end
     -- Ask the long-lived UI manager first; only look at the player once it says "playing".
@@ -216,6 +216,7 @@ local function gate_check()
         if world_key then
             log("player object changed: dropping cached objects")
             state.generation = state.generation + 1
+            close_gate("player object changed")
         end
         clear_world(world_key ~= nil)
         world_key = key

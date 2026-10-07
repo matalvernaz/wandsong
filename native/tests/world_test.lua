@@ -44,4 +44,11 @@ t.run(1)
 assert(require("state").cinematic and not world.in_game(),"cutscene suppresses world")
 pawn.InCinematic=false; t.run(6)
 assert(world.in_game(),"gameplay resumes after cutscene")
+local generation=require("state").generation
+pawn.GetAddress=function() return "replacement player" end
+t.run(0.5)
+assert(not world.in_game() and require("state").generation==generation+1,
+    "an unexpected player replacement also settles before scanning")
+t.run(6)
+assert(world.in_game(),"replacement player settles")
 print("world test passed")
