@@ -18,7 +18,10 @@ local PIPE = [[\\.\pipe\wandsong]]
 local RETRY_SECONDS = 1.0
 local MAX_PENDING = 20
 local HISTORY_SIZE = 30
-local REFRESH_MS = 5000   -- re-pick the best screen reader this often (one started mid-game)
+-- Re-pick the best screen reader this often (one started mid-game). Never during a load: the
+-- probe touches every speech backend, SAPI's COM objects included, and the game died in
+-- combase.dll during a load right after one (Oct 7, 09:34; cause unproven).
+local REFRESH_MS = 30000
 
 local native = nil        -- prism_bridge module when loaded
 local pipe = nil
@@ -165,7 +168,7 @@ function M.start()
             local before = native.detect and native.detect()
             local after = native.refresh and native.refresh()
             if after and after ~= before then log("speech: now speaking through " .. after) end
-        end, "speech refresh", true)
+        end, "speech refresh")
         return
     end
     log("speech: Prism bridge unavailable (" .. tostring(mod) .. "), using the helper program")
