@@ -15,10 +15,7 @@ public class HaKeys {
  [StructLayout(LayoutKind.Sequential)] public struct KI { public ushort vk, scan; public uint flags, time; public UIntPtr extra; public long padA; }
  [StructLayout(LayoutKind.Sequential)] public struct IN { public uint type; public uint pad; public KI ki; }
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, IN[] i, int size);
- [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
- [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
- [DllImport("user32.dll")] public static extern void keybd_event(byte v,byte s,uint f,UIntPtr e);
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int v);
  // Virtual key plus its scan code, like a real keyboard driver reports. Scan-code-only
@@ -50,27 +47,15 @@ if (-not $p) { Write-Output "Hogwarts Legacy is not running; no keys sent."; exi
 $hwnd = $p.MainWindowHandle
 if ($hwnd -eq [IntPtr]::Zero) { Write-Output "Hogwarts Legacy has no game window yet; no keys sent."; exit 1 }
 
-# Other windows (like the Claude app) can grab focus back at any moment, so (re)focus the
-# game and confirm it before every key.
-function Focus-Game {
-    for ($i = 0; $i -lt 20; $i++) {
-        if ([HaKeys]::GetForegroundWindow() -eq $hwnd) {
-            # The Alt tap that steals focus can leave Alt looking held, and the game ignores
-            # the first key after regaining focus: release Alt, then spend that key on unused F15.
-            if ($i -gt 0) { [HaKeys]::Key(0x12, $false, $true); Start-Sleep -Milliseconds 500; [HaKeys]::Key(0x7E, $false, $false); Start-Sleep -Milliseconds 150; [HaKeys]::Key(0x7E, $false, $true); Start-Sleep -Milliseconds 500 }
-            return $true
-        }
-        [HaKeys]::keybd_event(0x12,0,0,[UIntPtr]::Zero)
-        [void][HaKeys]::SetForegroundWindow($hwnd)
-        [HaKeys]::keybd_event(0x12,0,2,[UIntPtr]::Zero)
-        Start-Sleep -Milliseconds 100
-    }
-    return $false
-}
+# Never take focus: the game must already be the window in front. The old way (an Alt tap
+# plus SetForegroundWindow, in a loop) sent those Alt taps into whatever was in front when
+# Windows refused the switch, and after crashes that was the desktop: NVDA read out desktop
+# icons and menus to Matt (Oct 7). If the game isn't in front, nothing is sent at all.
+function Game-In-Front { return [HaKeys]::GetForegroundWindow() -eq $hwnd }
 
 foreach ($k in $Keys) {
     # Never type into another window: if the game isn't (or stops being) in front, abort.
-    if (-not (Focus-Game)) { Write-Output "ABORT: Hogwarts Legacy lost focus before $k"; exit 2 }
+    if (-not (Game-In-Front)) { Write-Output "ABORT: Hogwarts Legacy is not the window in front; switch to it and run again. Nothing was sent."; exit 2 }
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"

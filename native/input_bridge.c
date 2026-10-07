@@ -29,12 +29,16 @@ static int l_focused(lua_State *L) {
     return 1;
 }
 
+/* Keys this module is holding down. A release is only ever sent for one of these, so
+   nothing stray reaches another window; a press needs the game in front. */
+static unsigned char g_held[256];
+
 static int l_key(lua_State *L) {
     UINT vk = (UINT)luaL_checkinteger(L, 1);
     int down = lua_toboolean(L, 2);
     if (vk == 0 || vk > 255) { lua_pushboolean(L, 0); return 1; }
-    /* A release is always allowed (never leave a key stuck); a press needs focus. */
     if (down && !game_focused()) { lua_pushboolean(L, 0); return 1; }
+    if (!down && !g_held[vk]) { lua_pushboolean(L, 1); return 1; }
     INPUT in;
     ZeroMemory(&in, sizeof(in));
     in.type = INPUT_KEYBOARD;
@@ -45,7 +49,9 @@ static int l_key(lua_State *L) {
     /* Remapped arrows and right-hand modifiers use extended scan codes. Without this
        flag an up arrow becomes numpad 8, and right control becomes left control. */
     if ((scan & 0xff00) == 0xe000) in.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
-    lua_pushboolean(L, SendInput(1, &in, sizeof(in)) == 1);
+    if (SendInput(1, &in, sizeof(in)) != 1) { lua_pushboolean(L, 0); return 1; }
+    g_held[vk] = down ? 1 : 0;
+    lua_pushboolean(L, 1);
     return 1;
 }
 
