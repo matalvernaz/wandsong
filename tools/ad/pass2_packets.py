@@ -41,6 +41,30 @@ for p in glob.glob(os.path.join(frames_dir, "span*_*.jpg")):
         frames.setdefault(int(m.group(1)), []).append((float(m.group(2)), os.path.abspath(p)))
 
 
+def thumb(path):
+    from PIL import Image
+    import numpy as np
+    return np.asarray(Image.open(path).convert("L").resize((64, 36)), dtype="float32")
+
+
+def distinct(fr, max_gap=6.0, threshold=6.0):
+    """Drop frames nearly identical to the last kept one (a held shot), but keep one at least
+    every max_gap seconds: a describer gains nothing from five copies of the same picture."""
+    kept, last, last_t = [], None, -1e9
+    for t, p in fr:
+        th = thumb(p)
+        if last is None or abs(th - last).mean() >= threshold or t - last_t >= max_gap:
+            kept.append((t, p))
+            last, last_t = th, t
+    return kept
+
+
+for si in frames:
+    before = len(frames[si])
+    frames[si] = distinct(sorted(frames[si]))
+    print("span %2d: %d of %d frames kept" % (si, len(frames[si]), before))
+
+
 def next_speech_start(after_t, limit):
     nxt = [s for s in speech if s[0] > after_t + 0.2]
     return nxt[0][0] if nxt else limit

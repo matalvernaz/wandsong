@@ -2,7 +2,10 @@ local t = dofile("native/tests/testlib.lua")
 local events={}
 RegisterCustomEvent=function(name,fn) events[name]=fn end
 package.loaded.descriptions={{after="We must hurry, the carriage is waiting.",delay=0.2,text="Fig climbs into the carriage."},
-    {id="Fig_7",after="Wait.",delay=0.2,text="Keyed description."}}
+    {id="Fig_7",after="Wait.",delay=0.2,text="Keyed description."},
+    {id="Fig_20",after="Wait. We do not know what",items={{delay=2,text="A dragon swoops."},{delay=6,text="The carriage breaks apart."},{delay=12,text="You fall."}}},
+    {id="Fig_30",after="Give me your hand!",items={{delay=1,text="Fig grabs your hand."}}},
+    {id="PlayerFemale_500",after="What's that glow?",items={{delay=0.5,text="You point."}}}}
 local said={}
 require("speech").say=function(s) said[#said+1]=s end
 local keys=require("keys")
@@ -48,5 +51,26 @@ line("Wait.",0.3,"Other_1"); t.run(1)
 assert(#said==n0,"a keyed description ignores other lines with the same text")
 line("Something the transcript misheard.",0.3,"Fig_7"); t.run(1)
 assert(said[#said]=="Keyed description.","a keyed description fires on its line ID whatever the text")
+
+-- Oct 6: an interjection in a silence ("Nor do I.", "Hang on!") cancelled every description
+-- still waiting, so the whole dragon attack went undescribed. Now it only holds back the ones
+-- it would talk over.
+t.run(3); n0=#said
+line("Wait. We do not know what -",1,"Fig_20")          -- items due 3, 7 and 13 s from now
+t.run(2.5); line("Hang on!",1,"Fig_21")                -- spoken 2.5-3.5 s: the 3 s item waits
+t.run(0.8); assert(#said==n0,"a description never talks over a line")
+t.run(0.6); assert(said[#said]=="A dragon swoops.","the held description follows the interjection")
+t.run(4); assert(said[#said]=="The carriage breaks apart.","later descriptions keep their moment")
+-- A new trigger's descriptions replace older ones that would fall after its first.
+line("Give me your hand!",1,"Fig_30"); t.run(2.5)
+assert(said[#said]=="Fig grabs your hand.","the newer scene's description plays")
+t.run(8); assert(said[#said]=="Fig grabs your hand.","the older line's later description is dropped, not spoken out of order")
+-- A line that starts while the previous one should still be playing was skipped to.
+t.run(2); n0=#said
+line("Wait. We do not know what -",3,"Fig_20"); t.run(1); line("Next line.",1,"Fig_22"); t.run(15)
+assert(#said==n0,"skipping a line drops its silence's descriptions")
+-- Player lines are keyed without the voice: PlayerMale_500 is the same line as PlayerFemale_500.
+line("What's that glow?",1,"PlayerMale_500"); t.run(2)
+assert(said[#said]=="You point.","a player line fires for either voice")
 assert(not next(t.hooks),"custom subtitle event needs no repeated RegisterHook attempts")
 print("subtitles test passed")

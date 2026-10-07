@@ -4,9 +4,11 @@ reads, in story order (key_lines.py aligns descriptions to the game's lines mono
     python -I merge_pass2.py <work dir> <pass2 dir> <out desc dir> <out batches dir>
 
 Second-pass files (<pass2 dir>/span<NN>_<k>.json) hold {"items": [{"line": <transcript index>,
-"delay": seconds after that line ends, "text": "..."}]}. Every first-pass slot (desc2/batches2)
-is kept; a new item joins the slot triggered by the same transcript line, else starts a new
-slot. An item that mostly repeats a description already on that line is dropped.
+"delay": seconds after that line ends, "text": "...", "replaces": "<first-pass text>"?}]}. Every
+first-pass slot (desc2/batches2) is kept; a new item joins the slot triggered by the same
+transcript line, else starts a new slot. An item with "replaces" swaps out that first-pass
+description (a vaguer or wrong one); other items that mostly repeat a description already on
+that line are dropped.
 """
 import glob
 import json
@@ -53,13 +55,24 @@ by_slot_id = {}
 for f in glob.glob(os.path.join(work, "desc2", "batch_*.json")):
     for s in json.load(open(f, encoding="utf-8")):
         by_slot_id[s["slot"]] = s
-for li, b in batches.items():
+batch_list = []
+for f in glob.glob(os.path.join(work, "batches2", "batch_*.json")):
+    batch_list.extend(json.load(open(f, encoding="utf-8")))
+for b in sorted(batch_list, key=lambda b: b["t0"]):
+    li = line_index_before(b["t0"]) if b.get("after") else None
     s = by_slot_id.get(b["id"])
-    if s:
-        items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
+    if li is None or not s:
+        continue
+    items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
+    if li in slots:
+        # Two silences after the same line (a pause inside it): keep both, timed from the first.
+        shift = b["t0"] - slots[li]["t0"]
+        for i in items:
+            slots[li]["items"].append({"offset": round(float(i["offset"]) + shift, 1), "text": i["text"]})
+    else:
         slots[li] = {"after": s.get("after") or b.get("after"), "items": items, "t0": b["t0"], "span": b.get("span")}
 
-added, dropped = 0, 0
+added, dropped, replaced = 0, 0, 0
 for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):
     data = json.load(open(f, encoding="utf-8"))
     for it in data.get("items", []):
@@ -76,6 +89,12 @@ for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):
             batches[li] = {"id": None, "t0": end, "t1": nxt[0][0] if nxt else end + 10,
                            "after": tr[li]["text"],
                            "context_before": [x["text"] for x in tr[max(0, li - 2):li + 1]]}
+        old = (it.get("replaces") or "").strip()
+        if old:
+            match = [i for i in slot["items"] if i["text"].strip() == old]
+            if match:
+                slot["items"].remove(match[0])
+                replaced += 1
         if repeats(text, [i["text"] for i in slot["items"]]):
             dropped += 1
             continue
@@ -87,7 +106,7 @@ out_s, out_b = [], []
 for new_id, li in enumerate(order):
     s, b = slots[li], batches[li]
     s["items"].sort(key=lambda i: i["offset"])
-    out_s.append({"slot": new_id, "after": s["after"], "items": s["items"]})
+    out_s.append({"slot": new_id, "line": li, "after": s["after"], "items": s["items"]})
     bb = dict(b)
     bb["id"] = new_id
     bb.setdefault("context_before", [x["text"] for x in tr[max(0, li - 2):li + 1]])
@@ -98,5 +117,5 @@ for old in glob.glob(os.path.join(out_desc, "batch_*.json")) + glob.glob(os.path
     os.remove(old)
 json.dump(out_s, open(os.path.join(out_desc, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 json.dump(out_b, open(os.path.join(out_batches, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-print("%d slots, %d second-pass descriptions added, %d dropped as repeats, %d descriptions in all"
-      % (len(out_s), added, dropped, sum(len(s["items"]) for s in out_s)))
+print("%d slots, %d second-pass descriptions added (%d replacing first-pass ones), %d dropped as repeats, "
+      "%d descriptions in all" % (len(out_s), added, replaced, dropped, sum(len(s["items"]) for s in out_s)))

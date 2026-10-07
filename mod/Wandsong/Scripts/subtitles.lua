@@ -76,16 +76,24 @@ local function after_prev(prev)
     end
     return false
 end
+-- The player's own lines carry the chosen voice in their ID (PlayerFemale_32116): compare them
+-- without it, so a description keyed in one playthrough fires for either voice.
+local function same_line(a, b)
+    if a == b then return true end
+    local pa, pb = a:match("^Player%a*(_.*)$"), b:match("^Player%a*(_.*)$")
+    return pa ~= nil and pa == pb
+end
 local function match(text, id)
-    -- Keyed to the game's own line ID (tools/ad/key_lines.py): exact, nothing else can fire it.
+    -- Keyed to the game's own line ID (tools/ad/build_keyed.py): exact, nothing else can fire it.
     if id then
         for i, d in ipairs(DESCRIPTIONS) do
-            if d.id == id then return i, 1 end
+            if d.id and same_line(d.id, id) then return i, 1 end
         end
     end
     local best, best_s = nil, 0.7
     for i, d in ipairs(DESCRIPTIONS) do
-        if d.after and not d.id then
+        -- Player lines may also differ by voice number: they keep the text match as a fallback.
+        if d.after and (not d.id or d.id:find("^Player")) then
             local s = similarity(text, d.after)
             if s > best_s and (not d.prev or after_prev(d.prev)) then best, best_s = i, s end
         end
@@ -106,6 +114,9 @@ end
 
 local recent = {}
 local skip_requested = false
+local line_ends = -1       -- when the last line was due to finish
+-- A description held back by lines spoken over its moment is dropped once it is this late.
+local MAX_LATE = 8
 local binding = require("bindings")
 local skip_vk = binding.virtual_key(binding.key("UMGSkipCinematicOrConversation", "Delete"))
 keys.observe(function(_, key)
@@ -120,8 +131,22 @@ local function on_line(e)
     if recent[key] and now < recent[key] then return end
     recent[key] = now + math.max(1, e.dur or 0)
     for k, until_t in pairs(recent) do if until_t < now then recent[k] = nil end end
-    -- A new spoken line means the previous gap is over, including a skipped line.
-    cancel_descriptions()
+    -- A line that starts while the last one should still be playing cut it short (a skip): the
+    -- silence its descriptions were written for never comes. A line spoken in a silence (an
+    -- interjection the recording's transcript missed, "Hang on!") only holds back descriptions
+    -- that would talk over it; later ones keep their moment (Oct 6: "Nor do I." dropped two).
+    local cut_short = now < line_ends - 0.5
+    line_ends = now + (e.dur or 0)
+    if cut_short then
+        cancel_descriptions()
+    else
+        local keep = {}
+        for _, item in ipairs(scheduled) do
+            if item.due < line_ends + 0.3 then item.due = line_ends + 0.3 end
+            if item.due - item.planned <= MAX_LATE then keep[#keep + 1] = item end
+        end
+        scheduled = keep
+    end
     log(string.format("line %s [%s] %.1fs: %s", e.id or "?", e.voice or "?", e.dur or 0, e.text or ""))
     if not e.text or e.text == "" then return end
     -- Read aloud, but not sound-only lines like "(effort sound)" or "(pained cry)".
@@ -141,11 +166,26 @@ local function on_line(e)
     if not i then return end
     local d = DESCRIPTIONS[i]
     local items = d.items or { { delay = d.delay, text = d.text } }
+    -- This line starts its own descriptions: ones still waiting from an earlier line that fall
+    -- after its first would describe the same moments twice, out of order.
+    local first
+    for _, it in ipairs(items) do
+        if it.text and it.text ~= "" then
+            local due = now + math.max(0, (e.dur or 0) + (it.delay or 0.3))
+            first = first and math.min(first, due) or due
+        end
+    end
+    if first then
+        local keep = {}
+        for _, item in ipairs(scheduled) do if item.due < first then keep[#keep + 1] = item end end
+        scheduled = keep
+    end
     for _, it in ipairs(items) do
         if it.text and it.text ~= "" then
             local wait = (e.dur or 0) + (it.delay or 0.3)
             log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, it.text))
-            scheduled[#scheduled + 1] = { due = now + math.max(0, wait), text = it.text,
+            local due = now + math.max(0, wait)
+            scheduled[#scheduled + 1] = { due = due, planned = due, text = it.text,
                 serial = serial, generation = generation, scene = scene }
         end
     end
@@ -208,7 +248,8 @@ dispatch.every(100, function()
         for _, item in ipairs(scheduled) do item.scene = scene end
     end
     if state.paused then
-        for _, item in ipairs(scheduled) do item.due = item.due + elapsed end
+        for _, item in ipairs(scheduled) do item.due = item.due + elapsed; item.planned = item.planned + elapsed end
+        line_ends = line_ends + elapsed
         return
     end
     local batch = pending
