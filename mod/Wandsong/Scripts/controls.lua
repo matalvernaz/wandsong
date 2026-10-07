@@ -318,7 +318,9 @@ local function fix_screen_reader_keys()
         end, "screen reader key notice", true)
     end
 end
-pcall(fix_screen_reader_keys)
+-- Only inside the game: offline tests load this file too, and must never touch the player's
+-- real settings (the UE4SS global exists only under UE4SS).
+if type(UE4SS) == "table" or type(UE4SS) == "userdata" then pcall(fix_screen_reader_keys) end
 
 --- Items for the review screen, grouped, with a press handler on each.
 function M.items()
