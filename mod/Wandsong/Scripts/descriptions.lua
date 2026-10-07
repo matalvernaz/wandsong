@@ -77,7 +77,7 @@ return {
     { after = "Get to yourself!", prev = "Close now, it's just ahead.", items = {
         { delay = 0.9, text = "Ahead, crumbling ruins crown a sea stack, reached by a stone causeway." },
     } },
-    { after = "Hello?", prev = "I don't believe it.", items = {
+    { id = "PlayerFemale_34184", after = "Hello?", prev = "I don't believe it.", items = {
         { delay = 0.9, text = "Now you stand in a vast marble hall." },
     } },
     { after = "Just a moment.", prev = "Hello?", items = {
@@ -88,7 +88,7 @@ return {
         { delay = 20.9, text = "He peers down at you over the book, long nails curled on its edge." },
         { delay = 25.9, text = "Fig gazes up at him, unimpressed." },
     } },
-    { after = "Just a moment.", prev = "Just a moment.", items = {
+    { id = "PrivateGoblinBanker_10049", after = "Just a moment.", prev = "Just a moment.", items = {
         { delay = 0.9, text = "The goblin ducks down behind the counter." },
         { delay = 5.9, text = "Fig waits beside you, frowning slightly." },
         { delay = 10.9, text = "The goblin, in a green waistcoat, waddles out to you." },
@@ -96,42 +96,42 @@ return {
     { after = "Gringotts Wizarding Bank.", prev = "Gringotts Wizarding Bank.", items = {
         { delay = 0.9, text = "He bows, then straightens." },
     } },
-    { after = "Vault number 12, I presume.", items = {
+    { id = "PrivateGoblinBanker_10050", after = "Vault number 12, I presume.", items = {
         { delay = 0.9, text = "The goblin rubs his hands together, smiling at you expectantly." },
     } },
-    { after = "The key?", prev = "The key?", items = {
+    { id = "PrivateGoblinBanker_10022", after = "The key?", prev = "The key?", items = {
         { delay = 0.9, text = "He holds out his hand." },
     } },
-    { after = "Oh, yes, of course.", items = {
+    { id = "EleazarFig_12944", after = "Oh, yes, of course.", items = {
         { delay = 0.9, text = "Fig hands the key to the goblin banker." },
     } },
-    { after = "After you.", prev = "This way, then.", items = {
+    { id = "PrivateGoblinBanker_10025", after = "After you.", prev = "This way, then.", items = {
         { delay = 0.9, text = "The goblin banker hops down from his tall desk and leads the way." },
         { delay = 5.9, text = "You and Fig follow him into a dark cavern." },
         { delay = 10.9, text = "Overhead, a lamp glows at the top of a round stone shaft." },
     } },
-    { after = "If you don't wish to lose them.", items = {
+    { id = "PrivateGoblinBanker_10026", after = "If you don't wish to lose them.", items = {
         { delay = 0.9, text = "On a dim platform beside the tracks, the banker waves you and Fig ahead." },
         { delay = 5.9, text = "A cart with a great glowing headlamp waits beneath a crystal chandelier." },
     } },
-    { after = "I want to take a breath.", items = {
+    { id = "PrivateGoblinBanker_10058", after = "I want to take a breath.", items = {
         { delay = 0.9, text = "The cart plunges down a sheer cavern." },
     } },
-    { after = "A what?", prev = "I want to take a breath.", items = {
+    { id = "EleazarFig_12994", after = "A what?", prev = "I want to take a breath.", items = {
         { delay = 0.9, text = "It races toward falling water." },
     } },
-    { after = "We have quite a distance to go.", items = {
+    { id = "PrivateGoblinBanker_10062", after = "We have quite a distance to go.", items = {
         { delay = 0.9, text = "Water streams over the cart as it drops past a hanging lamp." },
         { delay = 5.9, text = "Ahead, the track runs past a lamp-lit platform at a cave mouth." },
         { delay = 10.9, text = "A uniformed goblin guard stops the cart." },
     } },
-    { after = "Vault number?", prev = "We have quite a distance to go.", items = {
+    { id = "GringottsGoblinGuard_10003", after = "Vault number?", prev = "We have quite a distance to go.", items = {
         { delay = 0.9, text = "The banker leans forward, grinning." },
     } },
     { after = "On your way.", prev = "Momentous day.", items = {
         { delay = 0.9, text = "The guard glares, a red band on his sleeve." },
     } },
-    { after = "On your way.", prev = "On your way.", items = {
+    { id = "GringottsGoblinGuard_10004", after = "On your way.", prev = "On your way.", items = {
         { delay = 0.9, text = "The guard waves the cart on." },
         { delay = 5.9, text = "The cart rolls away, the banker at the controls beside you." },
         { delay = 10.9, text = "You glance back." },
@@ -145,14 +145,14 @@ return {
         { delay = 0.9, text = "The cart climbs a winding track across a vast, dim cavern." },
         { delay = 5.9, text = "It glides toward a lamp-lit platform before a glowing round door." },
     } },
-    { after = "Here we are.", prev = "Rare anyone goes there anymore.", items = {
+    { id = "PrivateGoblinBanker_10042", after = "Here we are.", prev = "Rare anyone goes there anymore.", items = {
         { delay = 0.9, text = "The cart halts at the platform. Fig looks toward the door." },
     } },
     { after = "Vault 12.", prev = "Until today.", items = {
         { delay = 0.9, text = "The banker walks up to a tall, ornate bronze vault door." },
         { delay = 5.9, text = "He traces a finger down its surface." },
     } },
-    { after = "Thank you for your help.", items = {
+    { id = "EleazarFig_12768", after = "Thank you for your help.", items = {
         { delay = 0.9, text = "The door stands open on a candlelit room. Fig steps inside past the banker." },
     } },
     { after = "Wait.", prev = "The instructions for Vault 12 indicate that I am to grant access to the holder of the key and then close the door.", items = {
