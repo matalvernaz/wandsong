@@ -40,13 +40,18 @@ $fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite')
 [void]$fs.Seek(0, 'End')
 $reader = New-Object IO.StreamReader($fs)
 
+$heldNote = Join-Path $env:TEMP 'wandsong_keys_held_reflex.txt'
 function Press([int]$vk, [string]$why) {
     if ([HaReflex]::GetForegroundWindow() -ne $hwnd) { Write-Output "$(Get-Date -Format HH:mm:ss.fff) skipped ($why): the game isn't in front"; return }
     if ($Post) {
         # Straight to the game's window (see sendkeys.ps1 -Post).
         [HaReflex]::Post($hwnd, [uint32]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Post($hwnd, [uint32]$vk, $true)
     } else {
+        # Noted while down: if this helper is stopped mid-press, sendkeys.ps1 releases it later
+        # (a key left down makes the mod read every later key as a chord: its keys go dead).
+        Set-Content -Path $heldNote -Value $vk
         [HaReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Key([uint16]$vk, $true)
+        Remove-Item $heldNote -ErrorAction SilentlyContinue
         # Injected keys count as input: sendkeys.ps1 tells them from someone using the PC by this.
         Set-Content -Path (Join-Path $env:TEMP 'wandsong_keys_sent.txt') -Value ([HaReflex]::GetTickCount())
     }

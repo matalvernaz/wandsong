@@ -93,11 +93,35 @@ function Others-Active {
     return ($last -gt [int64]$sent + 300) -and ($idle -ge 0) -and ($idle -lt $IdleSeconds * 1000)
 }
 
+# A key left down (a helper stopped between a key's press and its release) makes the mod read
+# every later key as a chord with it, so all its keys go dead: Oct 8, a stopped attack loop left
+# forward slash down, and F7 did nothing until it was released. The tools note each key they
+# hold in %TEMP% until it's released; one still noted (and still down) was left behind. Only
+# those are released: the mod's own autowalk holds keys too.
+$heldFile = Join-Path $env:TEMP 'wandsong_keys_held.txt'
+function Note-Held([int[]]$vks) { Set-Content -Path $heldFile -Value ($vks -join ' ') }
+function Release-Stuck {
+    # This tool's note, and reflex.ps1's (wandsong_keys_held_reflex.txt).
+    foreach ($f in Get-ChildItem (Join-Path $env:TEMP 'wandsong_keys_held*.txt') -ErrorAction SilentlyContinue) {
+        $t = Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue
+        foreach ($v in ("$t".Trim() -split '\s+')) {
+            $vk = 0
+            if ([int]::TryParse($v, [ref]$vk) -and ([HaKeys]::GetAsyncKeyState($vk) -band 0x8000)) {
+                [HaKeys]::Key([uint16]$vk, $false, $true)
+                Write-Output ("Released a key a stopped helper left down (virtual key 0x{0:X2})." -f $vk)
+            }
+        }
+        Remove-Item $f.FullName -ErrorAction SilentlyContinue
+    }
+}
+
+$checked = $false
 foreach ($k in $Keys) {
     # Never type into another window: if the game isn't (or stops being) in front, abort.
     if (-not (Game-In-Front)) { Write-Output "ABORT: Hogwarts Legacy is not the window in front; switch to it and run again. Nothing was sent."; exit 2 }
     # Never play over someone using the PC, the game included.
     if (Others-Active) { Write-Output "ABORT: someone used the PC in the last $IdleSeconds s; no more keys sent."; exit 3 }
+    if (-not $checked) { $checked = $true; Release-Stuck }
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"
@@ -139,6 +163,10 @@ foreach ($k in $Keys) {
         continue
     }
     $lostFocus = $false
+    $holding = @($vk)
+    if ($shift) { $holding += 0x10 }
+    if ($ctrl) { $holding += 0x11 }
+    Note-Held $holding
     try {
         if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
         if ($shift) { [HaKeys]::Key(0x10, $false, $false) }
@@ -153,6 +181,7 @@ foreach ($k in $Keys) {
         if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
         if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }
         Mark-Sent
+        Remove-Item $heldFile -ErrorAction SilentlyContinue
     }
     if ($lostFocus) { Write-Output "ABORT: Hogwarts Legacy lost focus while holding $k; keys released."; exit 2 }
     Start-Sleep -Milliseconds $DelayMs
