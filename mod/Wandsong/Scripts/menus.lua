@@ -167,6 +167,11 @@ local function rewrite(text)
     -- A spell's icon reads as its name, right before the name itself: "cast Revelio Revelio",
     -- "extinguish Lumos Lumos".
     text = text:gsub("(%f[%a]%u%a+) %1%f[%A]", "%1")
+    -- The game's key names inside its texts, as words: "Press LeftShift to sprint." (Oct 8).
+    local b = require("bindings")
+    text = text:gsub("%f[%w](%u%l+%u%l+%u?%l*)%f[%W]", function(w)
+        if b.KEY_NAMES[w] then return b.spoken_key(w) end
+    end)
     for _, r in ipairs(REWRITES) do
         local a, b = text:find(r[1])
         if a then text = text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end

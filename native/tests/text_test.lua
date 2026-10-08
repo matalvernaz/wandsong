@@ -40,6 +40,9 @@ assert(objectives:lower():find("press v, the game's objectives key", 1, true) an
 eq(t.rewrite("Tap 1 to cast or extinguish Lumos Lumos."), "Tap 1 to cast or extinguish Lumos.")
 eq(t.rewrite(t.clean('Hold Q during Protego to stun enemies with a Stupefy <img src="TUT_Stupefy"/> counter-attack.')),
    "Hold Q during Protego to stun enemies with a Stupefy counter-attack.")
+eq(t.rewrite("Press LeftShift to sprint."), "Press left shift to sprint.")
+eq(t.rewrite("Hold LeftMouseButton, then SpaceBar."), "Hold left mouse button, then space.")
+eq(t.rewrite("Professor McGonagall and Professor Weasley."), "Professor McGonagall and Professor Weasley.")
 eq(t.rewrite("Hold still, then hold the line."), "Hold still, then hold the line.")
 assert(t.rewrite("Steady your wand with Mouse and guide it along the symbol's path to learn the spell. Press the corresponding input when prompted to accelerate your wand's motion along the symbol's path."):find("^Spell lesson"),
     "the spell lesson's mouse instructions are said in the mod's terms")

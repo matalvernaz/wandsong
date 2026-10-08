@@ -51,6 +51,14 @@ function M.spoken(id, default)
     local k = M.key(id, default)
     return k and (SPOKEN[k] or k:gsub("(%l)(%u)", "%1 %2"):lower()) or "the key assigned in Controls"
 end
+--- Words for one of the game's own key names ("LeftShift" -> "left shift").
+function M.spoken_key(k)
+    return SPOKEN[k] or (k:gsub("(%l)(%u)", "%1 %2"):lower())
+end
+-- The game's key names that turn up whole inside its texts ("Press LeftShift to sprint.").
+M.KEY_NAMES = { LeftShift = true, RightShift = true, LeftControl = true, RightControl = true, LeftAlt = true,
+    RightAlt = true, SpaceBar = true, BackSpace = true, PageUp = true, PageDown = true, CapsLock = true,
+    LeftMouseButton = true, RightMouseButton = true, MiddleMouseButton = true }
 function M.forward()
     for _, b in ipairs(active) do
         if b.id:lower():find("forward", 1, true) and b.scale > 0 and M.virtual_key(b.key) then
