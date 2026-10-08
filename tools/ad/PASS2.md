@@ -59,7 +59,8 @@ spoilers, no guessed motives.
   use: Professor Fig (Eleazar Fig), George Osric, the Goblin Banker, Ranrok, Lodgok, the
   Carriage Driver, Professor Weasley (Matilda Weasley), Headmaster Black (Phineas Nigellus Black),
   Sebastian Sallow, Ominis Gaunt, Natsai Onai (Natty), Professor Ronen, Professor Hecat, Imelda
-  Reyes, Leander Prewett, Samantha Dale, the Sorting Hat, Peeves. Use the full name and title
+  Reyes, Leander Prewett, Samantha Dale, the Sorting Hat, Peeves, the Gringotts Guard, and in the
+  memories Percival Rackham and Charles Rookwood. Use the full name and title
   ("Professor Fig") at the first mention in each scene and wherever the silence has room; the
   short form ("Fig") only where it's tight. Introduce each one briefly at their first
   appearance: build, clothes, one striking feature. Before they are named: "a goblin in a green
