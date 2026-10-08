@@ -213,6 +213,7 @@ local function close_gate(why)
     stable = 0
     if in_game then
         in_game = false
+        state.in_world = false
         fuse_set(false)
         log("gate closed (" .. why .. ")")
         if audio then pcall(audio.stop_all) end
@@ -335,6 +336,7 @@ local function gate_check()
         diag.event("world gate", in_game and "open" or string.format("settling %.1f s", elapsed))
         if not in_game and elapsed >= GATE_SETTLE_SECONDS then
             in_game = true
+            state.in_world = true   -- the dispatcher treats ticks stopping now as a load
             fuse_set(true)
             log("gate open: in gameplay")
             if audio and sounds_on and not speech.is_muted() then audio.play_ui("chime", 0.4) end

@@ -223,7 +223,24 @@ end
 function M.driver_stats()
     return driver, fallback_calls, callback_freed, callback_missed
 end
+-- The game stopped ticking while in play: a level load has begun. "Try Again" after a failed
+-- quest (Oct 8, 15:06) reloads with no loading screen at first, so the world gate stayed open,
+-- the fallback ran world scans inside the load, and the game hung there for good (the end of the
+-- intro crashed the same way at 05:49). Work that touches the world waits for the ticks to come
+-- back; menus and speech, allowed during loads, carry on.
+local STILL_S = 1.5
+local still_in_world = false
 LoopAsync(TICK_MS, function()
+    -- (Only once the game has ticked at all: before that, and in the offline tests, every
+    -- tick is the fallback's.)
+    local still = last_hook > -math.huge and os.clock() - last_hook > STILL_S
+    if still and (still_in_world or state.in_world) then
+        if not still_in_world then diag.trace("no game ticks in play: treated as a load") end
+        still_in_world = true
+        state.mark_loading(2)
+    elseif not still then
+        still_in_world = false
+    end
     if not stall_logged and os.clock() - last_ran > 8 then
         stall_logged = true
         diag.trace("game thread hasn't run the mod for 8 s (frozen, or a long load)")

@@ -77,4 +77,21 @@ state.begin_map_load()
 t.now = t.now + 61; hooks.Tick()
 assert(ran_inside, "a map load that never ends doesn't stop the mod for good")
 state.map_loading_since = nil
+
+-- In play, the game ticking no more is a load beginning ("Try Again" after a failed quest
+-- reloads with no loading screen at first, Oct 8): world work waits for the ticks to come back.
+for _ = 1, 30 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
+state.in_world = true
+local world_ran = 0
+d.every(100, function() world_ran = world_ran + 1 end, "world work")
+for _ = 1, 5 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
+assert(not state.loading() and world_ran > 0, "ticking in play: world work runs")
+for _ = 1, 25 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(state.loading(), "no ticks for 2.5 s in play: a load")
+state.in_world = false                     -- the world gate closes for the load
+world_ran = 0
+for _ = 1, 30 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(state.loading() and world_ran == 0, "still no ticks: still a load, and no world work in it")
+for _ = 1, 30 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
+assert(not state.loading() and world_ran > 0, "ticks back: the load is over and world work resumes")
 print("dispatcher test passed")
