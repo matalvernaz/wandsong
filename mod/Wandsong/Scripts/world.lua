@@ -684,11 +684,12 @@ end
 -- deleted it since it was found. Then UE4SS's IsValid is safe to ask (it reads the object,
 -- which is still there), and says whether it's on its way out. Passes still decide what
 -- exists: a thing its pass doesn't return is dropped, held or not. The character pass is then
--- only for newcomers: every turn (about 1.2 s) while enemies are about or were in the last
--- 10 s, else about every 3 s, or sooner after 5 m of walking.
+-- only for newcomers: every turn (1.2 to 1.4 s) while enemies are about or were in the last
+-- 10 s, else at the first turn 2.5 s after the last pass (so every 2.5 to 3.6 s), or at the
+-- next turn after 5 m of walking.
 local REFRESH_MS = 200
 local REFRESH_MAX = 24          -- the nearest this many are read again each time
-local CALM_PASS_S, FOE_RECENT_S, MOVED_CM = 2.5, 10, 500   -- turns come every 1.2 to 1.4 s
+local CALM_PASS_S, FOE_RECENT_S, MOVED_CM = 2.5, 10, 500
 local life = { refreshed = 0, deleted = 0, invalid = 0, passes = 0, skipped = 0 }
 local lifetime_why = lifetime and "starting" or "off (no lifetime_enabled.txt, or the module is missing)"
 local last_chars_at, last_chars_x, last_chars_y, foe_at = -math.huge, 0, 0, -math.huge

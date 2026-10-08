@@ -208,8 +208,8 @@ int l_stats(lua_State* L) {
     return 1;
 }
 
-// Called the way the engine calls it, through the vtable's second slot, so the offline test
-// also checks the layout.
+// Called the way the engine calls it, through the vtable's second slot: the offline test checks
+// this build's slot order. That it matches UE4SS's layout rests on UE4SS.pdb (see above).
 int l_test_notify(lua_State* L) {
     typedef void (*NotifyFn)(void* self, const void* object, int32_t index);
     void** vtable = *reinterpret_cast<void***>(&g_listener);
