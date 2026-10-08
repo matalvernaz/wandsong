@@ -34,6 +34,28 @@ assert(s.AudioVisualizer == true and s.AccessibilityAudioCueOpacity > 0, "audio 
 assert(s.SubtitlesEnabled == true and s.ShowTargetHighlights == true, "the informational settings are turned on")
 assert(s.bAccessibilitySpellToggle == false and s.AlwaysUseCameraAiming == true, "offered settings are never switched on their own")
 assert(s.saves == 1, "saved once, got " .. s.saves)
+
+-- The game restores its own saved copy while its menu loads (Oct 8): what this start set comes
+-- back, and is set again.
+s.AudioVisualizer, s.AccessibilityAudioCueOpacity, s.SubtitlesEnabled = false, 0, false
+t.run(1.5)
+assert(s.AudioVisualizer == true and s.AccessibilityAudioCueOpacity > 0 and s.SubtitlesEnabled == true,
+    "set again after the game's restore")
+assert(s.saves == 2, "and saved again, got " .. s.saves)
+-- Not during a load; and once in gameplay, changes made in the game's own menu stand.
+require("state").mark_loading(2)
+s.AudioVisualizer = false
+t.run(1.5)
+assert(s.AudioVisualizer == false, "nothing is set during a load")
+t.run(1.5)
+assert(s.AudioVisualizer == true, "after the load it's set again")
+package.loaded.world = { in_game = function() return true end }
+t.run(1.5)
+s.AudioVisualizer = false
+t.run(2)
+assert(s.AudioVisualizer == false, "not watched after the first time in gameplay")
+s.AudioVisualizer = true
+package.loaded.world = nil
 t.run(7)
 local notice = said[#said] or ""
 assert(notice:find("audio cues, subtitles, target highlights", 1, true), "says what it turned on: " .. notice)

@@ -13,6 +13,12 @@
 --   * offered: spell toggle, sprint and walk toggle, camera aiming: never switched by the mod
 --     on its own; the Controls screen lists them with the rest, to switch there.
 -- Every start logs the values.
+--
+-- The game restores its own saved copy of the settings while it loads its main menu, and saves
+-- it again (Oct 8: 7 s after the mod set the audio cues, the game wrote them back off). So until
+-- the first time in gameplay, the needed settings and any this start turned on are checked every
+-- second and set again if the game put them back. SaveSettings writes both the game's settings
+-- file and that saved copy, so once set after the restore, a change stays.
 
 local dispatch = require("dispatch")
 local speech = require("speech")
@@ -162,6 +168,8 @@ local function controls_key()
     return ok and k or "the Controls key"
 end
 
+local set_this_start = {}       -- "once" options this start turned on, by id
+
 --- Set what this start needs (see the top of this file). True once the game's settings object
 --- was there to set.
 function M.apply()
@@ -179,6 +187,7 @@ function M.apply()
             if o.kind == "once" and o.since > done and value(s, o) == false and set(s, o, true) then
                 changed = true
                 turned_on[#turned_on + 1] = o.short
+                set_this_start[o.id] = true
             end
         end
         saved.once = tostring(ONCE_VERSION)
@@ -235,13 +244,38 @@ function M.items()
     return items
 end
 
+--- Set again what the game's restore of its saved settings put back (see the top of this file).
+function M.enforce()
+    local s = settings()
+    if not s then return end
+    load_file()
+    local again = {}
+    if saved.cues ~= "off" and not cues_on(s) and set_cues(s, true) then again[#again + 1] = "audio cues" end
+    for _, o in ipairs(OPTIONS) do
+        if set_this_start[o.id] and value(s, o) == false and set(s, o, true) then again[#again + 1] = o.short end
+    end
+    if #again > 0 then
+        save(s)
+        log("the game put back its saved settings; set again: " .. table.concat(again, ", "))
+    end
+end
+
 -- At the first ticks, at the main menu: before a save loads and the HUD reads the switches.
-local tries = 0
+-- Then watched until the first time in gameplay (never during the game's own loads).
+local tries, applied = 0, false
 dispatch.every(1000, function()
-    tries = tries + 1
-    local ok = M.apply()
-    if not ok and tries >= 30 then log("the game's settings object wasn't found; nothing was set") end
-    return ok or tries >= 30
+    if not applied then
+        tries = tries + 1
+        applied = M.apply()
+        if not applied and tries >= 30 then
+            log("the game's settings object wasn't found; nothing was set")
+            return true
+        end
+        return false
+    end
+    local world = package.loaded.world
+    if type(world) == "table" and world.in_game and world.in_game() then return true end
+    if not require("state").loading() then M.enforce() end
 end, "game settings", true)
 
 return M
