@@ -65,7 +65,14 @@ assert(#said == 0, "the first objective isn't announced: " .. tostring(said[1]))
 show_task = false                            -- between tasks: the title alone
 t.run(16)
 for _, s in ipairs(said) do assert(not s:find("New objective", 1, true), "title alone announced: " .. s) end
-show_task, task_text = true, "Find Professor Fig"
+-- The counter moving on is progress, said short; a counted task that's new is said in full.
+show_task, task_text = true, "Protego incoming enemy attacks (2/3)"
+t.run(16)
+assert(said[#said] == "2 of 3.", "progress on the same task: " .. tostring(said[#said]))
+task_text = "Destroy statues (0/4)"
+t.run(16)
+assert(said[#said] == "New objective: Destroy statues, 0 of 4.", "a new counted task: " .. tostring(said[#said]))
+task_text = "Find Professor Fig"
 t.run(16)
 local found = false
 for _, s in ipairs(said) do if s == "New objective: Find Professor Fig" then found = true end end

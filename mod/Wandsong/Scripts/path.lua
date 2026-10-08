@@ -907,8 +907,15 @@ dispatch.every(4000, function()
     last_quest_line = q
     local task = q:match("^Quest: .-%. (.+)$") or q:gsub("^Quest: ", "")
     if not looks_like_words(task) then log("objective text not spoken (not words?): " .. q) return end
+    -- A counter moving on the same task ("Protego incoming enemy attacks (2/3)") is progress,
+    -- not a new objective (Oct 8, the vault fight).
+    local base, done, total = task:match("^(.-)%s*%((%d+)/(%d+)%)$")
+    local was = last_objective and last_objective:match("^(.-)%s*%(%d+/%d+%)$")
     last_objective = task
-    if not first then speech.say("New objective: " .. task, true) end
+    if first then return end
+    if base and was == base then speech.say(done .. " of " .. total .. ".", true)
+    elseif base then speech.say("New objective: " .. base .. ", " .. done .. " of " .. total .. ".", true)
+    else speech.say("New objective: " .. task, true) end
 end, "objective watch")
 
 local function where_am_i()
