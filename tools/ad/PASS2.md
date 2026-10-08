@@ -65,7 +65,14 @@ spoilers, no guessed motives.
   dialogue-choice lists are never described (the mod reads them). If a whole packet is such a
   screen, write no items and set `ui` to true.
 - In gameplay stretches inside a packet (you control your character; a health bar shows bottom
-  right), describe only story events, not your own movement.
+  right), describe only story events, not your own movement. Never describe something the
+  player does themselves in gameplay (drinking a potion, casting at a target, opening a door):
+  the recording's player did it then, but a player using the mod may not have yet ("You raise
+  the vial and drink" played before Matt had drunk it, Oct 8).
+- When a line refers to something on screen ("Why would someone have built this here?",
+  "What's that?"), make sure that thing was described in plain words just before, or describe
+  it in the nearest silence before the line. Plain words: "the ruins of a castle on a tall rock
+  in the sea", not "a sea stack" (Matt didn't know what "this" was, Oct 8).
 
 ## Output
 

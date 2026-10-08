@@ -77,19 +77,37 @@ local CORRECTIONS = {
     -- (the recording's silence came minutes later). Held, they wait for that scene to start
     -- instead of describing a stone basin over the fight (Oct 8).
     { after = "I'm going to have to fight my way out of here.", hold = true },
+    -- Drinking the potion is the player's own action, done whenever they press the key: "You
+    -- raise the vial and drink" played whether or not they had (Matt, Oct 8).
+    { after = "Take this. It's Wiggenweld Potion. That stuff'll right you in a second.", keep = 1 },
+    -- "Why would someone have built this here?" came a scene and 90 s after the ruins were
+    -- described as "crumbling ruins crown a sea stack": Matt didn't know what "this" was (Oct 8).
+    -- Plain words first, and the ruins again as you reach them.
+    { after = "We're close now. It's just ahead.",
+      replace = { [1] = "Ahead, the ruins of a castle stand on a tall rock in the sea, joined to the cliffs by a stone causeway." },
+      add = {
+        { id = "EleazarFig_13024", after = "Almost there!", items = {
+            { delay = 1.0, text = "Stone steps climb the rock into the ruins: a roofless hall of broken walls and tall empty arches, open to the sky." },
+        } },
+    } },
 }
 for _, c in ipairs(CORRECTIONS) do
     for i, d in ipairs(DESCRIPTIONS) do
         if d.after == c.after and type(d.items) == "table" then
             if c.hold then d.hold = true end
+            for k, text in pairs(c.replace or {}) do
+                if d.items[k] then d.items[k].text = text end
+            end
             if c.keep then
                 while #d.items > c.keep do table.remove(d.items) end
-                for j, extra in ipairs(c.add or {}) do table.insert(DESCRIPTIONS, i + j, extra) end
             end
+            for j, extra in ipairs(c.add or {}) do table.insert(DESCRIPTIONS, i + j, extra) end
             break
         end
     end
 end
+M.descriptions = DESCRIPTIONS   -- for the tests: the catalogue with its corrections applied
+
 -- A held description waits this long at most for its scene.
 local HOLD_MAX = 900
 
