@@ -79,7 +79,9 @@ spoilers, no guessed motives.
   Mark a cut with "Now", "Later", "Outside", "Inside".
 - Spells: what the spell looks like and who or what it hits. Fights: who attacks whom, who falls.
 - Menus, maps, the Field Guide, inventory screens, button prompts, HUD text, subtitles and
-  dialogue-choice lists are never described (the mod reads them). If a whole packet is such a
+  dialogue-choice lists are never described (the mod reads them). While a dialogue-choice list
+  is on screen nothing is described at all: the mod is reading the choices out, and a
+  description would talk over them. Leave those silences empty and remove existing items there. If a whole packet is such a
   screen, write no items and set `ui` to true.
 - In gameplay stretches inside a packet (you control your character; a health bar shows bottom
   right), describe only story events, not your own movement. Never describe something the
