@@ -42,12 +42,22 @@ spoilers, no guessed motives.
   explain), describe it in the next silence: "Fig hands you a small green vial."
 - The player is "you". Never describe your face, hair, skin, body, clothes or gender (each
   player made their own character). Your actions are fine: "You take the key."
-- Name characters only once the dialogue has named them (Professor Fig, George Osric, Ranrok,
-  Professor Weasley, Headmaster Black, Sebastian, Ominis, Natsai Onai, Professor Ronen,
-  Professor Hecat, Samantha Dale, Peeves...). Introduce each one briefly at their first
+- Name characters only once the dialogue has named them, with the names the game's subtitles
+  use: Professor Fig (Eleazar Fig), George Osric, the Goblin Banker, Ranrok, Lodgok, the
+  Carriage Driver, Professor Weasley (Matilda Weasley), Headmaster Black (Phineas Nigellus Black),
+  Sebastian Sallow, Ominis Gaunt, Natsai Onai (Natty), Professor Ronen, Professor Hecat, Imelda
+  Reyes, Leander Prewett, Samantha Dale, the Sorting Hat, Peeves. Use the full name and title
+  ("Professor Fig") at the first mention in each scene and wherever the silence has room; the
+  short form ("Fig") only where it's tight. Introduce each one briefly at their first
   appearance: build, clothes, one striking feature. Before they are named: "a goblin in a green
   waistcoat", "a dark-haired Slytherin girl". Fix speech-to-text spellings (Ranrok, Pensieve,
-  Ronen).
+  Ronen, Wiggenweld).
+- Replace any existing description that names someone wrongly or vaguely, or calls Professor
+  Fig "Fig" where there is room for the full form (set `replaces`).
+- Magical arrivals and departures are always described: golden sparks, apparating, Portkeys,
+  Floo flames.
+- Logos and title cards: describe what they look like (colours, shape, emblem), then the words.
+  Replace any existing "The ... logo appears." with such a description.
 - Present tense, active voice, plain words. Never "we see", "the camera", "shot", "frame".
   Mark a cut with "Now", "Later", "Outside", "Inside".
 - Spells: what the spell looks like and who or what it hits. Fights: who attacks whom, who falls.
