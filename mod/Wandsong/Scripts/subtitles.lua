@@ -111,12 +111,14 @@ M.descriptions = DESCRIPTIONS   -- for the tests: the catalogue with its correct
 -- A held description waits this long at most for its scene.
 local HOLD_MAX = 900
 
--- The story's first moments come before anyone speaks, so no line can key them (Matt, Oct 8:
--- "doesn't mention the character apparating in"). They play when the first scene starts after
--- a new character is finished (menus.lua sets state.new_story_since on the finalize screen).
+-- The story's first moments come before anyone speaks, so no line can key them. They play when
+-- the first scene starts after a new character is finished (menus.lua sets state.new_story_since
+-- on the finalize screen). From the recording: the Start Your Journey banner bursts into golden
+-- sparks, a fade, then you stand in the street. (Matt's Oct 8 "doesn't mention the character
+-- apparating in" was George Osric, later in the scene: the second description pass has him.)
 local OPENING = {
-    { delay = 0.5, text = "Golden sparks swirl around you, and you appear on a dark, cobbled London street at night." },
-    { delay = 6.0, text = "A red carriage waits, an owl perched on its roof. Professor Fig, grey-haired, in a long green coat, stands beside it." },
+    { delay = 0.5, text = "Golden sparks swirl around you. Now you stand on a foggy, cobbled London street at night." },
+    { delay = 5.0, text = "A carriage waits behind you, an owl on its luggage. Professor Fig, grey-haired, in a green robe, stands by it." },
 }
 
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
