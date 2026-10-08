@@ -129,7 +129,7 @@ local function health_update(pct)
     if pct <= 0 then return end
     if pct <= 0.2 and not critical then
         critical, low = true, true
-        speech.say("Health critical, " .. health .. " percent. " .. bindings.spoken("AM_Health", "G") .. " heals.")
+        speech.alert("Health critical, " .. health .. " percent. " .. bindings.spoken("AM_Health", "G") .. " heals.")
     elseif pct <= 0.5 and not low then
         low = true
         speech.say("Health below half, " .. health .. " percent.", true)
@@ -187,7 +187,7 @@ dispatch.every(100, function()
                 last_callout = os.clock()
                 local said = e.data == 1 and ("Dodge, " .. bindings.spoken("AM_Dodge", "LeftControl"))
                     or ("Protego, " .. bindings.spoken("AM_Protego", "Q"))
-                speech.say(said)
+                speech.alert(said)
                 state.cue(said)
                 print("[Wandsong feedback] callout: " .. said .. "\n")
             elseif e.kind == "notice" then
@@ -200,7 +200,7 @@ dispatch.every(100, function()
                     last_attack = os.clock()
                     local meaning = danger and ("Unblockable attack. Dodge with " .. bindings.spoken("AM_Dodge", "LeftControl"))
                         or ("Incoming attack. Block with " .. bindings.spoken("AM_Protego", "Q"))
-                    if audio then audio.play_ui("warn", 0.9, danger and 0.65 or 1) else speech.say(meaning) end
+                    if audio then audio.play_ui("warn", 0.9, danger and 0.65 or 1) else speech.alert(meaning) end
                     state.cue(meaning)
                     print("[Wandsong feedback] " .. meaning .. "\n")
                 end

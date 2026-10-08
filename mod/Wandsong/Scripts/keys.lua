@@ -203,6 +203,9 @@ local function on_press(ctrl, shift, key)
     if not focused() then return end
     local short = SHORT[key] or key:lower()
     local combo = (ctrl and "ctrl+" or "") .. (shift and "shift+" or "") .. short
+    -- Speech answering this key may cut in (speech.lua); a number set, nothing else.
+    local ok_s, speech = pcall(require, "speech")
+    if ok_s and type(speech) == "table" and speech.note_key then speech.note_key() end
     for _, f in ipairs(observers) do pcall(f, combo, key) end
     if capture then
         local fn = capture

@@ -7,6 +7,7 @@ package.loaded.world={in_game=function() return playing end,ui_busy=function() r
 package.loaded.audio_bridge={init=function() return true end,play_ui=function(name,volume,pitch) sounds[#sounds+1]={name,pitch} end}
 local speech=require("speech")
 speech.say=function(s) said[#said+1]=s end
+speech.alert=function(s) said[#said+1]=s end
 speech.is_muted=function() return muted end
 local reads=0
 local translations={WoundCleaning="Wiggenweld Potion",Menu_NewSpellUnlocked="New Spell Unlocked",Stupefy="Basic Cast"}

@@ -40,10 +40,24 @@ assert(objectives:lower():find("press v, the game's objectives key", 1, true) an
 eq(t.rewrite("Tap 1 to cast or extinguish Lumos Lumos."), "Tap 1 to cast or extinguish Lumos.")
 eq(t.rewrite(t.clean('Hold Q during Protego to stun enemies with a Stupefy <img src="TUT_Stupefy"/> counter-attack.')),
    "Hold Q during Protego to stun enemies with a Stupefy counter-attack.")
+eq(t.rewrite(t.clean('Tap <img src="cbi_Keyboard_Slash"/> to perform a Basic Cast <img src="TUT_Stupefy"/>.')),
+   "Tap forward slash to perform a Basic Cast. comma turns you to the nearest enemy first.")
 eq(t.rewrite("Press LeftShift to sprint."), "Press left shift to sprint.")
 eq(t.rewrite("Hold LeftMouseButton, then SpaceBar."), "Hold left mouse button, then space.")
 eq(t.rewrite("Professor McGonagall and Professor Weasley."), "Professor McGonagall and Professor Weasley.")
 eq(t.rewrite("Hold still, then hold the line."), "Hold still, then hold the line.")
 assert(t.rewrite("Steady your wand with Mouse and guide it along the symbol's path to learn the spell. Press the corresponding input when prompted to accelerate your wand's motion along the symbol's path."):find("^Spell lesson"),
     "the spell lesson's mouse instructions are said in the mod's terms")
+-- Up and down walk the screen's own list: buttons, checkboxes and fields, counted among
+-- themselves, never the text, descriptions or shortcuts around them (Oct 8: the main menu
+-- counted "2 of 18", then "4 of 12", as its details panel changed).
+local items = { { text = "Title" }, { text = "Continue", button = 1 }, { text = "Your story so far" },
+                { text = "New Character", button = 2 }, { text = "Select", action = "confirm", button = 3 } }
+local function at(index, delta) return { t.list_target(items, index, delta) } end
+local r = at(0, 1); assert(r[1] == 2 and r[2] == 1 and r[3] == 2 and r[4] == nil, "first item, 1 of 2")
+r = at(2, 1); assert(r[1] == 4 and r[2] == 2 and r[3] == 2, "second item, 2 of 2")
+r = at(4, 1); assert(r[1] == 4 and r[2] == 2 and r[4] == "bottom", "stays on the last, at the bottom")
+r = at(3, -1); assert(r[1] == 2 and r[2] == 1, "from the description up: the item above it")
+r = at(2, -1); assert(r[1] == 2 and r[4] == "top", "top of the list")
+assert(t.list_target({ { text = "Only text" } }, 0, 1) == nil, "a screen of text has no list")
 print("text test passed")

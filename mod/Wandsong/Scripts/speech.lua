@@ -106,18 +106,58 @@ local function emit(text, interrupt)
     end
 end
 
---- Speak text. queue=true waits for current speech instead of interrupting it.
-function M.say(text, queue)
-    if text == nil then return end
-    text = one_line(text)
-    -- Nothing audible (blank, or only zero-width/format characters): say nothing.
-    if text:gsub("\226\128[\139-\143]", ""):match("^%s*$") then return end
+-- When the player last pressed a key (keys.lua). Speech that answers it may cut in; whatever
+-- the mod says on its own waits its turn, so a burst is heard in full (Oct 8: a tutorial cut
+-- off "New Spell Unlocked: Basic Cast" and Matt couldn't tell what either said).
+local last_key_at = -100
+local ANSWER_S = 0.75
+function M.note_key() last_key_at = os.clock() end
+
+-- Nothing is spoken while the game isn't the window in front: the player is elsewhere, and
+-- speech there talks over the screen reader's reading of that window (Matt, Oct 8).
+local input_mod = false
+local function game_in_front()
+    if input_mod == false then
+        local ok, mod = pcall(require, "input_bridge")
+        input_mod = ok and type(mod) == "table" and mod.focused and mod or nil
+    end
+    if not input_mod then return true end
+    local ok, front = pcall(input_mod.focused)
+    return not ok or front ~= false
+end
+
+local function remember(text, kind)
     table.insert(history, 1, text)
     if #history > HISTORY_SIZE then table.remove(history) end
     -- Flight recorder: every utterance lands in UE4SS.log, which makes bug reports easy.
-    log((queue and "say+ " or "say ") .. text)
-    if muted then return end
-    emit(text, not queue)
+    log(kind .. text)
+end
+
+local function audible(text)
+    -- Nothing audible (blank, or only zero-width/format characters): say nothing.
+    return not text:gsub("\226\128[\139-\143]", ""):match("^%s*$")
+end
+
+--- Speak text. queue=true always waits for current speech; otherwise it cuts in only when it
+--- answers a key the player just pressed.
+function M.say(text, queue)
+    if text == nil then return end
+    text = one_line(text)
+    if not audible(text) then return end
+    local interrupt = not queue and os.clock() - last_key_at <= ANSWER_S
+    remember(text, interrupt and "say " or "say+ ")
+    if muted or not game_in_front() then return end
+    emit(text, interrupt)
+end
+
+--- Urgent speech that cuts in whatever is being said: an attack to block now, critical health.
+function M.alert(text)
+    if text == nil then return end
+    text = one_line(text)
+    if not audible(text) then return end
+    remember(text, "say! ")
+    if muted or not game_in_front() then return end
+    emit(text, true)
 end
 
 --- Stop any speech in progress.

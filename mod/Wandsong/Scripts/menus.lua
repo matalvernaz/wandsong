@@ -85,10 +85,12 @@ local function clean(t)
     -- Other mouse buttons have no keyboard meaning for the player; the action they trigger
     -- is still reachable as a shortcut item in the review list.
     t = t:gsub('<img%s+src="cbi_Mouse_[^"]+"%s*/>%s*,?%s*', "")
-    -- Spell icons read as the spell's name, next to the name itself ("a Stupefy TUT_Stupefy
-    -- counter-attack", Oct 8): rewrite() then drops the doubled name.
+    -- Spell icons (TUT_*) sit beside the spell's written name, and their own names can differ
+    -- from it ("a Basic Cast TUT_Stupefy", "a Stupefy TUT_Stupefy counter-attack", Oct 8): they
+    -- are dropped.
+    t = t:gsub('<img%s+src="TUT_[^"]*"%s*/>', "")
     t = t:gsub('<img%s+src="([^"]+)"%s*/>', function(k)
-        return (k:gsub("^cbi_", ""):gsub("^TUT_", ""):gsub("_", " "))
+        return (k:gsub("^cbi_", ""):gsub("_", " "))
     end)
     t = t:gsub("<[^>]->", "")          -- any other rich-text tag
     t = t:gsub("%s+", " ")
@@ -158,7 +160,7 @@ local REWRITES = {
     { "Space to Jump / Climb%.?", function(t)
         return t .. " A quick hop sound means something to jump over, and rising notes a ledge to climb." end },
     { "to perform a Basic Cast[^,]*", function(t)
-        return t .. ". " .. key_name("face_target") .. " turns you to the nearest enemy first." end },
+        return t:gsub("[%.%s]+$", "") .. ". " .. key_name("face_target") .. " turns you to the nearest enemy first." end },
     { "A white outline indicates your active target.-precision%.", function(t)
         return t .. " With Wandsong: " .. key_name("face_target") ..
                " turns you to the nearest enemy, and " .. require("bindings").spoken("LockOn", "Period") .. " locks on to it." end },
@@ -835,6 +837,7 @@ end
 
 local review_items, review_index, review_top = {}, 0, nil
 local review_title = "this screen"
+local review_top_cls = nil   -- class of the screen on top at the last refresh
 
 forget_screens = function()
     screens = {}
@@ -996,6 +999,7 @@ local function refresh()
         end
     end
     review_title = type(top) == "userdata" and humanize(cls_name(top):gsub("^UI_BP_", ""):gsub("_C$", "")) or "this screen"
+    review_top_cls = type(top) == "userdata" and cls_name(top) or nil
     review_top, review_items = top_key, items
     if review_index > #items then review_index = #items end
     return true
@@ -1056,7 +1060,7 @@ local function focus(item)
     if not ok then diag.trace("focus failed: " .. tostring(err)) end
 end
 
-local function select_item(i, edge, with_position)
+local function select_item(i, edge, with_position, pos, total)
     editing = nil   -- moving the review cursor ends typing echo
     review_index = i
     local item = review_items[i]
@@ -1065,7 +1069,7 @@ local function select_item(i, edge, with_position)
     hover(item)
     if with_position then focus(item) end
     speak(describe(item) .. (edge and (", " .. edge) or "") ..
-          (with_position and string.format(", %d of %d", i, #review_items) or ""))
+          (with_position and string.format(", %d of %d", pos or i, total or #review_items) or ""))
     if item.weak then
         dispatch.later(300, function()
             if review_items[review_index] ~= item then return end
@@ -1112,9 +1116,42 @@ local function step(delta, buttons_only, with_position)
     end
     select_item(i, nil, with_position)
 end
--- The up and down arrows walk this list in menus (as in other access mods); in the world the same
--- keys turn you, so path.lua hands them here whenever you're not in the world.
-state.menu_step = function(delta) step(delta, false, true) end
+-- The up and down arrows walk the screen's own list in menus (as in other access mods): its
+-- buttons, checkboxes and fields, counted among themselves. Text, descriptions and shortcuts
+-- stay on the review keys: counting them too gave the main menu "2 of 18", then "4 of 12", as
+-- its details panel changed under each item (Matt, Oct 8). In the world the same keys turn
+-- you, so path.lua hands them here whenever you're not in the world.
+local function list_member(it)
+    return (it.button ~= nil or it.checkbox or it.editable ~= nil) and not it.action
+end
+--- Where up/down (delta) go from review item `index`: the review index, its place in the list,
+--- the list's length and "top"/"bottom" at an end; nil for a screen with no list.
+local function list_target(items, index, delta)
+    local list = {}
+    for idx, it in ipairs(items) do if list_member(it) then list[#list + 1] = idx end end
+    if #list == 0 then return nil end
+    local here, target
+    for k, idx in ipairs(list) do if idx == index then here = k end end
+    if here then
+        target = here + delta
+    elseif delta > 0 then
+        target = #list + 1
+        for k, idx in ipairs(list) do if idx > index then target = k; break end end
+    else
+        target = 0
+        for k = #list, 1, -1 do if list[k] < index then target = k; break end end
+    end
+    if target >= 1 and target <= #list then return list[target], target, #list, nil end
+    local edge = delta < 0 and "top" or "bottom"
+    local k = here or (delta < 0 and 1 or #list)
+    return list[k], k, #list, edge
+end
+state.menu_step = function(delta)
+    if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
+    local i, pos, total, edge = list_target(review_items, review_index, delta)
+    if not i then step(delta, false, true); return end   -- a screen of text: walk the text
+    select_item(i, edge, true, pos, total)
+end
 
 -- Find the blueprint handler a widget class bound to a button's OnClicked. Its name looks
 -- like BndEvt__<Button>_K2Node_ComponentBoundEvent_N_OnButtonClickedEvent__DelegateSignature.
@@ -1355,6 +1392,15 @@ local function press_current()
 end
 
 act("press", "Press, toggle or use the current item", "\\", press_current)
+-- Enter presses too (Matt, Oct 8), except where the game takes Enter itself: finishing a typed
+-- name, and its pop-ups and option panels, which confirm the focused button on Enter
+-- (UMGOptionPanelConfirm), so pressing there as well would press twice.
+act("press_enter", "Press the current item with Enter", "enter", function()
+    if editing or require("world").gameplay() then return end
+    if not refresh() then return end
+    if review_top_cls and (review_top_cls:find("Popup", 1, true) or review_top_cls:find("OptionPanel", 1, true)) then return end
+    press_current()
+end)
 act("back", "Go back", "shift+\\", function()
     if virtual then
         speak("Closed " .. virtual.title .. ".")
@@ -1503,4 +1549,4 @@ act("details", "Description of the current item", "shift+;", read_details)
 log("menus loaded")
 
 -- For the offline text test.
-return { legend_order = legend_order, rewrite = rewrite, clean = clean }
+return { legend_order = legend_order, rewrite = rewrite, clean = clean, list_target = list_target }
