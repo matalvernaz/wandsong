@@ -490,9 +490,13 @@ local function steer(yaw)
             local k = math.abs(turned / last_dx)
             deg_per_px = learned and math.max(0.002, math.min(2, deg_per_px * 0.6 + k * 0.4)) or k
             learned = true
-        elseif math.abs(turned) <= 0.3 then
-            -- No visible turn: the steps are smaller than guessed; use bigger moves.
-            deg_per_px = math.max(0.002, deg_per_px * 0.5)
+        elseif math.abs(turned) <= 0.3 and not learned then
+            -- No visible turn before anything was measured: the steps are smaller than
+            -- guessed; use bigger moves. Once measured, no turn means the game is holding the
+            -- camera (a scripted walk after the vault's basin scene, Oct 8): halving then shrank
+            -- the measurement to 0.002 and grew the moves until they pushed the cursor to the
+            -- screen's edge, and would fling the camera round once it was free.
+            deg_per_px = math.max(0.01, deg_per_px * 0.5)
         end
     end
     local err = wrap(yaw - now)

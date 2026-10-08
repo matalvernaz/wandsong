@@ -176,4 +176,26 @@ local went_east_first = false
 for i = 1, math.min(5, #yaws) do if math.abs(yaws[i]) < 30 then went_east_first = true end end
 assert(went_east_first, "followed the nav path east first, not straight to the objective")
 assert(said[#said]:find("Arrived"), "arrived via the nav path: " .. tostring(said[#said]))
+
+-- The game holds the camera for a while (a scripted walk after the vault's basin scene, Oct 8):
+-- the measured turning rate is kept, so once the camera is free a turn isn't flung round.
+local real_move = package.loaded["input_bridge"].mouse_move
+package.loaded["input_bridge"].mouse_move = function() return true end   -- sent, but no turn
+w.nearest = function(kind) if kind == "enemy" then return { px, py + 500, 0 }, "/Game/Fake.Troll" end end
+w.locate = function() return { px, py + 500, 0 } end
+yaw = 0
+for _, a in pairs(actions) do if a.id == "face_target" then face = a.run end end
+face()
+run(2.5)
+assert(yaw == 0, "the held camera didn't turn")
+package.loaded["input_bridge"].mouse_move = real_move
+yaws = {}
+face()
+run(2.5)
+assert(math.abs(yaw - 90) < 6, "turned to face it once free, yaw " .. yaw)
+-- With the measurement kept, the turn closes in on 90 degrees; a rate shrunk while the camera
+-- was held overshoots it (60 degrees, then 42 more: past 100).
+local most = -999
+for _, y in ipairs(yaws) do most = math.max(most, y) end
+assert(most <= 96, "no overshoot after the hold: reached " .. most)
 print("path test passed")
