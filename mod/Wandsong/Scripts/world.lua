@@ -458,6 +458,11 @@ local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", ches
 -- Class names that say nothing about the thing ("BP_INT_Interact_C" was read as "Interact").
 local GENERIC = { ["Interact"] = true, ["Simple Interact Object"] = true, ["Interactive Object Actor"] = true,
                   ["World Interact Object"] = true, ["Something to use"] = true }
+-- Placeholder labels say no more than the class ("Player Interact" on the vault's vial, Oct 8):
+-- the next source of a name gets its turn.
+local function generic(h)
+    return h == nil or GENERIC[h] == true or h:match("^%a* ?Interact%a*$") ~= nil
+end
 
 -- The level designer's own name for a placed thing ("Interact_VaultDoor" -> "Vault Door"),
 -- unless it's an automatic one ("BP_INT_Interact_C_2147450000").
@@ -507,7 +512,10 @@ local function name_of(actor, kind)
         if name then return end
         pcall(function()
             local id = fn()
-            if id and id ~= "" and id ~= "None" then name, src = humanize(id), label end
+            if id and id ~= "" and id ~= "None" then
+                local h = humanize(id)
+                if not generic(h) then name, src = h, label end
+            end
         end)
     end
     try("character id", function() return actor.OverrideCharacterID:ToString() end)
@@ -528,15 +536,14 @@ local function name_of(actor, kind)
         local cls = "?"
         pcall(function() cls = actor:GetClass():GetFName():ToString() end)
         local h = humanize(cls)
-        if not h or GENERIC[h] then
+        if generic(h) then
             -- Generic class: the thing's own label, its beacon name, or the name it was placed with.
             try("label", function() return actor.Text:ToString() end)
             try("beacon name", function() return actor.BeaconName:ToString() end)
             try("placed as", function() return placed_name(actor) end)
-            if name and GENERIC[name] then name, src = nil, nil end
         end
         -- A class name that only repeats the category ("Enemy") adds nothing.
-        if not name and h and not GENERIC[h] and h:lower() ~= (KIND_NOUN[kind] or ""):lower() then
+        if not name and not generic(h) and h:lower() ~= (KIND_NOUN[kind] or ""):lower() then
             name, src = h, "class " .. cls
         end
     end

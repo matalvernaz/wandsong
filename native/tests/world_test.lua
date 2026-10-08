@@ -143,7 +143,11 @@ local anon=obj("BP_INT_Interact_C","/Game/Vault.BP_INT_Interact_C_2147450002",{R
 cls_of(anon,"BP_INT_Interact_C")
 local pot=obj("BP_Int_BCProps_Pot_001_W_C","/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7",{RootComponent={RelativeLocation={X=650,Y=230,Z=340}}})
 cls_of(pot,"BP_Int_BCProps_Pot_001_W_C")
-FindAllOf=function(c) if c=="SimpleInteractObject" then return {door,glow,anon,pot} end return {} end
+-- A placeholder label ("Player Interact", the vault's vial) gives way to the placed name.
+local locket=obj("BP_INT_Interact_C","/Game/Vault.Interact_Locket",{Text={ToString=function() return "Player Interact" end},
+    RootComponent={RelativeLocation={X=750,Y=230,Z=340}}})
+cls_of(locket,"BP_INT_Interact_C")
+FindAllOf=function(c) if c=="SimpleInteractObject" then return {door,glow,anon,pot,locket} end return {} end
 t.run(10)
 kind,name=kind_of("/Game/Vault.Interact_VaultDoor")
 assert(kind=="usable" and name=="Vault Door","placed name instead of Interact: "..tostring(name))
@@ -151,6 +155,8 @@ kind,name=kind_of("/Game/Vault.BP_INT_Interact_C_2147450001")
 assert(name=="Strange glow","the thing's own label: "..tostring(name))
 kind,name=kind_of("/Game/Vault.BP_INT_Interact_C_2147450002")
 assert(name=="Something to use","an anonymous one is never called Interact: "..tostring(name))
+kind,name=kind_of("/Game/Vault.Interact_Locket")
+assert(name=="Locket","a placeholder label gives way to the placed name: "..tostring(name))
 kind,name=kind_of("/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7")
 assert(kind=="prop" and name=="Pot","pots are objects, not things to use")
 
