@@ -43,6 +43,8 @@ def repeats(text, others):
     return False
 
 
+# Lines whose descriptions wait for the next scene to start (subtitles.lua CORRECTIONS, hold).
+HOLD = {"I'm going to have to fight my way out of here."}
 slots = {}          # transcript line index -> slot dict (first pass)
 batches = {}        # transcript line index -> batch dict
 for f in glob.glob(os.path.join(work, "batches2", "batch_*.json")):
@@ -64,13 +66,24 @@ for b in sorted(batch_list, key=lambda b: b["t0"]):
     if li is None or not s:
         continue
     items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
+    # In game a delay counts from the end of its line; the first pass counted from the start of
+    # the silence, which the voice detector often put later (it ran the next lines in): 24
+    # descriptions played early, some by tens of seconds (Oct 8). Count from the line's end
+    # instead, so they play when the frames showed them and the second pass's delays agree.
+    # Held lines count from the next scene's start, and a silence inside a long transcript line
+    # can only follow the whole line: both keep the first pass's timing.
     if li in slots:
-        # Two silences after the same line (a pause inside it): keep both, timed from the first.
-        shift = b["t0"] - slots[li]["t0"]
-        for i in items:
-            slots[li]["items"].append({"offset": round(float(i["offset"]) + shift, 1), "text": i["text"]})
+        base = slots[li]["t0"]   # a second silence after the same line, timed from the first
+    elif tr[li]["text"].strip() in HOLD or b["t0"] < tr[li]["end"]:
+        base = b["t0"]
     else:
-        slots[li] = {"after": tr[li]["text"], "items": items, "t0": b["t0"], "span": b.get("span")}
+        base = tr[li]["end"]
+    shift = b["t0"] - base
+    items = [{"offset": round(float(i["offset"]) + shift, 1), "text": i["text"]} for i in items]
+    if li in slots:
+        slots[li]["items"].extend(items)
+    else:
+        slots[li] = {"after": tr[li]["text"], "items": items, "t0": base, "span": b.get("span")}
 
 added, dropped, replaced, removed = 0, 0, 0, 0
 for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):
