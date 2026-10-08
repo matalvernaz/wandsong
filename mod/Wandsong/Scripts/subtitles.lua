@@ -63,23 +63,27 @@ local function plain(t)
 end
 
 -- Corrections to the generated descriptions, kept here so rebuilding descriptions.lua with
--- tools/ad doesn't lose them. The recording's player solved the vault's first knight puzzle at
--- once, so the knights waking were timed from "It does follow the light."; in play they wake
--- whenever the puzzle is solved, and Fig's "Look out!" marks it (Oct 7: Matt heard them
--- described while he was still working the puzzle out).
+-- tools/ad doesn't lose them. Held lines (hold = true) are said in play before a scene, and
+-- their descriptions wait for that scene, timed from its start.
 local CORRECTIONS = {
-    { after = "It does follow the light.", keep = 1, add = {
+    -- The vault's first knight puzzle: "It does follow the light." comes while you work it out,
+    -- and the knights wake in the scene that starts once it's solved (Oct 7: Matt heard them
+    -- described while he was still working the puzzle out). The fight that follows is timed from
+    -- Fig's "Look out!", proven in game; the Protego prompt there waits for you.
+    { after = "It does follow the light.", hold = true, keep = 3, add = {
         { id = "EleazarFig_13089", after = "Look out!", items = {
-            { delay = 0.2, text = "Stone knights stir all around you. A knight raises its sword at you." },
+            { delay = 0.9, text = "Professor Fig raises his wand as a knight advances." },
+            { delay = 9.3, text = "Fig's spells shatter one knight and hurl another back." },
         } },
     } },
+    -- Walking to the vault door ("Lead the way."): its scene starts when you touch the symbol.
+    { id = "EleazarFig_13170", hold = true },
+    -- Walking through the Portkey cave: the clifftop scene starts as you come out of it.
+    { id = "EleazarFig_12942", hold = true },
     -- Said as the vault's last fight begins; its descriptions are the cutscene after the fight
     -- (the recording's silence came minutes later). Held, they wait for that scene to start
     -- instead of describing a stone basin over the fight (Oct 8).
     { after = "I'm going to have to fight my way out of here.", hold = true },
-    -- Drinking the potion is the player's own action, done whenever they press the key: "You
-    -- raise the vial and drink" played whether or not they had (Matt, Oct 8).
-    { after = "Take this. It's Wiggenweld Potion. That stuff'll right you in a second.", keep = 1 },
     -- "Why would someone have built this here?" came a scene and 90 s after the ruins were
     -- described as "crumbling ruins crown a sea stack": Matt didn't know what "this" was (Oct 8).
     -- Plain words first, and the ruins again as you reach them.
@@ -93,7 +97,10 @@ local CORRECTIONS = {
 }
 for _, c in ipairs(CORRECTIONS) do
     for i, d in ipairs(DESCRIPTIONS) do
-        if d.after == c.after and type(d.items) == "table" then
+        -- By the game's line ID when given (a common line like "Lead the way." is said
+        -- elsewhere too), else by the line's text.
+        local same = c.id and d.id == c.id or (not c.id and d.after == c.after)
+        if same and type(d.items) == "table" then
             if c.hold then d.hold = true end
             for k, text in pairs(c.replace or {}) do
                 if d.items[k] then d.items[k].text = text end

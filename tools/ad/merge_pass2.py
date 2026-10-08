@@ -44,7 +44,10 @@ def repeats(text, others):
 
 
 # Lines whose descriptions wait for the next scene to start (subtitles.lua CORRECTIONS, hold).
-HOLD = {"I'm going to have to fight my way out of here."}
+HOLD = {"I'm going to have to fight my way out of here.",   # the vault fight, then the basin
+        "It does follow the light.",                         # the knight puzzle, then the knights wake
+        "Lead the way.",                                     # walking to the vault door, then its scene
+        "We've no idea who created this portkey."}           # the Portkey cave, then the clifftop
 slots = {}          # transcript line index -> slot dict (first pass)
 batches = {}        # transcript line index -> batch dict
 for f in glob.glob(os.path.join(work, "batches2", "batch_*.json")):

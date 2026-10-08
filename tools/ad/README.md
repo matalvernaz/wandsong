@@ -45,3 +45,13 @@ description fired ("description N (match 0.xx)"); a description that never fires
 line was never keyed and its text differs too much: play the scene and rebuild (step 11).
 
 First run (Oct 6): intro playthrough vJ74tpHXWyg (85 min), 36 cutscene spans, 129 silences.
+
+Second pass run (Oct 8): 62 packets, 19 describers, then a reviewer file
+(work/pass2/desc/span90_review.json: removals and fixes the describers asked for); 303
+descriptions, 41 entries keyed to game line IDs. Lessons: the voice detector runs back-to-back
+lines together (silences now also end at the next line); the transcript misses short and
+whispered lines (describers check the subtitles in the frames); a frame labelled t in frames2
+shows about t + 1 s (ffmpeg's fps filter takes the middle of each 2 s); a line said in play
+before a scene needs hold in subtitles.lua's CORRECTIONS and its delays from the scene's start
+(merge_pass2.py HOLD); descriptions time from the game line's end, its start plus its
+duration, which build_keyed.py now uses (work/game_durations.json).
