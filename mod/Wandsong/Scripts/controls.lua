@@ -337,6 +337,8 @@ function M.items()
                           on_press = function() require("state").open_screen(require("sounds"), "hear it") end }
     items[#items + 1] = { text = "Apply the no-mouse preset (keyboard keys for every mouse-only action)",
                           button = true, on_press = apply_no_mouse }
+    -- The game's own accessibility settings the mod relies on or offers (gamesettings.lua).
+    for _, it in ipairs(require("gamesettings").items()) do items[#items + 1] = it end
 
     local actions, order = read_game()
     if actions then

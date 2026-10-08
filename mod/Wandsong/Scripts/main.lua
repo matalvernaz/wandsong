@@ -5,6 +5,7 @@ local diag = require("diag")   -- first: it captures every later log line
 local speech = require("speech")
 speech.start()
 
+require("gamesettings")
 require("menus")
 require("scanner")
 require("world")
