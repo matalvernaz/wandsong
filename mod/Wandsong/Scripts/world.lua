@@ -888,6 +888,15 @@ function M.locate(path)
     return { n.x, n.y, n.z }
 end
 
+--- One tracked thing's snapshot by its path ({ path, kind, name, x, y, z, extra }), or nil once
+--- a pass no longer finds it. Nothing is looked up.
+function M.entry(path)
+    if not in_game or state.loading() or not path then return nil end
+    local n = nearby[by_path[path]]
+    if not n or n.path ~= path then return nil end
+    return { path = n.path, kind = n.kind, name = n.name, x = n.x, y = n.y, z = n.z, extra = n.extra }
+end
+
 --- Play one of the world sounds centred, for the sound legend.
 function M.preview(name, pitch)
     if audio and not speech.is_muted() then return audio.play_ui(name, 0.8, pitch or 1.0) end

@@ -213,10 +213,13 @@ dispatch.every(100, function()
     end
 end, "gameplay feedback", true)
 
-keys.action{ id = "gauges", name = "Read health and healing potions", group = "In the world", default = "end",
+keys.action{ id = "gauges", name = "Read health, healing potions and your target", group = "In the world", default = "end",
     run = function()
         if not world.in_game() then speech.say(world.not_ready_reason()); return end
+        local target
+        pcall(function() target = require("target").describe() end)
         speech.say((health and ("Health " .. health .. " percent") or "Health hasn't been reported by the game yet") ..
-            (potions and (". " .. potions .. " healing potions") or ""))
+            (potions and (". " .. potions .. " healing potions") or "") ..
+            (target and (". Target: " .. target) or ""))
     end }
 return M
