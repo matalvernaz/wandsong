@@ -45,7 +45,11 @@ store = os.path.join(work, "game_sessions.json")
 sessions = json.load(open(store, encoding="utf-8")) if os.path.exists(store) else []
 known = {tuple(l["id"] for l in s) for s in sessions}
 old = os.path.join(work, "game_lines.json")
-LINE = re.compile(r"subtitles\] line (\S+) \[([^\]]*)\] [\d.]+s: (.*)$")
+LINE = re.compile(r"subtitles\] line (\S+) \[([^\]]*)\] ([\d.]+)s: (.*)$")
+# How long each game line lasts (the game's own DurationSeconds, as the mod logs it): in game a
+# description's delay counts from the line's start plus this.
+dur_store = os.path.join(work, "game_durations.json")
+durs = json.load(open(dur_store, encoding="utf-8")) if os.path.exists(dur_store) else {}
 candidates = []
 if os.path.exists(old):
     candidates.append([{"id": l["id"], "text": l["text"]} for l in json.load(open(old, encoding="utf-8"))])
@@ -55,7 +59,9 @@ for path in sorted(logs, key=os.path.getmtime):
         m = LINE.search(raw.rstrip())
         if not m or m.group(1) == "?":
             continue
-        text = game_text(m.group(3))
+        text = game_text(m.group(4))
+        if m.group(1) not in durs:
+            durs[m.group(1)] = float(m.group(3))
         if not text or m.group(1) == last:
             continue
         last = m.group(1)
@@ -67,6 +73,7 @@ for seq in candidates:
         known.add(key)
         sessions.append(seq)
 json.dump(sessions, open(store, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+json.dump(durs, open(dur_store, "w", encoding="utf-8"), ensure_ascii=False, indent=0, sort_keys=True)
 
 # --- Alignment ------------------------------------------------------------------------------
 tw, t_of = [], []                      # transcript words and their line index
@@ -102,6 +109,32 @@ for seq in sessions:
         if i not in best or len(gs) > best[i][0]:
             best[i] = (len(gs), seq[g]["id"], seq[g]["text"])
 
+# --- When each matched game line ends in the recording -------------------------------------
+# In game a delay counts from the end of the game's line, its start plus its duration. The
+# transcript's line can end well before: "Wait!" is the game's "Wait. We do not know what -",
+# 3.5 s, so its descriptions played 3.3 s late, over the shouting (Oct 8, a describer's catch).
+# A run of transcript lines matched to the same game line is one saying of it.
+game_end = {}
+run = []
+
+
+def close(run):
+    if not run:
+        return
+    gid = best[run[0]][1]
+    start = tr[run[0]]["start"]
+    end = start + durs[gid] if gid in durs else tr[run[-1]]["end"]
+    for i in run:
+        game_end[i] = end
+
+
+for i in sorted(best):
+    if run and (i != run[-1] + 1 or best[i][1] != best[run[-1]][1]):
+        close(run)
+        run = []
+    run.append(i)
+close(run)
+
 # --- Descriptions ---------------------------------------------------------------------------
 slots = []
 for f in sorted(glob.glob(os.path.join(desc_dir, "batch_*.json"))):
@@ -116,14 +149,14 @@ def anchor(li):
     line the game never says as such (speech-to-text heard words in a snore, or split a line
     differently) hangs off the last matched line before it, if that ended recently."""
     if li in best:
-        return best[li][1], best[li][2], 0.0
+        return best[li][1], best[li][2], 0.0, li
     for j in range(li - 1, max(-1, li - 12), -1):
         if j in best:
             gap = tr[li]["end"] - tr[j]["end"]
             if 0 <= gap <= ANCHOR_SECONDS:
-                return best[j][1], best[j][2], gap
+                return best[j][1], best[j][2], gap, j
             break
-    return None, None, 0.0
+    return None, None, 0.0, None
 
 
 entries, by_key = [], {}
@@ -133,7 +166,10 @@ for s in slots:
     items = [i for i in s.get("items", []) if (i.get("text") or "").strip()]
     if li is None or not items:
         continue
-    gid, gtext, shift = anchor(li)
+    gid, gtext, shift, j = anchor(li)
+    # Held lines count from the next scene's start, not the line: no correction.
+    if j is not None and j in game_end and not s.get("hold"):
+        shift += tr[j]["end"] - game_end[j]
     if gid and li not in best:
         n_anchored += 1
     key = ("id", gid) if gid else ("line", li)
@@ -144,7 +180,8 @@ for s in slots:
         by_key[key] = e
         entries.append(e)
     for it in items:
-        e["items"].append((round(float(it["offset"]) + 0.4 + shift, 1), it["text"].strip()))
+        # Meant for a moment inside the game's line: right after it is the nearest.
+        e["items"].append((round(max(0.2, float(it["offset"]) + 0.4 + shift), 1), it["text"].strip()))
 
 
 def lua(s):

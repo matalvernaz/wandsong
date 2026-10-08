@@ -126,7 +126,8 @@ out_s, out_b = [], []
 for new_id, li in enumerate(order):
     s, b = slots[li], batches[li]
     s["items"].sort(key=lambda i: i["offset"])
-    out_s.append({"slot": new_id, "line": li, "after": s["after"], "items": s["items"]})
+    out_s.append({"slot": new_id, "line": li, "after": s["after"], "items": s["items"],
+                  "hold": tr[li]["text"].strip() in HOLD})
     bb = dict(b)
     bb["id"] = new_id
     bb.setdefault("context_before", [x["text"] for x in tr[max(0, li - 2):li + 1]])
