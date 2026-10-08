@@ -391,10 +391,15 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
         p:find("LoadingScreen", 1, true) ~= nil or p:find("UI_BP_PSO_FS", 1, true) ~= nil) end
 end)
 
--- A finished map load also counts as loading for a few seconds (the new world settles).
+-- A map load starting stops the mod until it finishes (state.begin_map_load); a finished load
+-- also counts as loading for a few seconds (the new world settles).
+pcall(RegisterLoadMapPreHook, function()
+    diag.trace("LoadMap starting")
+    state.begin_map_load()
+end)
 pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
-    state.mark_loading(6)
+    state.end_map_load()
     log("map loaded")
     -- Every screen read before the load belongs to the old map and may be freed: looking one
     -- up again (the help key, right after loading a save) crashed in StaticFindObject.

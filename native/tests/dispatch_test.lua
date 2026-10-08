@@ -58,4 +58,23 @@ t.now = t.now + 0.2; hooks.Tick()
 assert(not touched and released, "load cancels stale work but releases input")
 t.now = t.now + 2; hooks.Tick()
 assert(not touched, "old world work stays cancelled after load")
+
+-- Inside UEngine::LoadMap actors still tick, but nothing runs, not even work allowed during
+-- loads: the world gate's player lookup there crashed the game (Oct 8, end of the intro).
+local ran_inside, ran_old = false, false
+d.every(100, function() ran_inside = true end, "gate", true)
+d.run(function() ran_old = true end, "old map work")
+state.begin_map_load()
+for _ = 1, 20 do t.now = t.now + 0.12; hooks.Tick() end
+assert(not ran_inside and not ran_old, "nothing runs inside a map load")
+state.end_map_load()
+for _ = 1, 3 do t.now = t.now + 0.12; hooks.Tick() end
+assert(ran_inside, "work allowed during loads runs again once the map load has ended")
+assert(not ran_old, "work queued for the old map is dropped")
+-- Should the end never be heard, the hold lapses after a minute.
+ran_inside = false
+state.begin_map_load()
+t.now = t.now + 61; hooks.Tick()
+assert(ran_inside, "a map load that never ends doesn't stop the mod for good")
+state.map_loading_since = nil
 print("dispatcher test passed")

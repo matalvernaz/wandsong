@@ -17,6 +17,24 @@ function M.mark_loading(seconds)
     M.loading_until = math.max(M.loading_until, os.clock() + (seconds or 10))
 end
 
+-- Set from the start of UEngine::LoadMap until it returns (UE4SS's load-map hooks). Actors
+-- still tick while the old world is torn down, so the dispatcher would run inside the load:
+-- at the end of the intro the world gate looked the player up by path there and the game
+-- crashed in StaticFindObject (Oct 8). The dispatcher runs nothing while this is set.
+M.map_loading_since = nil
+function M.begin_map_load()
+    M.mark_loading(6)
+    M.map_loading_since = os.clock()
+end
+function M.end_map_load()
+    M.map_loading_since = nil
+    M.mark_loading(6)
+end
+--- True while a map load is in progress (at most a minute, should its end never be heard).
+function M.in_map_load()
+    return M.map_loading_since ~= nil and os.clock() - M.map_loading_since < 60
+end
+
 function M.set_cinematic(value)
     value = value == true
     if value ~= M.cinematic then M.scene = M.scene + 1; M.cinematic = value end

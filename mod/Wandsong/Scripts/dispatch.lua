@@ -151,6 +151,8 @@ local running, pending = false, false
 local next_tick, last_hook = 0, -math.huge
 local driver, fallback_calls, callback_freed, callback_missed = "starting", 0, 0, 0
 local function game_tick()
+    -- Nothing at all inside a map load, not even work allowed during loads (state.lua).
+    if state.in_map_load() then return end
     if running or os.clock() < next_tick then return end
     running = true
     next_tick = os.clock() + TICK_MS / 1000
