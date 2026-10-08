@@ -156,6 +156,7 @@ local source = nil              -- "route", "mission" or "guide": a change start
 
 -- Forward-declared above for target classification.
 local last_objective = nil      -- the current task, as the game words it (when it does)
+local leash = nil               -- "Stay close to <name>": { name, generation, level } (below)
 
 -- Someone the current objective names ("Find Professor Fig"), among the characters the story
 -- has introduced by name (subtitles): the world scan keeps those even far away.
@@ -950,11 +951,40 @@ dispatch.every(4000, function()
     local base, done, total = task:match("^(.-)%s*%((%d+)/(%d+)%)$")
     local was = last_objective and last_objective:match("^(.-)%s*%(%d+/%d+%)$")
     last_objective = task
+    local companion = task:match("^[Ss]tay [Cc]lose to (.-)%.?$")
+    if companion then leash = { name = companion, generation = state.generation, level = 0 } end
     if first then return end
     if base and was == base then speech.say(done .. " of " .. total .. ".", true)
     elseif base then speech.say("New objective: " .. base .. ", " .. done .. " of " .. total .. ".", true)
     else speech.say("New objective: " .. task, true) end
 end, "objective watch")
+
+-- "Stay close to Professor Fig" holds for the rest of that stretch of the quest: working out
+-- the statue puzzle, Matt went 15 m down the vault and the quest failed ("You abandoned
+-- Professor Fig", Oct 8) with no word from the mod. A sighted player sees Fig fall behind.
+-- Until the next load, while that person is tracked: past 10 m say where they are, past
+-- 14 m again; back within 7 m, it starts over.
+local LEASH_WARN_CM, LEASH_URGENT_CM, LEASH_OK_CM = 1000, 1400, 700
+dispatch.every(1000, function()
+    if not leash then return end
+    if leash.generation ~= state.generation then leash = nil; return end
+    if not world.in_game() then return end
+    local px, py, _, yaw = world.position()
+    local p
+    for _, e in ipairs(world.entries and world.entries() or {}) do
+        if e.kind == "person" and e.name == leash.name then p = world.locate(e.path); break end
+    end
+    if not (p and px) then return end
+    local d = dist2d(px, py, p)
+    if d <= LEASH_OK_CM then leash.level = 0; return end
+    local level = d > LEASH_URGENT_CM and 2 or d > LEASH_WARN_CM and 1 or leash.level
+    if level <= leash.level then return end
+    leash.level = level
+    local where = state.where(px, py, yaw or 0, p[1], p[2])
+    speech.alert(level == 2 and ("Go back to " .. leash.name .. " now, " .. where .. ". Wandering off fails the quest.")
+        or (leash.name .. " is " .. where .. ". Stay close, or the quest fails."))
+    if audio and not speech.is_muted() then audio.play_ui("warn", 0.6, 0.8) end
+end, "stay close")
 
 local function where_am_i()
     if state.steering then return end   -- steering a spell lesson's wand (spells.lua)

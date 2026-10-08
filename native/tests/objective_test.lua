@@ -94,4 +94,35 @@ assert(nav_to and nav_to.X == 10000, "the navmesh is asked for a path to Fig")
 px = -3000
 t.run(0.5)
 assert(said[#said]:find("the game moved you back", 1, true), "stops when moved back: " .. tostring(said[#said]))
+
+-- "Stay close to Professor Fig" holds after the objective moves on: wandering 15 m off
+-- failed the quest (Oct 8, the statue puzzle). Past 10 m the mod says where Fig is, past 14 m
+-- again, urgently; back within 7 m, it starts over.
+local alerts = {}
+require("speech").alert = function(s) alerts[#alerts + 1] = s end
+px, py, fig.x, fig.y = 0, 0, 300, 0
+task_text = "Stay Close to Professor Fig"
+t.run(5)
+task_text = "Discover the statue's secret"
+t.run(5)
+assert(#alerts == 0, "close by: nothing")
+px = -800
+t.run(2)
+assert(alerts[1] and alerts[1]:find("^Professor Fig is ahead, 11 metres%. Stay close, or the quest fails%."),
+    "past 10 m, where Fig is: " .. tostring(alerts[1]))
+t.run(3)
+assert(#alerts == 1, "said once")
+px = -1200
+t.run(2)
+assert(alerts[2] and alerts[2]:find("^Go back to Professor Fig now", 1), "past 14 m, urgently: " .. tostring(alerts[2]))
+px = 0
+t.run(2)
+px = -800
+t.run(2)
+assert(#alerts == 3, "back close by, it starts over")
+require("state").mark_loading(1)
+t.run(3)
+px = -1500
+t.run(3)
+assert(#alerts == 3, "a load ends it")
 print("objective test passed")
