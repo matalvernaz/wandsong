@@ -144,6 +144,22 @@ walk()
 assert(said[#said]:find("nearest person"), "guide fallback announced: " .. tostring(said[#said]))
 run(4, true)
 assert(said[#said]:find("Caught up"), "reached the standing person: " .. tostring(said[#said]))
+-- Pressed again beside them, with no objective marker: nothing to walk to, so the nearest thing
+-- to use instead, often the way on (Oct 8, the vault door).
+w.entries = function() return { { path = "/Game/Fake.Far", kind = "usable", name = "Far Lever" },
+                                 { path = "/Game/Fake.Door", kind = "usable", name = "Vault Door" } } end
+w.locate = function(path)
+    if path == "/Game/Fake.Guide" then return { gx, gy, 0 } end
+    if path == "/Game/Fake.Door" then return { px + 100, py + 100, 0 } end
+    if path == "/Game/Fake.Far" then return { px + 3000, py, 0 } end
+end
+walk()
+assert(said[#said]:find("beside you", 1, true) and said[#said]:find("Nearest thing to use: Vault Door", 1, true),
+    "beside the guide: the nearest thing to use instead: " .. tostring(said[#said]))
+run(0.5)
+assert(not keys_held(), "and no walking")
+w.entries = nil
+w.locate = function(path) if path == "/Game/Fake.Guide" then return { gx, gy, 0 } end end
 
 -- Facing: the nearest enemy, behind and to the left, gets turned to with mouse moves.
 local face

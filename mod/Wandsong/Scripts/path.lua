@@ -709,6 +709,27 @@ local function walk_tick()
     end
 end
 
+-- Autowalk with no objective marker and the nearest person already beside you: nothing to walk
+-- to. Say what the objective is and the nearest thing to use, often the way on (Oct 8, the
+-- vault door: "Caught up. You're beside them." four times while Fig stood by the door).
+local function nothing_to_walk_to()
+    local text = "No objective marker here" .. (last_objective and (" for " .. last_objective) or "") ..
+                 ", and the nearest person is beside you."
+    local px, py, pz, yaw = world.position()
+    local best, best_d
+    for _, e in ipairs(world.entries and world.entries() or {}) do
+        if e.kind == "usable" or e.kind == "door" then
+            local p = world.locate(e.path)
+            local d = p and math.abs(p[3] - pz) < 300 and dist2d(px, py, p)
+            if d and d < 1500 and (not best_d or d < best_d) then best, best_d = { e.name, p }, d end
+        end
+    end
+    if best then
+        text = text .. " Nearest thing to use: " .. best[1] .. ", " .. state.where(px, py, yaw, best[2][1], best[2][2]) .. "."
+    end
+    return text
+end
+
 local function toggle_walk()
     if walking then stop("") return end
     local ai = package.loaded.ai_walk
@@ -725,6 +746,7 @@ local function toggle_walk()
         return
     end
     local px, py, pz = world.position()
+    if dest_is_guide and dist2d(px, py, dest) <= 250 then speech.say(nothing_to_walk_to()) return end
     walking, cancel, waiting, crumb = true, nil, false, nil
     last_dx, last_yaw, turning_since = 0, nil, nil
     started_at, jumps = os.clock(), 0
