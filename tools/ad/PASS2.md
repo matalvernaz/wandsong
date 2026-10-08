@@ -55,6 +55,9 @@ spoilers, no guessed motives.
   explain), describe it in the next silence: "Fig hands you a small green vial."
 - The player is "you". Never describe your face, hair, skin, body, clothes or gender (each
   player made their own character). Your actions are fine: "You take the key."
+- The recording's player was sorted into Slytherin. A line every house hears ("Right this
+  way.", "Sleep well.") gets descriptions true for any house: no Slytherin common room or green
+  trims unless the line itself is Slytherin-only ("Slytherin!").
 - Name characters only once the dialogue has named them, with the names the game's subtitles
   use: Professor Fig (Eleazar Fig), George Osric, the Goblin Banker, Ranrok, Lodgok, the
   Carriage Driver, Professor Weasley (Matilda Weasley), Headmaster Black (Phineas Nigellus Black),
