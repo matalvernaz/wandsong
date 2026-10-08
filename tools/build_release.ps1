@@ -69,7 +69,7 @@ Copy-Item (Join-Path $root "helper\build\Release\wandsong_helper.exe") (Join-Pat
 Copy-Item (Join-Path $third "prism\dynamic\release\bin\prism.dll") (Join-Path $mod "helper")
 # In-process speech and clicks (Lua C modules) sit beside the scripts that require them.
 $scripts = Join-Path $mod "Scripts"
-Copy-Item (Join-Path $root "native\build\Release\prism_bridge.dll"), (Join-Path $root "native\build\Release\click_bridge.dll"), (Join-Path $root "native\build\Release\audio_bridge.dll"), (Join-Path $root "native\build\Release\input_bridge.dll") $scripts
+Copy-Item (Join-Path $root "native\build\Release\prism_bridge.dll"), (Join-Path $root "native\build\Release\click_bridge.dll"), (Join-Path $root "native\build\Release\audio_bridge.dll"), (Join-Path $root "native\build\Release\input_bridge.dll"), (Join-Path $root "native\build\Release\lifetime_bridge.dll") $scripts
 Copy-Item (Join-Path $third "prism\dynamic\release\bin\prism.dll") $scripts
 
 # Docs and licenses.

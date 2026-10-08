@@ -21,7 +21,9 @@ def main():
         build = ROOT / "native" / "build-tests"
         subprocess.run(["cmake", "-S", "native", "-B", str(build)], check=True,
                        stdout=subprocess.DEVNULL)
-        subprocess.run(["cmake", "--build", str(build), "--config", "Release", "--target", "luahost"],
+        # lifetime_test loads the real deletion-record module (Windows only).
+        targets = ["luahost", "lifetime_bridge"] if os.name == "nt" else ["luahost"]
+        subprocess.run(["cmake", "--build", str(build), "--config", "Release", "--target", *targets],
                        check=True, stdout=subprocess.DEVNULL)
         host = build / ("Release/luahost.exe" if os.name == "nt" else "luahost")
     names = args.tests or ["syntax_check"] + sorted(p.stem for p in (ROOT / "native/tests").glob("*_test.lua"))

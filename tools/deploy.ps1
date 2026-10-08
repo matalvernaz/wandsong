@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\deploy.ps1 [-Native] [-Win64 <path>]
 #
 # The game loads scripts at startup: restart it afterwards (never hot-reload while playing).
-param([switch]$Native, [string]$Win64 = "", [string]$InputBridge = "", [string]$AudioBridge = "")
+param([switch]$Native, [string]$Win64 = "", [string]$InputBridge = "", [string]$AudioBridge = "", [string]$LifetimeBridge = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if (Get-Process -Name HogwartsLegacy -ErrorAction SilentlyContinue) {
@@ -34,8 +34,9 @@ $scripts = Join-Path $mod "Scripts"
 if (-not (Test-Path $scripts)) { throw "UE4SS mod folder missing: $scripts (run the installer first)" }
 if ($InputBridge -and -not (Test-Path $InputBridge)) { throw "Input module missing: $InputBridge" }
 if ($AudioBridge -and -not (Test-Path $AudioBridge)) { throw "Audio module missing: $AudioBridge" }
+if ($LifetimeBridge -and -not (Test-Path $LifetimeBridge)) { throw "Lifetime module missing: $LifetimeBridge" }
 if ($Native) {
-    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
+    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll", "lifetime_bridge.dll") {
         if (-not (Test-Path (Join-Path $root "native\build\Release\$dll"))) { throw "Build the native modules first: $dll is missing" }
     }
 }
@@ -43,7 +44,7 @@ if ($Native) {
 Copy-Item (Join-Path $root "mod\Wandsong\Scripts\*.lua") $scripts -Force
 Write-Host "scripts -> $scripts"
 if ($Native) {
-    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll") {
+    foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll", "lifetime_bridge.dll") {
         Copy-Item (Join-Path $root "native\build\Release\$dll") $scripts -Force
     }
     Write-Host "native modules -> $scripts"
@@ -55,4 +56,8 @@ if ($AudioBridge) {
 if ($InputBridge) {
     Copy-Item $InputBridge (Join-Path $scripts "input_bridge.dll") -Force
     Write-Host "input module -> $scripts"
+}
+if ($LifetimeBridge) {
+    Copy-Item $LifetimeBridge (Join-Path $scripts "lifetime_bridge.dll") -Force
+    Write-Host "lifetime module -> $scripts"
 }

@@ -10,6 +10,9 @@
 --     module needs is read from the fresh objects in that same tick, and nothing looks a world
 --     actor up again between passes (see "Scanning" below). Only long-lived objects (the
 --     player, the UI manager, the tutorial system) are looked up by path.
+--   * the one exception, off unless lifetime_enabled.txt is in the mod folder: the objects a
+--     pass found are held, and the nearest are read again between passes, each only after the
+--     game's own deletion record says it hasn't been deleted since (see "Holding" below).
 
 local dispatch = require("dispatch")
 local speech = require("speech")
@@ -29,6 +32,18 @@ if ok_audio and type(audio) == "table" then
 else
     log("audio unavailable: " .. tostring(audio))
     audio = nil
+end
+
+-- The deletion record (lifetime_bridge.dll), only when lifetime_enabled.txt exists. Started on
+-- the game thread by the first dispatcher tick; nothing is held until it has started.
+local lifetime, holding = nil, false
+do
+    local f = io.open(require("files").runtime("lifetime_enabled.txt"), "r")
+    if f then
+        f:close()
+        local ok, mod = pcall(require, "lifetime_bridge")
+        if ok and type(mod) == "table" then lifetime = mod else log("lifetime: unavailable: " .. tostring(mod)) end
+    end
 end
 
 -- What each kind of thing sounds like, how often, and from how far.
@@ -75,9 +90,9 @@ local GATE_SETTLE_SECONDS = 5   -- elapsed time, independent of frame rate or di
 
 -- --- Gameplay gate --------------------------------------------------------------------
 
--- Game objects are never kept between ticks: touching one the game has since destroyed
--- crashes inside UE4SS, where nothing can catch it. We keep each object's path and look it
--- up again (StaticFindObject is a quick hash lookup) every time it's needed.
+-- Game objects are never kept between ticks without the deletion record: touching one the game
+-- has since destroyed crashes inside UE4SS, where nothing can catch it. Long-lived ones are
+-- kept by path and looked up again (StaticFindObject is a quick hash lookup) when needed.
 local ui_path, pawn_path, ctrl_path, ts_path
 local in_game, stable, world_key = false, 0, nil
 
@@ -113,13 +128,24 @@ local function call_bool(o, fn)
 end
 
 -- key (object address) -> { path, kind, name, name_src, x, y, z, dist, seen_at, pass,
--- priority, sound, every, range, pitch, next_at, extra }: snapshots, never objects.
+-- priority, sound, every, range, pitch, next_at, extra, cn }: snapshots. Only while holding
+-- (see "Holding") also obj, the object, and serial, its watch in the deletion record.
 local nearby = {}
 local by_path = {}  -- path -> key
 local spoken_names, logged_names = {}, {}
 
+-- Forget one thing: its snapshot, its path, and its watch.
+local function drop(key)
+    local n = nearby[key]
+    if not n then return end
+    if n.path and by_path[n.path] == key then by_path[n.path] = nil end
+    if n.serial and lifetime then lifetime.forget(key) end
+    nearby[key] = nil
+end
+
 local function clear_world(reset_names)
     nearby, by_path = {}, {}
+    if holding then lifetime.clear() end
     -- Names learned from subtitles stay: object paths are unique for the whole run, and the
     -- pause menu's screen load counts as a load (Fig was "Student" again after it, Oct 7).
     if reset_names then logged_names = {} end
@@ -532,9 +558,19 @@ local KEEP_CM = 4000
 
 local readers = {}   -- { fragment, fn }
 --- Read more from a fresh object during a scan pass: fn(actor, entry) runs for every actor
---- whose class name contains `fragment`, in the pass's own tick. It may fill entry.extra; it
---- must never keep the actor.
+--- whose class name contains `fragment`, in the pass's own tick (and, while holding, again at
+--- each refresh, once the deletion record has vouched for the object). It may fill
+--- entry.extra; it must never keep the actor.
 function M.on_scan(fragment, fn) readers[#readers + 1] = { fragment = fragment, fn = fn } end
+
+local function read_extra(a, n)
+    for _, r in ipairs(readers) do
+        if n.cn:find(r.fragment, 1, true) then
+            local ok, err = pcall(r.fn, a, n)
+            if not ok then diag.trace("scan reader " .. r.fragment .. ": " .. tostring(err)) end
+        end
+    end
+end
 
 local function enemy_tip()
     require("tips").once("enemy", function()
@@ -555,12 +591,13 @@ local function take(a, kind, cn, pass, priority, seen)
     local dx, dy, dz = x - px, y - py, z - pz
     local d = math.sqrt(dx * dx + dy * dy + dz * dz)
     local n = nearby[key]
+    -- Held, and a deletion was noted at this address since: a new object took its place.
+    if n and n.serial and not lifetime.alive(key, n.serial) then drop(key); n = nil end
     -- A thing an earlier (more specific) pass already holds stays with that pass.
     if n and n.pass ~= pass and (n.priority or 99) < priority then return false end
     local k = KINDS[kind]
     if d > math.max(k.range * 1.5, KEEP_CM) then
-        if n and n.path then by_path[n.path] = nil end
-        nearby[key] = nil
+        drop(key)
         return false
     end
     seen[key] = true
@@ -577,25 +614,22 @@ local function take(a, kind, cn, pass, priority, seen)
     end
     if not n.path then n.path = path_of(a) end
     if n.path then by_path[n.path] = key end
-    n.kind, n.pass, n.priority = kind, pass, priority
+    n.kind, n.pass, n.priority, n.cn = kind, pass, priority, cn
     n.sound, n.every, n.range, n.pitch = k.sound, k.every, k.range, k.pitch or 1.0
     n.x, n.y, n.z, n.dist, n.seen_at = x, y, z, d, os.clock()
-    for _, r in ipairs(readers) do
-        if cn:find(r.fragment, 1, true) then
-            local ok, err = pcall(r.fn, a, n)
-            if not ok then diag.trace("scan reader " .. r.fragment .. ": " .. tostring(err)) end
-        end
+    -- Holding: keep the object, watched from now on (it came fresh from this pass's query).
+    if holding then
+        if not n.serial then n.serial = lifetime.watch(key) end
+        n.obj = a
     end
+    read_extra(a, n)
     return true
 end
 
 -- The sentinel: what a pass held and didn't see again is gone, and is never touched again.
 local function drop_unseen(pass, seen)
     for key, n in pairs(nearby) do
-        if n.pass == pass and not seen[key] then
-            if n.path and by_path[n.path] == key then by_path[n.path] = nil end
-            nearby[key] = nil
-        end
+        if n.pass == pass and not seen[key] then drop(key) end
     end
 end
 
@@ -642,11 +676,68 @@ local function run_pass(cls, pass, priority, classify)
     if found > 0 or ms > 50 then log(string.format("scan %s: %d nearby (%d ms)", cls, found, ms)) end
 end
 
+-- --- Holding ----------------------------------------------------------------------------
+-- With the deletion record running (lifetime_enabled.txt), the objects passes find are held,
+-- and every 200 ms the nearest are read again, positions and every on_scan reader: moving
+-- people and enemies, and the knights' reflections, are heard where they are now, not where
+-- the last pass saw them. A held object is touched only after the record says the game hasn't
+-- deleted it since it was found. Then UE4SS's IsValid is safe to ask (it reads the object,
+-- which is still there), and says whether it's on its way out. Passes still decide what
+-- exists: a thing its pass doesn't return is dropped, held or not. The character pass is then
+-- only for newcomers: every turn (about 1.2 s) while enemies are about or were in the last
+-- 10 s, else about every 3 s, or sooner after 5 m of walking.
+local REFRESH_MS = 200
+local REFRESH_MAX = 24          -- the nearest this many are read again each time
+local CALM_PASS_S, FOE_RECENT_S, MOVED_CM = 2.5, 10, 500   -- turns come every 1.2 to 1.4 s
+local life = { refreshed = 0, deleted = 0, invalid = 0, passes = 0, skipped = 0 }
+local lifetime_why = lifetime and "starting" or "off (no lifetime_enabled.txt, or the module is missing)"
+local last_chars_at, last_chars_x, last_chars_y, foe_at = -math.huge, 0, 0, -math.huge
+
+local function refresh()
+    if not holding or not in_game or state.loading() then return end
+    local order = {}
+    for key, n in pairs(nearby) do if n.obj then order[#order + 1] = key end end
+    table.sort(order, function(a, b) return (nearby[a].dist or 1e9) < (nearby[b].dist or 1e9) end)
+    for i = 1, math.min(#order, REFRESH_MAX) do
+        local key = order[i]
+        local n = nearby[key]
+        if n and not lifetime.alive(key, n.serial) then
+            life.deleted = life.deleted + 1     -- deleted since its pass: dropped untouched
+            drop(key)
+        elseif n and not valid(n.obj) then
+            life.invalid = life.invalid + 1
+            drop(key)
+        elseif n then
+            local x, y, z = location(n.obj)
+            if x then
+                local dx, dy, dz = x - px, y - py, z - pz
+                n.x, n.y, n.z, n.dist, n.seen_at = x, y, z, math.sqrt(dx * dx + dy * dy + dz * dz), os.clock()
+                read_extra(n.obj, n)
+                life.refreshed = life.refreshed + 1
+            end
+        end
+    end
+end
+
+-- Whether this turn's character pass runs (always, unless holding).
+local function characters_due()
+    if not holding then return true end
+    local now = os.clock()
+    for _, n in pairs(nearby) do
+        if n.kind == "enemy" or n.kind == "statue" then foe_at = now; break end
+    end
+    if now - foe_at < FOE_RECENT_S or now - last_chars_at >= CALM_PASS_S then return true end
+    return (px - last_chars_x) ^ 2 + (py - last_chars_y) ^ 2 >= MOVED_CM ^ 2
+end
+
 local turn, static_i = 0, 0
 local function scan_step()
     if not in_game or state.loading() then return end
     turn = turn + 1
     if turn % 2 == 1 then
+        if not characters_due() then life.skipped = life.skipped + 1; return end
+        last_chars_at, last_chars_x, last_chars_y = os.clock(), px, py
+        if holding then life.passes = life.passes + 1 end
         -- Native classes are never destroyed: safe to look up, fresh each pass anyway.
         local creature_cls, enemy_cls
         pcall(function() creature_cls = StaticFindObject("/Script/Phoenix.Creature_Character") end)
@@ -720,6 +811,7 @@ local function status()
         enabled and "on" or "OFF", in_game and " in game" or " gate shut", state.loading() and " loading" or "",
         px / 100, py / 100, pz / 100, yaw_now, total, table.concat(parts, " "),
         collectgarbage("count"), q, t))
+    if lifetime then diag.log(M.lifetime_report()) end
     -- Every 30 s: a full collection, to tell garbage from memory that's really held, plus the
     -- Lua registry's length (UE4SS leaks references there) and who allocated what.
     status_n = status_n + 1
@@ -731,6 +823,19 @@ local function status()
             before, collectgarbage("count"), (os.clock() - t0) * 1000, rawlen(debug.getregistry()),
             freed, missed, dispatch.alloc_report()))
     end
+end
+
+--- How holding is going: the deletion record's counts and the refresh's (tools/probe_lifetime.lua,
+--- and the 10-second status line).
+function M.lifetime_report()
+    if not lifetime then return "lifetime: " .. lifetime_why end
+    local s = lifetime.stats()
+    local held = 0
+    for _, n in pairs(nearby) do if n.obj then held = held + 1 end end
+    return string.format("lifetime: %s; deletions the engine reported %d, of watched objects %d; watching %d, holding %d; " ..
+        "refreshed %d, dropped as deleted %d, as invalid %d; character passes %d, skipped %d",
+        holding and "holding" or lifetime_why, s.notified, s.noted, s.watched, held,
+        life.refreshed, life.deleted, life.invalid, life.passes, life.skipped)
 end
 
 --- The player's pawn, looked up fresh (nil outside gameplay). Use it within one task only.
@@ -806,9 +911,24 @@ keys.action{
     end,
 }
 
+-- The delete listener registers on the game thread, at the first tick.
+if lifetime then
+    dispatch.run(function()
+        local ok, msg = lifetime.start()
+        log("lifetime: " .. tostring(msg))
+        if ok then
+            lifetime.clear()
+            holding = true
+        else
+            lifetime_why, lifetime = "start failed: " .. tostring(msg), nil
+        end
+    end, "lifetime start", true)
+end
+
 dispatch.every(GATE_MS, gate_check, "world gate", true)
 dispatch.every(LISTENER_MS, update_listener, "world listener")
 dispatch.every(SCAN_EVERY_MS, scan_step, "world scan")
+dispatch.every(REFRESH_MS, refresh, "world refresh")
 dispatch.every(250, ambient, "world ambient")
 dispatch.every(10000, status, "world status")
 

@@ -39,6 +39,12 @@ target_compile_definitions(audio_bridge PRIVATE NOMINMAX)
 add_library(input_bridge SHARED input_bridge.c)
 target_link_libraries(input_bridge PRIVATE lua54 user32)
 
+# Object lifetime: a delete listener registered through UE4SS.dll's exports. Build with MSVC:
+# its vtable must match MSVC's layout of UE4SS's FUObjectDeleteListener.
+add_library(lifetime_bridge SHARED lifetime_bridge.cpp)
+target_link_libraries(lifetime_bridge PRIVATE lua54)
+target_compile_features(lifetime_bridge PRIVATE cxx_std_17)
+
 # Test host: runs a Lua script against the modules outside the game (dev only, not shipped).
 add_executable(luahost luahost.c)
 target_link_libraries(luahost PRIVATE lua54)
