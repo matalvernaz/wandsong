@@ -4,7 +4,8 @@
 # Never takes focus: a key goes out only while the game is the window in front.
 #   powershell -ExecutionPolicy Bypass -File tools\reflex.ps1 [-Seconds 300] [-Block 0x51] [-Dodge 0xA2]
 # Block and Dodge are virtual-key codes (Q and Left Control by default, the game's defaults).
-param([int]$Seconds = 300, [int]$Block = 0x51, [int]$Dodge = 0xA2)
+# -Post posts the keys to the game's window (see sendkeys.ps1 -Post).
+param([int]$Seconds = 300, [int]$Block = 0x51, [int]$Dodge = 0xA2, [switch]$Post)
 
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -14,6 +15,12 @@ public class HaReflex {
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, IN[] i, int size);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
+ [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+ public static void Post(IntPtr h, uint vk, bool up){
+  uint sc = MapVirtualKey(vk, 0);
+  long l = 1 | ((long)sc << 16) | (up ? ((1L << 30) | (1L << 31)) : 0);
+  PostMessage(h, up ? 0x0101u : 0x0100u, (IntPtr)vk, (IntPtr)l);
+ }
  public static void Key(ushort vk, bool up){
   var a=new IN[1]; a[0].type=1;
   uint scan=MapVirtualKey(vk,4);
@@ -34,7 +41,12 @@ $reader = New-Object IO.StreamReader($fs)
 
 function Press([int]$vk, [string]$why) {
     if ([HaReflex]::GetForegroundWindow() -ne $hwnd) { Write-Output "$(Get-Date -Format HH:mm:ss.fff) skipped ($why): the game isn't in front"; return }
-    [HaReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Key([uint16]$vk, $true)
+    if ($Post) {
+        # Straight to the game's window (see sendkeys.ps1 -Post).
+        [HaReflex]::Post($hwnd, [uint32]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Post($hwnd, [uint32]$vk, $true)
+    } else {
+        [HaReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Key([uint16]$vk, $true)
+    }
     Write-Output "$(Get-Date -Format HH:mm:ss.fff) pressed $why"
 }
 

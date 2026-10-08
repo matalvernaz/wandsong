@@ -1,6 +1,6 @@
 # Dev helper: press keys in the game, then print what the mod said and which screens opened.
 # Usage: drive.ps1 -Keys "f","rbr" [-Wait 2500] [-Lines 8]
-param([string[]]$Keys, [int]$Wait = 2500, [int]$Lines = 8, [switch]$Probe)
+param([string[]]$Keys, [int]$Wait = 2500, [int]$Lines = 8, [switch]$Probe, [switch]$Post)
 # powershell -File passes "a,b" as one string: split it.
 $Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
@@ -8,7 +8,7 @@ $log = "C:\Program Files (x86)\Steam\steamapps\common\Hogwarts Legacy\Phoenix\Bi
 $before = (Get-Content $log -Encoding UTF8).Count
 if (-not $Keys) { Start-Sleep -Milliseconds $Wait }   # no keys: just watch the game for -Wait ms
 foreach ($k in $Keys) {
-    $out = & "$PSScriptRoot\sendkeys.ps1" -Keys $k -DelayMs $Wait -Probe:$Probe
+    $out = & "$PSScriptRoot\sendkeys.ps1" -Keys $k -DelayMs $Wait -Probe:$Probe -Post:$Post
     Write-Output $out
     if ($LASTEXITCODE -ne 0) { Write-Output "Run stopped."; exit $LASTEXITCODE }
 }

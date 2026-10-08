@@ -539,16 +539,29 @@ local function guide_at_dest()
     return false
 end
 
+-- Where the player was at the last walking tick: a jump further than this in one tick is the
+-- game putting the player elsewhere. The vault's dark maze sends you back to its start when you
+-- stray from the wisps, and autowalk walked into it again for three minutes (Oct 8).
+local TELEPORT_CM = 1500
+local walk_from = nil
+
 local function walk_tick()
-    if not walking then return end
+    if not walking then walk_from = nil; return end
     if cancel then local c = cancel; cancel = nil; stop(c); return end
     if not world.in_game() then stop(PAUSED); return end
     if route_failure then stop(route_failure); return end
     if not input or not input.focused() then
         release()   -- alt-tabbed: let go, and pick up again when the game has focus
+        walk_from = nil
         return
     end
     local px, py, pz = world.position()
+    if walk_from and dist3(walk_from, { px, py, pz }) > TELEPORT_CM then
+        walk_from = nil
+        stop("the game moved you back, so that way isn't open")
+        return
+    end
+    walk_from = { px, py, pz }
     if not dest then stop(chosen and "it's gone" or "no objective to walk to"); return end
     local d = dist2d(px, py, dest)
     -- Right on top of it counts even when the marker sits lower or higher than the player's

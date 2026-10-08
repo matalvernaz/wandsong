@@ -76,4 +76,10 @@ t.action("autowalk")()
 assert(said[#said]:find("^Walking to the objective"), "walks to the person the objective names: " .. tostring(said[#said]))
 t.run(1)
 assert(nav_to and nav_to.X == 10000, "the navmesh is asked for a path to Fig")
+
+-- The game puts the player back (the dark maze returns you to its start when you stray):
+-- autowalk stops instead of walking into it again and again.
+px = -3000
+t.run(0.5)
+assert(said[#said]:find("the game moved you back", 1, true), "stops when moved back: " .. tostring(said[#said]))
 print("objective test passed")

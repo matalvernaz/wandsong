@@ -5,7 +5,11 @@
 # slash, f1-f12; prefix ctrl+ or shift+. Suffix @ms holds the key that long ("space@2500").
 # -Probe first checks that injected letters land (it types an unbound B: never use it while a
 # text field such as a character name has focus).
-param([string[]]$Keys, [int]$DelayMs = 700, [switch]$Probe)
+# -Post posts the key messages to the game's window instead of injecting input: they reach the
+# game (not the mod's own key handling, which reads the keyboard state) and can't land in any
+# other window. For when something on the PC filters injected letters, digits, space, enter
+# and arrows (Oct 7 and Oct 8; F-keys, brackets and backslash still passed).
+param([string[]]$Keys, [int]$DelayMs = 700, [switch]$Probe, [switch]$Post)
 # powershell -File passes "a,b" as one string: split it.
 $Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
@@ -18,6 +22,12 @@ public class HaKeys {
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int v);
+ [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+ public static void Post(IntPtr h, uint vk, bool ext, bool up){
+  uint sc = MapVirtualKey(vk, 0);
+  long l = 1 | ((long)sc << 16) | (ext ? (1L << 24) : 0) | (up ? ((1L << 30) | (1L << 31)) : 0);
+  PostMessage(h, up ? 0x0101u : 0x0100u, (IntPtr)vk, (IntPtr)l);
+ }
  // Virtual key plus its scan code, like a real keyboard driver reports. Scan-code-only
  // input (KEYEVENTF_SCANCODE) was never seen by the game or UE4SS for F or Enter (Oct 7).
  public static void Key(ushort vk, bool ext, bool up){
@@ -83,6 +93,19 @@ foreach ($k in $Keys) {
     elseif ($name -match '^[a-z0-9]$') { $vk = [int][char]$name.ToUpper() }
     else { $vk = $map[$name] }
     if (-not $vk) { Write-Output "Unknown key: $name; no keys sent."; exit 1 }
+    if ($Post) {
+        # Straight to the game's window: nothing can reach another window this way.
+        $ext = $extended -contains $name
+        if ($ctrl) { [HaKeys]::Post($hwnd, 0x11, $false, $false) }
+        if ($shift) { [HaKeys]::Post($hwnd, 0x10, $false, $false) }
+        [HaKeys]::Post($hwnd, $vk, $ext, $false)
+        Start-Sleep -Milliseconds $hold
+        [HaKeys]::Post($hwnd, $vk, $ext, $true)
+        if ($shift) { [HaKeys]::Post($hwnd, 0x10, $false, $true) }
+        if ($ctrl) { [HaKeys]::Post($hwnd, 0x11, $false, $true) }
+        Start-Sleep -Milliseconds $DelayMs
+        continue
+    }
     $lostFocus = $false
     try {
         if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
