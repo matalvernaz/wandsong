@@ -198,6 +198,14 @@ local MAX_LATE = 15
 -- Gringotts cart and the ride, Oct 7): only an exit that lasts this long ends the scene.
 local SCENE_EXIT_GRACE = 2.0
 local exit_since = nil
+-- A load in the middle of a scene (Oct 8: the title card, then Hogwarts at night) ended every
+-- description still to come. Now what a scene still had to describe within CARRY_MAX waits
+-- for the scene after the load, in order and as far apart as planned; if no scene starts
+-- within CARRY_WAIT of the load, they're dropped. Any other load (fast travel, a reload after
+-- defeat) still ends them.
+local CARRY_MAX, CARRY_WAIT = 40, 15
+local carried = nil              -- { items = { { text, gap } }, since = when the load ended }
+local cinematic_at = -100        -- when a scene was last seen playing
 local binding = require("bindings")
 local skip_vk = binding.virtual_key(binding.key("UMGSkipCinematicOrConversation", "Delete"))
 keys.observe(function(_, key)
@@ -328,9 +336,22 @@ dispatch.every(100, function()
     if skip_requested then
         skip_requested = false
         cancel_descriptions()
-        pending, recent, before = {}, {}, {}
+        pending, recent, before, carried = {}, {}, {}, nil
     end
+    if state.cinematic and not state.loading() then cinematic_at = now end
     if generation ~= state.generation or state.loading() then
+        if state.loading() and not carried and describe and now - cinematic_at < 5 then
+            local items = {}
+            for _, item in ipairs(scheduled) do
+                if item.serial == serial and not item.held and item.due - now <= CARRY_MAX then items[#items + 1] = item end
+            end
+            table.sort(items, function(a, b) return a.due < b.due end)
+            if #items > 0 then
+                carried = { items = {} }
+                for i, it in ipairs(items) do carried.items[i] = { text = it.text, gap = it.due - items[1].due } end
+                log("descriptions carried over a load in a scene: " .. #items)
+            end
+        end
         generation, scene, exit_since = state.generation, state.scene, nil
         last_match = nil   -- a load can land anywhere in the story
         cancel_descriptions()
@@ -368,6 +389,23 @@ dispatch.every(100, function()
                 scheduled[#scheduled + 1] = { due = due, planned = due, at = now, text = it.text,
                     serial = serial, generation = generation, scene = scene }
             end
+        end
+    end
+    if carried and not describe then carried = nil end
+    if carried then
+        carried.since = carried.since or now
+        -- A moment first for the world gate to see whether the new map opens in a scene.
+        if state.cinematic and now - carried.since >= 1 then
+            for _, it in ipairs(carried.items) do
+                local due = now + 0.5 + it.gap
+                scheduled[#scheduled + 1] = { due = due, planned = due, at = now, text = it.text,
+                    serial = serial, generation = generation, scene = scene }
+            end
+            log("descriptions carried over the load: the next scene has them")
+            carried = nil
+        elseif now - carried.since > CARRY_WAIT then
+            log("descriptions carried over the load dropped: no scene followed it")
+            carried = nil
         end
     end
     if state.paused then

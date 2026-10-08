@@ -106,5 +106,25 @@ assert(#said==n0,"nothing before the scene starts")
 state.set_cinematic(true); t.run(1)
 assert(said[#said] and said[#said]:find("Now you stand on a foggy",1,true),"the opening is described: "..tostring(said[#said]))
 assert(state.new_story_since==nil,"once")
+-- A load in the middle of a scene (the title card, then Hogwarts at night, Oct 8): what was
+-- still to come is described in the scene after the load, in order and as far apart.
+state.set_cinematic(false); t.run(3); n0=#said
+state.set_cinematic(true); t.run(0.5)
+line("Wait. We do not know what -",1,"Fig_20"); t.run(2)      -- items due 1, 5 and 11 s from now
+state.mark_loading(2); t.run(2.1)          -- the scene flag is left as it was through a load
+assert(#said==n0,"nothing during the load")
+t.run(1.2)
+assert(#said==n0,"a moment for the new map to show whether it opens in a scene")
+t.run(0.5)
+assert(said[#said]=="A dragon swoops.","the first carried description: "..tostring(said[#said]))
+t.run(4.0); assert(said[#said]=="The carriage breaks apart.","the next, as far apart as planned")
+-- With no scene after the load, they go.
+state.set_cinematic(false); t.run(8); n0=#said
+state.set_cinematic(true); t.run(0.5)
+line("Wait. We do not know what -",1,"Fig_20"); t.run(2)
+state.mark_loading(2); t.run(0.1); state.set_cinematic(false); t.run(20)
+state.set_cinematic(true); t.run(15)
+assert(#said==n0,"no scene soon after the load: the carried descriptions are dropped")
+state.set_cinematic(false); t.run(3)
 assert(not next(t.hooks),"custom subtitle event needs no repeated RegisterHook attempts")
 print("subtitles test passed")
