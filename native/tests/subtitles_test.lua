@@ -98,5 +98,13 @@ state.set_cinematic(true); t.run(0.5)
 assert(#said==n0,"the scene's own timing")
 t.run(1)
 assert(said[#said]=="A stone basin.","described once the scene starts: "..tostring(said[#said]))
+-- A new character's story opens before anyone speaks: its first scene is described from its start.
+state.set_cinematic(false); t.run(3); n0=#said
+state.new_story_since=os.clock()
+t.run(2)
+assert(#said==n0,"nothing before the scene starts")
+state.set_cinematic(true); t.run(1)
+assert(said[#said] and said[#said]:find("you appear on a dark",1,true),"the opening is described: "..tostring(said[#said]))
+assert(state.new_story_since==nil,"once")
 assert(not next(t.hooks),"custom subtitle event needs no repeated RegisterHook attempts")
 print("subtitles test passed")

@@ -274,6 +274,7 @@ local function on_read_menu(widget)
     if cls:find("CharCreator_Finalize", 1, true) and os.clock() - tips_reset_at > 60 then
         tips_reset_at = os.clock()
         require("tips").reset()
+        state.new_story_since = os.clock()   -- the next scene opens the story (subtitles.lua)
         log("new character: the first-time tips will play again")
     end
     -- "Quest failed" (Try Again, Exit to the Main Menu) and being defeated: real menus that the

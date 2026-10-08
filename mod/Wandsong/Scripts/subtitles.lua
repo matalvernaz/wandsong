@@ -93,6 +93,14 @@ end
 -- A held description waits this long at most for its scene.
 local HOLD_MAX = 900
 
+-- The story's first moments come before anyone speaks, so no line can key them (Matt, Oct 8:
+-- "doesn't mention the character apparating in"). They play when the first scene starts after
+-- a new character is finished (menus.lua sets state.new_story_since on the finalize screen).
+local OPENING = {
+    { delay = 0.5, text = "Golden sparks swirl around you, and you appear on a dark, cobbled London street at night." },
+    { delay = 6.0, text = "A red carriage waits, an owl perched on its roof. Professor Fig, grey-haired, in a long green coat, stands beside it." },
+}
+
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
 -- Deduplicate delivery of a line, not the description for the lifetime of the process.
@@ -328,6 +336,19 @@ dispatch.every(100, function()
         for _, item in ipairs(scheduled) do item.scene = scene end
     else
         exit_since = nil
+    end
+    if state.new_story_since and describe then
+        if os.clock() - state.new_story_since > 600 then
+            state.new_story_since = nil
+        elseif state.cinematic then
+            state.new_story_since = nil
+            for _, it in ipairs(OPENING) do
+                log(string.format("description opening in %.1f s: %s", it.delay, it.text))
+                local due = now + it.delay
+                scheduled[#scheduled + 1] = { due = due, planned = due, at = now, text = it.text,
+                    serial = serial, generation = generation, scene = scene }
+            end
+        end
     end
     if state.paused then
         for _, item in ipairs(scheduled) do item.due = item.due + elapsed; item.planned = item.planned + elapsed end
