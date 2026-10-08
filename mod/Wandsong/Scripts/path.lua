@@ -885,34 +885,17 @@ local function visible(w)
     local ok, v = pcall(function() return w:IsValid() and w:IsVisible() end)
     return ok and v == true
 end
--- Where the HUD's quest widgets live, so most checks are a quick StaticFindObject; a full
--- FindAllOf (about 50 ms) only every 15 s or when the remembered ones are gone.
-local quest_paths, quest_scan_at = nil, -100
+-- The HUD's quest widgets, found afresh each time (one FindAllOf per class, about 50 ms every
+-- 4 s). Never looked up again by a remembered path: when a task is done the game destroys its
+-- checkbox, and StaticFindObject on the path of a destroyed object crashes inside UE4SS itself,
+-- before any check can run (Oct 8, 13:48: the trace ended in "run objective watch" four
+-- seconds after the task's checkbox went, the game died without a dump; the vault's knights
+-- crashed the same way on Oct 7).
 local function quest_widgets()
     local found = {}
-    if quest_paths and os.clock() - quest_scan_at < 15 then
-        for _, p in ipairs(quest_paths) do
-            local o
-            pcall(function() o = StaticFindObject(p.path) end)
-            -- A widget the game has destroyed can come back from the lookup renamed None:
-            -- calling IsVisible on it would crash. The full name must still end in the path.
-            local same = o and path_of(o) == p.path
-            if same and visible(o) then found[#found + 1] = { kind = p.kind, obj = o } end
-        end
-        -- Only the title showing: the next task may be in a widget not remembered yet, so look
-        -- again sooner than the full 15 s.
-        local has_task = false
-        for _, f in ipairs(found) do if f.kind == "task" then has_task = true end end
-        if #found > 0 and (has_task or os.clock() - quest_scan_at < 6) then return found end
-    end
-    quest_paths, quest_scan_at = {}, os.clock()
     for kind, cls in pairs({ task = "UI_BP_MissionBannerCheckbox_C", banner = "UI_BP_MissionBanner_New_C" }) do
         for _, o in ipairs(FindAllOf(cls) or {}) do
-            if visible(o) then
-                found[#found + 1] = { kind = kind, obj = o }
-                local p = path_of(o)
-                if p then quest_paths[#quest_paths + 1] = { kind = kind, path = p } end
-            end
+            if visible(o) then found[#found + 1] = { kind = kind, obj = o } end
         end
     end
     return found
@@ -1090,7 +1073,7 @@ dispatch.every(500, function()
     if generation ~= state.generation then
         generation = state.generation
         if walking then stop("loading") end
-        route, dest, trail, chosen, crumb, guide_path, mgr_path, quest_paths, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil, nil
+        route, dest, trail, chosen, crumb, guide_path, mgr_path, nav_cache = {}, nil, {}, nil, nil, nil, nil, nil
         source, last_quest_line, last_objective, arrived_at, face, straight_to = nil, nil, nil, nil, nil, nil
         next_mgr_search = 0
     end

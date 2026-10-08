@@ -176,35 +176,28 @@ end
 
 -- Crash fuse: a marker file exists exactly while world sounds are active in gameplay. If
 -- the game crashes then, the marker survives, and the next launch starts with world sounds
--- off (and says so) instead of crashing again. Quitting with Alt+F4 in the middle of play
--- leaves the marker too, but no crash dump: UE4SS writes crash_*.dmp beside the game when it
--- crashes, so only a dump at least as new as the marker blows the fuse (Oct 8: Matt had to
--- resume world features after every such quit). Without the means to tell, it blows.
+-- off (and says so) instead of crashing again. Quitting the game in the middle of play
+-- (Alt+F4) left the marker too; the game instance's shutdown, which a crash never reaches,
+-- now clears it, where the game sends it (unproven: its Blueprint may not implement the
+-- event). A crash dump can't tell instead: the Oct 8 13:48 crash left none.
 local FUSE = require("files").runtime("world_active.flag", true)
 local enabled = true
 local sounds_on = true
 local fuse_blown = false
-local function crashed_since_marker()
-    local ok, native = pcall(require, "input_bridge")
-    if not (ok and type(native) == "table" and native.file_time and native.newest) then return true end
-    local marker = native.file_time((FUSE:gsub("/", "\\")))
-    local win64 = require("files").mod:match("^(.*)/Mods/[^/]+$")
-    if not (marker and win64) then return true end
-    local dump = native.newest(((win64 .. "/crash_*.dmp"):gsub("/", "\\")))
-    return dump ~= nil and dump >= marker - 2
-end
 do
     local f = io.open(FUSE, "r")
     if f then
         f:close()
-        if crashed_since_marker() then
-            enabled, fuse_blown = false, true
-            log("crash fuse: the game stopped while world sounds were on last time; starting with them off")
-        else
-            os.remove(FUSE)
-            log("crash fuse: the game closed during play last time, with no crash dump since; world features on")
-        end
+        enabled, fuse_blown = false, true
+        log("crash fuse: the game stopped while world sounds were on last time; starting with them off")
     end
+end
+do
+    local ok, err = pcall(RegisterHook, "/Script/Engine.GameInstance:ReceiveShutdown", function()
+        pcall(os.remove, FUSE)
+        log("the game is shutting down: crash fuse cleared")
+    end)
+    if not ok then log("shutdown hook unavailable: " .. tostring(err)) end
 end
 local function fuse_set(on)
     if on then

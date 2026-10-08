@@ -10,10 +10,6 @@
  *                                     camera exactly as the player's own mouse does
  *   input_bridge.down(vk)          -> true while that key is held, and only while this game's
  *                                     window has focus (steering the wand in a spell lesson)
- *   input_bridge.file_time(path)   -> when the file was last written, in seconds, or nil
- *   input_bridge.newest(pattern)   -> the latest write time among files matching a wildcard
- *                                     path, or nil: whether a crash dump came after the
- *                                     crash fuse's marker (world.lua)
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -80,56 +76,11 @@ static int l_down(lua_State *L) {
     return 1;
 }
 
-/* A FILETIME in seconds (since 1601): only ever compared with another. */
-static double ft_seconds(FILETIME ft) {
-    ULARGE_INTEGER u;
-    u.LowPart = ft.dwLowDateTime;
-    u.HighPart = ft.dwHighDateTime;
-    return (double)u.QuadPart / 1e7;
-}
-
-static int wide_path(lua_State *L, wchar_t *out, int size) {
-    return MultiByteToWideChar(CP_UTF8, 0, luaL_checkstring(L, 1), -1, out, size) != 0;
-}
-
-static int l_file_time(lua_State *L) {
-    wchar_t w[1024];
-    WIN32_FILE_ATTRIBUTE_DATA d;
-    if (!wide_path(L, w, 1024) || !GetFileAttributesExW(w, GetFileExInfoStandard, &d)) {
-        lua_pushnil(L);
-        return 1;
-    }
-    lua_pushnumber(L, ft_seconds(d.ftLastWriteTime));
-    return 1;
-}
-
-static int l_newest(lua_State *L) {
-    wchar_t w[1024];
-    WIN32_FIND_DATAW fd;
-    HANDLE h;
-    double best = -1;
-    if (!wide_path(L, w, 1024) || (h = FindFirstFileW(w, &fd)) == INVALID_HANDLE_VALUE) {
-        lua_pushnil(L);
-        return 1;
-    }
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            double t = ft_seconds(fd.ftLastWriteTime);
-            if (t > best) best = t;
-        }
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
-    if (best < 0) lua_pushnil(L); else lua_pushnumber(L, best);
-    return 1;
-}
-
 static const luaL_Reg funcs[] = {
     {"focused", l_focused},
     {"down", l_down},
     {"key", l_key},
     {"mouse_move", l_mouse_move},
-    {"file_time", l_file_time},
-    {"newest", l_newest},
     {NULL, NULL},
 };
 
