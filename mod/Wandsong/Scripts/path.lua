@@ -410,7 +410,11 @@ local function next_crumb(px, py, pz)
         for _, p in ipairs(trail) do best = math.min(best, dist3({px, py, pz}, p)) end
         for i, p in ipairs(trail) do if dist3({px, py, pz}, p) <= best + 40 then idx = i end end
     end
-    while idx < #trail and dist3({px, py, pz}, trail[idx]) < CRUMB_REACHED_CM do idx = idx + 1 end
+    -- Reached when beside it: a footprint the guide left climbing (Fig going up the cliffs'
+    -- broken steps, 3.4 m, Oct 8) is never within 1.2 m in 3D of someone below it, and autowalk
+    -- circled under it for minutes. Passing on to the footprints above walks into the climb,
+    -- where being blocked makes it jump, which is how the game climbs.
+    while idx < #trail and dist2d(px, py, trail[idx]) < CRUMB_REACHED_CM do idx = idx + 1 end
     crumb = trail[idx]
     return crumb, idx
 end
@@ -683,7 +687,17 @@ local function walk_tick()
                 release()
                 if ai.start(target, name) then stop("handed to the AI walk"); return end
             end
-            stop("stuck", "step_blocked")
+            -- Where the way goes up (the guide climbed), say so, and how the game climbs.
+            local up = 0
+            for _, q in ipairs(person and trail or route) do
+                if dist2d(px, py, q) < 600 then up = math.max(up, q[3] - pz) end
+            end
+            if up > 100 then
+                stop(string.format("the way goes up here, about %d metres. Face the wall, walk into it and press %s to climb",
+                     math.max(1, math.floor(up / 100 + 0.5)), bindings.spoken("AM_Jump", "SpaceBar")), "step_blocked")
+            else
+                stop("stuck", "step_blocked")
+            end
         elseif t > BLOCKED_AFTER * (jumps + 1) and jumps < 2 then
             jumps = jumps + 1
             log("autowalk blocked: jump " .. jumps)
