@@ -440,9 +440,6 @@ return {
     { after = "Don't be a stranger.", items = {
         { delay = 1.2, text = "The scene fades out." },
     } },
-    { after = "Revelio!", prev = "Professor Weasley's waiting for you just by the stairs.", items = {
-        { delay = 6.5, text = "Professor Weasley waits." },
-    } },
     { after = "After much discussion with the Headmaster and the Department of Magical Education at the Ministry, we've devised something extraordinary to ensure your success.", items = {
         { delay = 0.6, text = "Professor Weasley smiles and holds up a thick leather-bound book." },
     } },
@@ -481,18 +478,6 @@ return {
     } },
     { after = "for those supplies.", prev = "And we'll see if we can't get you to Hogsmeade", items = {
         { delay = 1.3, text = "The scene fades." },
-    } },
-    { after = "Revelio.", prev = "for those supplies.", items = {
-        { delay = 5.3, text = "You walk with Fig." },
-    } },
-    { after = "Revelio.", prev = "Revelio.", items = {
-        { delay = 27.2, text = "In a wood-panelled corridor, a white cat sits beside a marble bust." },
-        { delay = 32.2, text = "You kneel and stroke the cat." },
-    } },
-    { after = "Revelio.", prev = "Revelio.", items = {
-        { delay = 13.3, text = "You step through a tall arched doorway." },
-        { delay = 18.3, text = "Inside the Charms classroom, students sit at long tiered desks facing a raised lectern." },
-        { delay = 23.3, text = "A red-haired Gryffindor stands behind you." },
     } },
     { after = "Thank you.", prev = "Behind you, there is an open seat here.", items = {
         { delay = 0.9, text = "A Gryffindor girl beams." },
