@@ -154,6 +154,29 @@ assert(name=="Something to use","an anonymous one is never called Interact: "..t
 kind,name=kind_of("/Game/Ruins.BP_Int_BCProps_Pot_001_W_C_7")
 assert(kind=="prop" and name=="Pot","pots are objects, not things to use")
 
+-- Hidden actors are out of play (the vault's spare knights, Oct 8); loot boxes are chests; a
+-- character the story has named is kept even far away, an unnamed one isn't.
+local spare=obj("BP_HogwartsProtector_C","/Game/Vault.Spare",{bHidden=true,bHasBeenReleased=false,bPuzzleActive=false,
+    RootComponent={RelativeLocation={X=600,Y=300,Z=340}}})
+cls_of(spare,"BP_HogwartsProtector_C"); is(spare,"Enemy_Character")
+local fig=obj("BP_Student_C","/Game/Vault.Fig",{RootComponent={RelativeLocation={X=20120,Y=230,Z=340}}})
+cls_of(fig,"BP_Student_C")
+local stranger=obj("BP_Student_C","/Game/Vault.Stranger",{RootComponent={RelativeLocation={X=20120,Y=330,Z=340}}})
+cls_of(stranger,"BP_Student_C")
+local box=obj("BP_S_Container_C","/Game/Vault.BP_S_Container5",{RootComponent={RelativeLocation={X=900,Y=230,Z=340}}})
+cls_of(box,"BP_S_Container_C")
+world.name_actor("/Game/Vault.Fig","Professor Fig")
+FindAllOf=function(c)
+    if c=="NPC_Character" then return {spare,fig,stranger} end
+    if c=="InteractiveObjectActor" then return {box} end
+    return {}
+end
+t.run(10)
+assert(kind_of("/Game/Vault.Spare")==nil,"a hidden actor isn't tracked")
+assert(kind_of("/Game/Vault.Fig")=="person","a named character is kept far away")
+assert(kind_of("/Game/Vault.Stranger")==nil,"an unnamed one isn't")
+assert(kind_of("/Game/Vault.BP_S_Container5")=="chest","a loot box is a chest")
+
 -- The quest-failed screen (Try Again / Exit) is a menu: the world stands down while it's up.
 local fail_up=true
 ui.MissionFailedScreen={IsValid=function() return true end, Visibility=0, IsInViewport=function() return fail_up end}

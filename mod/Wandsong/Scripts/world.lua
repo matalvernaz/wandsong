@@ -555,6 +555,10 @@ end
 
 -- Things are kept for the scanner up to this far, even when they're too far to make a sound.
 local KEEP_CM = 4000
+-- Characters the story has named (learned from their subtitles) are kept much further: an
+-- objective like "Find Professor Fig" can point at someone 100 m away in the dark (Oct 8, the
+-- vault), and path.lua walks there.
+local NAMED_KEEP_CM = 30000
 
 local readers = {}   -- { fragment, fn }
 --- Read more from a fresh object during a scan pass: fn(actor, entry) runs for every actor
@@ -597,8 +601,11 @@ local function take(a, kind, cn, pass, priority, seen)
     if n and n.pass ~= pass and (n.priority or 99) < priority then return false end
     local k = KINDS[kind]
     if d > math.max(k.range * 1.5, KEEP_CM) then
-        drop(key)
-        return false
+        local p = n and n.path or path_of(a)
+        if not (p and spoken_names[p] and d <= NAMED_KEEP_CM) then
+            drop(key)
+            return false
+        end
     end
     seen[key] = true
     if not n or n.kind ~= kind then
@@ -665,6 +672,9 @@ local function run_pass(cls, pass, priority, classify)
     for _, a in ipairs(actors) do
         pcall(function()
             if not a:IsValid() then return end
+            -- Hidden by the game: out of play for the player, like the vault's spare knights,
+            -- which were growling as enemies where nothing stood (Oct 8).
+            if a.bHidden == true then return end
             local cn = a:GetClass():GetFName():ToString()
             local kind = classify(a, cn)
             if kind and take(a, kind, cn, pass, priority, seen) then found = found + 1 end
@@ -753,6 +763,9 @@ local function scan_step()
             if st.kind ~= "usable" then return st.kind end
             -- Stations are spots characters stand at to act something out: not for the player.
             if cn:find("Station", 1, true) then return nil end
+            -- Loot boxes with a lid (BP_S_Container) aren't Container actors, but to a player
+            -- they're chests.
+            if cn:find("Container", 1, true) then return "chest" end
             for _, frag in ipairs(PROP_CLASSES) do
                 if cn:find(frag, 1, true) then return "prop" end
             end

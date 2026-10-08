@@ -166,6 +166,9 @@ local function rewrite(text)
         local a, b = text:find(r[1])
         if a then text = text:sub(1, a - 1) .. r[2](text:sub(a, b)) .. text:sub(b + 1) end
     end
+    -- Rewritten parts end in a full stop, and the screen's parts are joined with commas:
+    -- "which way the objective is., To continue" (Oct 8).
+    text = text:gsub("([%.!?]),%s+", "%1 ")
     return text
 end
 

@@ -157,6 +157,17 @@ local source = nil              -- "route", "mission" or "guide": a change start
 -- Forward-declared above for target classification.
 local last_objective = nil      -- the current task, as the game words it (when it does)
 
+-- Someone the current objective names ("Find Professor Fig"), among the characters the story
+-- has introduced by name (subtitles): the world scan keeps those even far away.
+local function named_in_objective()
+    if not last_objective then return nil end
+    local text = last_objective:lower()
+    for _, e in ipairs(world.entries()) do
+        if e.name_src == "subtitles" and e.name and #e.name > 3 and text:find(e.name:lower(), 1, true) then return e end
+    end
+    return nil
+end
+
 -- --- The engine's own pathfinding, when the game gives no route ---------------------------
 -- Some objectives come with a destination but no route (PathTS empty). Then the engine's
 -- navigation system is asked for a path over its navmesh (FindPathToLocationSynchronously,
@@ -254,6 +265,13 @@ local function refresh_route()
         diag.trace("path: mission destination")
         local d, src
         if m then pcall(function() d = vec3(m:GetMissionDestinationLocation()) end) end
+        if not (d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1) then
+            -- No destination from the game, but the objective names someone the story has
+            -- introduced: that person is the destination, however far (Oct 8, the vault: Fig
+            -- 100 m away in the dark, and autowalk had nowhere to go).
+            local named = named_in_objective()
+            d = named and world.locate(named.path) or nil
+        end
         if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then
             src, guide_path = "mission", nil
         else
@@ -828,7 +846,11 @@ local function quest_widgets()
             local same = o and path_of(o) == p.path
             if same and visible(o) then found[#found + 1] = { kind = p.kind, obj = o } end
         end
-        if #found > 0 then return found end
+        -- Only the title showing: the next task may be in a widget not remembered yet, so look
+        -- again sooner than the full 15 s.
+        local has_task = false
+        for _, f in ipairs(found) do if f.kind == "task" then has_task = true end end
+        if #found > 0 and (has_task or os.clock() - quest_scan_at < 6) then return found end
     end
     quest_paths, quest_scan_at = {}, os.clock()
     for kind, cls in pairs({ task = "UI_BP_MissionBannerCheckbox_C", banner = "UI_BP_MissionBanner_New_C" }) do
@@ -856,7 +878,7 @@ local function objective_text()
     end
     if #tasks == 0 and not title then once_log("quest text: no visible quest on the HUD") return nil end
     once_log("quest text from the HUD: " .. tostring(title) .. " | " .. table.concat(tasks, "; "))
-    return "Quest: " .. (title or "current quest") .. (#tasks > 0 and (". " .. table.concat(tasks, ". ")) or "")
+    return "Quest: " .. (title or "current quest") .. (#tasks > 0 and (". " .. table.concat(tasks, ". ")) or ""), #tasks > 0
 end
 
 -- New objectives are announced as the game changes them (checked every 4 s in the world).
@@ -864,8 +886,10 @@ end
 local function looks_like_words(t) return t and t:find("%a") and not t:find("_", 1, true) end
 dispatch.every(4000, function()
     if not world.in_game() or state.loading() then return end
-    local q = objective_text()
-    if not q or q == last_quest_line then return end
+    local q, has_task = objective_text()
+    -- Between two tasks the HUD shows only the quest's title: not a new objective ("New
+    -- objective: The Path to Hogwarts" was said after each step of the vault fight, Oct 8).
+    if not q or not has_task or q == last_quest_line then return end
     local first = last_quest_line == nil
     last_quest_line = q
     local task = q:match("^Quest: .-%. (.+)$") or q:gsub("^Quest: ", "")
