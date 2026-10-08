@@ -1350,6 +1350,11 @@ local function open_screen(provider, what)
           " to go through them, " .. key_name("press") .. " to " .. what .. ", " .. key_name("back") .. " to close.")
 end
 state.open_screen = open_screen
+-- Close a mod screen without a key press (Places, before a journey starts).
+state.close_screen = function()
+    virtual = nil
+    review_index = 0
+end
 
 local controls = require("controls")
 local sounds = require("sounds")

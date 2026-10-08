@@ -999,5 +999,8 @@ dispatch.every(500, function()
     if not walking then release() end
 end, "autowalk key guard", true)
 
+--- The game's path-navigation manager (its route to the objective), looked up afresh.
+M.manager = manager
+
 log("loaded")
 return M

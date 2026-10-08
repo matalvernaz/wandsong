@@ -38,12 +38,17 @@ local function sections()
           k("turn_around") .. " turns you round. " .. k("where_am_i") .. " says which way you face and where " ..
           "the objective is. " .. k("beacon_toggle") .. " turns the beacon off or on. Stuck? " ..
           k("teleport") .. " moves you to the route just short of the objective." },
+        { "Places and travel",
+          k("places") .. " lists the Floo Flames you can travel to, then what the map marks near you, nearest first. " ..
+          "Press " .. k("press") .. " twice on a Floo Flame to travel there, or once on anything else to set the " ..
+          "game's route to it, which " .. k("autowalk") .. " and the beacon then follow." },
         { "Spells and fighting",
           k("face_target") .. " turns you to the nearest enemy. " .. g("AM_Stupefy", "Slash") .. " casts your basic spell at " ..
           "whatever is in front of you, " .. g("LockOn", "Period") .. " locks on, " .. g("AM_Protego", "Q") .. " blocks, and " .. g("AM_Dodge", "LeftControl") .. " dodges. " ..
           g("AM_SpellButton1", "One") .. ", " .. g("AM_SpellButton2", "Two") .. ", " ..
           g("AM_SpellButton3", "Three") .. " and " .. g("AM_SpellButton4", "Four") .. " cast your other spells. " ..
-          "A high warning means block, a lower warning means dodge. " .. k("gauges") .. " reads health and healing potions." },
+          "A high warning means block, a lower warning means dodge. Locking on says your target and its shield; " ..
+          "a click is the game picking a new target. " .. k("gauges") .. " reads health, healing potions and your target." },
         { "Menus and screens",
           "In menus, " .. k("review_next") .. " and " .. k("review_prev") .. " go through everything on the " ..
           "screen, " .. k("press") .. " presses the current item, and " .. k("back") .. " goes back. " ..
