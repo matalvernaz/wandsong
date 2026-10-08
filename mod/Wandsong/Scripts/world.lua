@@ -455,9 +455,10 @@ end
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
                     collect = "Collectible", door = "Door", usable = "Something to use", statue = "Statue",
                     prop = "Object", magic = "Ancient magic hotspot" }
--- Class names that say nothing about the thing ("BP_INT_Interact_C" was read as "Interact").
+-- Class names that say nothing about the thing ("BP_INT_Interact_C" was read as "Interact";
+-- the vault's loot boxes, BP_S_Container_C, as "Container": they're chests, Oct 8).
 local GENERIC = { ["Interact"] = true, ["Simple Interact Object"] = true, ["Interactive Object Actor"] = true,
-                  ["World Interact Object"] = true, ["Something to use"] = true }
+                  ["World Interact Object"] = true, ["Something to use"] = true, ["Container"] = true }
 -- Placeholder labels say no more than the class ("Player Interact" on the vault's vial, Oct 8):
 -- the next source of a name gets its turn.
 local function generic(h)

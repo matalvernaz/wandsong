@@ -181,7 +181,8 @@ t.run(10)
 assert(kind_of("/Game/Vault.Spare")==nil,"a hidden actor isn't tracked")
 assert(kind_of("/Game/Vault.Fig")=="person","a named character is kept far away")
 assert(kind_of("/Game/Vault.Stranger")==nil,"an unnamed one isn't")
-assert(kind_of("/Game/Vault.BP_S_Container5")=="chest","a loot box is a chest")
+kind,name=kind_of("/Game/Vault.BP_S_Container5")
+assert(kind=="chest" and name=="Chest","a loot box is a chest, by name too: "..tostring(name))
 
 -- Ancient magic hotspots are kept and sounded from far off (the game's wisps lead there);
 -- a fake one is set dressing.
