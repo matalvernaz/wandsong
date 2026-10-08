@@ -68,6 +68,13 @@ assert(#said==n+1,"leaving and returning announces prompt again")
 events.ShowButtonInfo(ctx("UI_BP_InteractBlip_C"),val(true))
 require("state").mark_loading(0.5); n=reads; t.run(1)
 assert(reads==n,"old prompt discarded on load")
+-- Shown during a long scene: still read once play resumes while it's up (the Gringotts vault
+-- door's "Investigate" was never announced, Oct 8).
+t.run(1); playing=false
+events.ShowButtonInfo(ctx("UI_BP_InteractBlip_C"),val(true)); t.run(15)
+local before_scene=#said
+playing=true; t.run(1.5)
+assert(#said==before_scene+1 and said[#said]=="Press f to examine.","a prompt from a long scene is read once play resumes: "..tostring(said[#said]))
 t.action("gauges")(); assert(said[#said]:find("hasn't been reported"),"old save's health discarded")
 local function fstr(v) return {get=function() return {ToString=function() return v end} end} end
 t.run(1); local n0=#said

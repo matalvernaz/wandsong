@@ -12,6 +12,7 @@ local queue, prompt, active_prompt = {}, nil, nil
 local health, potions, low, critical = nil, nil, false, false
 local generation = state.generation
 local last_attack, last_prompt = -10, nil
+local next_prompt_look = 0
 local last_callout = -10
 local audio
 do
@@ -207,9 +208,18 @@ dispatch.every(100, function()
             end
         end
     end
-    if prompt and world.in_game() and not world.ui_busy() then
-        if os.clock() < prompt.until_t then read_prompt(prompt.path) end
-        prompt = nil
+    if world.in_game() and not world.ui_busy() then
+        if prompt then
+            read_prompt(prompt.path)
+            prompt = nil
+        elseif active_prompt and not last_prompt and os.clock() >= next_prompt_look then
+            -- A prompt that came up during a scene (and the 10 s it was kept for) is still on
+            -- screen when play resumes: read it then. The Gringotts vault door's "Investigate"
+            -- was never announced and Matt pressed F with no idea it was there (Oct 8).
+            -- read_prompt only speaks while the game still shows it.
+            next_prompt_look = os.clock() + 1
+            read_prompt(active_prompt)
+        end
     end
 end, "gameplay feedback", true)
 
