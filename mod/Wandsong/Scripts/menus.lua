@@ -393,10 +393,11 @@ end)
 
 -- A map load starting stops the mod until it finishes (state.begin_map_load); a finished load
 -- also counts as loading for a few seconds (the new world settles).
-pcall(RegisterLoadMapPreHook, function()
+local pre_ok, pre_err = pcall(RegisterLoadMapPreHook, function()
     diag.trace("LoadMap starting")
     state.begin_map_load()
 end)
+log((pre_ok and "hooked" or "could not hook") .. " the start of map loads" .. (pre_ok and "" or (": " .. tostring(pre_err))))
 pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
     state.end_map_load()
