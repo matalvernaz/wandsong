@@ -275,9 +275,14 @@ end
 -- Each cue plays from where the thing is, and once per spot; a tick follows when it's
 -- within 15 degrees of where the camera faces, so you know you're lined up.
 local AHEAD_CM = 120
+-- Drop-offs are looked for about this much travel ahead (1.2 m standing, at most 6 m), in
+-- 1.2 m steps: at a run, one look 1.2 m out, confirmed 0.4 s later, came after the edge (Oct 8:
+-- gemma ran off the vault's hotspot platform with no warning).
+local DROP_LOOK_S = 1.5
+local DROP_LOOK_MAX_CM = 600
 local next_terrain = 0
 local last_cue = {}          -- kind -> { x, y, at }
-local drop_seen = 0
+local drop_seen, drop_at = 0, nil
 
 local function cue_once(kind, x, y, z, sound, pitch, text, yaw, px, py)
     local last = last_cue[kind]
@@ -302,9 +307,11 @@ end
 function terrain(k, pawn, px, py, pz, yaw)
     local now = os.clock()
     if now < next_terrain then return end
-    next_terrain = now + 0.4
     local cm = pawn.CharacterMovement
     local vx, vy = vec(cm, "Velocity")
+    local speed = vx and math.sqrt(vx * vx + vy * vy) or 0
+    -- Twice as often at a run, so a drop-off is confirmed while there's still room to stop.
+    next_terrain = now + (speed > 250 and 0.2 or 0.4)
     local heading = math.rad(yaw)
     if vx and (vx * vx + vy * vy) > 40 * 40 then heading = math.atan(vy, vx) end
     local cx, cy = math.cos(heading), math.sin(heading)
@@ -342,15 +349,38 @@ function terrain(k, pawn, px, py, pz, yaw)
         drop_seen = 0
         return
     end
-    -- Nothing in the way: is there ground ahead?
-    local d, _, _, hz = ray(k, pawn, ax, ay, feet + 50, ax, ay, feet - 600)
-    if not d then d, _, _, hz = ray(k, pawn, ax, ay, feet + 50, ax, ay, feet - 600, 1) end
-    local drop = d and (feet - hz) or 600
-    if drop > 180 then drop_seen = drop_seen + 1 else drop_seen = 0 end
-    diag.event("ledge", string.format("%s: feet z %.0f, hit %s", drop > 180 and "drop" or "floor", feet,
-        d and string.format("%.0f cm down", feet - hz) or "nothing"))
-    if LEDGE_CUES and drop_seen >= 2 and moving then
-        cue_once("drop", ax, ay, feet, "ledge", drop > 500 and 0.8 or 1.0,
+    -- Nothing in the way: is there ground ahead? Step out along the heading, no further than a
+    -- wall, and find the first point where the ground falls away suddenly: more than 1.8 m
+    -- below the feet and 1.5 m below the point before it. Stairs and slopes go down a little
+    -- at each step, so they aren't drop-offs.
+    local reach = math.max(AHEAD_CM, math.min(DROP_LOOK_MAX_CM, speed * DROP_LOOK_S))
+    local wall = ray(k, pawn, px, py, feet + 45, px + cx * reach, py + cy * reach, feet + 45)
+    if wall then reach = math.max(AHEAD_CM, wall - 30) end
+    local edge, drop, floor_z, dist, found = nil, 0, feet, AHEAD_CM, nil
+    while dist <= reach + 1 do
+        local sx, sy = px + cx * dist, py + cy * dist
+        local top = math.max(floor_z, feet) + 150
+        local d, _, _, hz = ray(k, pawn, sx, sy, top, sx, sy, feet - 600)
+        if not d then d, _, _, hz = ray(k, pawn, sx, sy, top, sx, sy, feet - 600, 1) end
+        if not d or (feet - hz > 180 and floor_z - hz > 150) then
+            edge, drop = { sx, sy }, d and (feet - hz) or 600
+            break
+        end
+        floor_z, found = hz, d
+        dist = dist + AHEAD_CM
+    end
+    -- Confirmed by the next look finding the same edge (a ray can miss a real floor).
+    if edge and drop_at and math.sqrt((edge[1] - drop_at[1]) ^ 2 + (edge[2] - drop_at[2]) ^ 2) < 200 then
+        drop_seen = drop_seen + 1
+    else
+        drop_seen = edge and 1 or 0
+    end
+    drop_at = edge
+    -- Logged when it changes: ground ahead, or where an edge is and how deep.
+    diag.event("ledge", edge and string.format("drop: edge %.0f cm out of %.0f looked, %.0f cm down", dist, reach, drop)
+                             or (found and "ground ahead" or "no ground read"))
+    if LEDGE_CUES and drop_seen >= 2 and moving and edge then
+        cue_once("drop", edge[1], edge[2], feet, "ledge", drop > 500 and 0.8 or 1.0,
                  drop >= 600 and "Big drop ahead, more than 6 metres"
                              or string.format("Drop-off ahead, about %d metres", math.max(2, math.floor(drop / 100 + 0.5))),
                  yaw, px, py)

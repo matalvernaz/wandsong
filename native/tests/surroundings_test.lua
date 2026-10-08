@@ -25,9 +25,11 @@ package.loaded["audio_bridge"] = {
 
 local x = 0
 local mode = 1
+local vel = 300
+local edge_x = 0
 local cm = setmetatable({}, { __index = function(_, k)
     if k == "MovementMode" then return mode end
-    if k == "Velocity" then return { X = 300, Y = 0, Z = 0 } end
+    if k == "Velocity" then return { X = vel, Y = 0, Z = 0 } end
     if k == "Acceleration" then return { X = 1000, Y = 0, Z = 0 } end
 end })
 local pawn = { CharacterMovement = cm, RootComponent = { CapsuleHalfHeight = 90 } }
@@ -57,6 +59,20 @@ local kismet = {
             -- A 60 cm wall 80 cm ahead: knee ray (z 55) blocked, waist (z 120) clear.
             if forward and s.Z < 70 then return hitat(80) end
             if down then hit.Distance = s.Z - 70; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = 70 }; return true end
+            return false
+        elseif scenario == "stairs" then
+            -- Stairs going down: 58 cm lower for every metre out, never a sudden drop.
+            if down then
+                local z = 10 - math.max(0, e.X - x) * 0.58
+                hit.Distance = s.Z - z; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = z }; return true
+            end
+            return false
+        elseif scenario == "edge" then
+            -- Level floor up to edge_x, then 4 m down.
+            if down then
+                local z = e.X < edge_x and 10 or (10 - 400)
+                hit.Distance = s.Z - z; hit.ImpactPoint = { X = e.X, Y = e.Y, Z = z }; return true
+            end
             return false
         elseif scenario == "climb" then
             -- A 2 m ledge 80 cm ahead: knee and waist blocked, head height (z 340) clear.
@@ -116,4 +132,30 @@ run(1.2, false)
 counts = count()
 assert(counts.climb == 1, "one climb cue, got " .. tostring(counts.climb))
 assert(st.cues[1].text:find("Ledge ahead, 2.0 metres up"), "climb named: " .. st.cues[1].text)
+
+-- Stairs going down get lower at every step out, but never suddenly: not a drop-off.
+played = {}
+scenario = "stairs"
+x = x + 5000
+run(2, true)
+counts = count()
+assert(not counts.ledge, "stairs aren't a drop-off, got " .. tostring(counts.ledge))
+
+-- Running at an edge 6 m ahead: warned with room to stop. At 4.7 m/s the old single look
+-- 1.2 m out, confirmed 0.4 s later, came after the edge (Oct 8, the vault's hotspot platform).
+played = {}
+scenario = "edge"
+x = x + 5000
+edge_x = x + 600
+vel = 470
+local warned_at
+local t0 = os.clock()
+while os.clock() - t0 < 2 and not warned_at and x < edge_x do
+    x = x + 470 * 0.05
+    loop()
+    test_time = test_time + 0.05
+    for _, n in ipairs(played) do if n == "ledge" then warned_at = x end end
+end
+assert(warned_at and edge_x - warned_at >= 150,
+    "warned at least 1.5 m before the edge: " .. tostring(warned_at and (edge_x - warned_at)))
 print("surroundings test passed")
