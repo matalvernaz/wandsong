@@ -65,9 +65,16 @@ for si in frames:
     print("span %2d: %d of %d frames kept" % (si, len(frames[si]), before))
 
 
-def next_speech_start(after_t, limit):
-    nxt = [s for s in speech if s[0] > after_t + 0.2]
-    return nxt[0][0] if nxt else limit
+def next_speech_start(i, after_t, limit):
+    """When speech resumes after line i ends: the next voice segment or the next line, whichever
+    comes first. The voice detector runs back-to-back lines together, so its next segment alone
+    put 13 s of "silence" between lines 0.6 s apart (Oct 8, the pilot describer's catch)."""
+    for j, x in enumerate(tr):
+        if j != i and x["start"] < after_t and x["end"] > after_t + 0.2:
+            return after_t          # another speaker talks on over the end of this line
+    nxt = [s[0] for s in speech if s[0] > after_t + 0.2]
+    nxt += [x["start"] for j, x in enumerate(tr) if j != i and x["start"] >= after_t - 0.05]
+    return min(nxt) if nxt else limit
 
 
 os.makedirs(out, exist_ok=True)
@@ -82,7 +89,7 @@ for si, (a, b) in enumerate(spans):
         lines = []
         for i, x in enumerate(tr):
             if x["start"] < t1 and x["end"] > t - 2:
-                nxt = next_speech_start(x["end"], b)
+                nxt = next_speech_start(i, x["end"], b)
                 lines.append({
                     "index": i, "start": x["start"], "end": x["end"], "text": x["text"],
                     "silence_after": round(nxt - x["end"], 1),

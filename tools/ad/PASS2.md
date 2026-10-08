@@ -29,6 +29,12 @@ it changes. Be specific and concrete ("Fig holds the engraved metal case up to t
 turns it over in his hands", not "Fig looks at something"). Describe only what is visible; no
 spoilers, no guessed motives.
 
+- Most lines run straight into the next: `silence_after` is the real gap (it was overstated in
+  the first packets, fixed Oct 8). Write only where it's 1.2 s or more.
+- A line near a packet's edge appears in two packets. Describe only the stretch of its silence
+  your frames cover; the neighbouring packet does the rest.
+- The story's very first moments, before anyone speaks, are described by the mod itself (the
+  golden sparks, the street, the carriage, Professor Fig): don't repeat them after line 0.
 - Every description hangs off a line: `line` is that line's `index`; `delay` is seconds after
   the line ENDS when the description starts (0.4 minimum). It must finish before the next line
   starts: budget about 3 words per second of the time left (`silence_after` minus `delay`).
