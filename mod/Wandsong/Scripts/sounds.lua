@@ -11,6 +11,7 @@ local LEGEND = {
     { "door", "Door: a low knock from the door's position." },
     { "item", "Collectible, like a Field Guide page: a bright sparkle." },
     { "item", "Chest: the same sparkle, lower.", 0.8 },
+    { "note", "Ancient magic hotspot: a deep bell, every two seconds, from where ancient magic gathers, even far off. The game leads sighted players there with wisps of light.", 0.6 },
     { "ping", "Objective beacon: a ping from a point about 8 metres along the game's route to your objective. Follow it and you follow the path. Higher means the path goes up, lower means down." },
     { "arrive", "Arrived at your objective." },
     { "step", "Footstep: one per stride while you walk. No steps means you're standing still." },

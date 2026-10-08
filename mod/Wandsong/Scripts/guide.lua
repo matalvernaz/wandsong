@@ -16,7 +16,8 @@ local function sections()
           k("review_prev") .. ", and close it with " .. k("back") .. "." },
         { "What you hear",
           "People make a soft two-note sound from where they stand, creatures the same sound lower, " ..
-          "enemies a low growl. Chests and collectibles sparkle, doors knock. Walls are a soft rush that " ..
+          "enemies a low growl. Chests and collectibles sparkle, doors knock. A deep bell is ancient magic " ..
+          "gathering, where the game's wisps of light lead. Walls are a soft rush that " ..
           "gets louder as you get closer; an airy burst means a wall beside you has ended, like a doorway. " ..
           "The objective beacon pings along the game's route to your objective. Press " .. k("sounds") ..
           " to hear every sound with its meaning, and " .. k("what_was_that") .. " to have the last sounds named." },

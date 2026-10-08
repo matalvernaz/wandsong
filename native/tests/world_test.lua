@@ -177,6 +177,26 @@ assert(kind_of("/Game/Vault.Fig")=="person","a named character is kept far away"
 assert(kind_of("/Game/Vault.Stranger")==nil,"an unnamed one isn't")
 assert(kind_of("/Game/Vault.BP_S_Container5")=="chest","a loot box is a chest")
 
+-- Ancient magic hotspots are kept and sounded from far off (the game's wisps lead there);
+-- a fake one is set dressing.
+local hotspot=obj("BP_AncientMagicHotSpot_C","/Game/Vault.BP_AncientMagicHotSpot_Trial_2",{FakeHotSpot=false,
+    RootComponent={RelativeLocation={X=120,Y=8530,Z=340}}})
+cls_of(hotspot,"BP_AncientMagicHotSpot_C")
+local fake=obj("BP_AncientMagicHotSpot_C","/Game/Vault.BP_AncientMagicHotSpot_Fake",{FakeHotSpot=true,
+    RootComponent={RelativeLocation={X=620,Y=230,Z=340}}})
+cls_of(fake,"BP_AncientMagicHotSpot_C")
+local notes=0
+package.loaded.audio_bridge.play=function(name) if name=="note" then notes=notes+1 end end
+FindAllOf=function(c)
+    if c=="AncientMagicHotSpot" then return {hotspot,fake} end
+    return {}
+end
+t.run(10)
+kind,name=kind_of("/Game/Vault.BP_AncientMagicHotSpot_Trial_2")
+assert(kind=="magic" and name=="Ancient magic hotspot","a hotspot 83 m away is tracked: "..tostring(kind).." "..tostring(name))
+assert(kind_of("/Game/Vault.BP_AncientMagicHotSpot_Fake")==nil,"a fake hotspot isn't")
+assert(notes>=2,"the hotspot's bell sounds from far off, got "..notes)
+
 -- The quest-failed screen (Try Again / Exit) is a menu: the world stands down while it's up.
 local fail_up=true
 ui.MissionFailedScreen={IsValid=function() return true end, Visibility=0, IsInViewport=function() return fail_up end}

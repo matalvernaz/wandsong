@@ -37,11 +37,13 @@ local CATEGORIES = {
     { kind = "usable", name = "Things to use" },
     { kind = "statue", name = "Statues" },
     { kind = "prop", name = "Objects" },
+    { kind = "magic", name = "Ancient magic" },
 }
 local REBUILD_AFTER = 3          -- seconds
 local REBUILD_MOVED_CM = 500
 local SAME_FLOOR_CM = 300        -- height difference still counted as the same floor
 local RANGE_CM = 4000
+local FAR_RANGE_CM = 15000       -- ancient magic: the game leads you to it from far off
 
 local cat_i = 1
 local list = {}                  -- { path, name, kind, x, y, z, d }
@@ -70,7 +72,7 @@ local function build()
             local p = world.locate(e.path)
             if p then
                 local d = math.sqrt((p[1] - px) ^ 2 + (p[2] - py) ^ 2 + (p[3] - pz) ^ 2)
-                if d <= RANGE_CM then
+                if d <= (e.kind == "magic" and FAR_RANGE_CM or RANGE_CM) then
                     out[#out + 1] = { path = e.path, name = e.name, kind = e.kind, x = p[1], y = p[2], z = p[3], d = d,
                                       floor = math.abs(p[3] - pz) <= SAME_FLOOR_CM }
                 end

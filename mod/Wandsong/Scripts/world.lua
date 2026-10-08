@@ -63,6 +63,10 @@ local KINDS = {
     -- Breakable props (pots, jugs, kitchenware) are interactive objects too, but they're
     -- scenery to a player looking for what to use: their own category, not "Things to use".
     prop    = { sound = nil,      every = 99,  range = 1500 },
+    -- Ancient magic hotspots: the game leads sighted players to them with wisps of light (the
+    -- hotspot's own hint effect), from far off, across the vault's dark (Oct 8). A deep bell
+    -- from the hotspot is the same guidance by ear.
+    magic   = { sound = "note",   every = 2.0, range = 15000, pitch = 0.6 },
 }
 -- Every moving character but the player is an NPC_Character: students, Fig and ghosts
 -- (through the enemy class), enemies, creatures. One query finds them all.
@@ -70,6 +74,7 @@ local CHARACTERS = "NPC_Character"
 -- The rest, one class per pass, in order of precedence: a thing two classes both return
 -- belongs to the earlier one.
 local STATICS = {
+    { cls = "AncientMagicHotSpot", kind = "magic" },
     { cls = "Container", kind = "chest" },
     { cls = "FieldGuidePage", kind = "collect" },
     { cls = "CooldownPickup", kind = "collect" },
@@ -449,7 +454,7 @@ end
 -- property reads only, and logged with its source so missing names can be fixed.
 local KIND_NOUN = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
                     collect = "Collectible", door = "Door", usable = "Something to use", statue = "Statue",
-                    prop = "Object" }
+                    prop = "Object", magic = "Ancient magic hotspot" }
 -- Class names that say nothing about the thing ("BP_INT_Interact_C" was read as "Interact").
 local GENERIC = { ["Interact"] = true, ["Simple Interact Object"] = true, ["Interactive Object Actor"] = true,
                   ["World Interact Object"] = true, ["Something to use"] = true }
@@ -613,6 +618,8 @@ local function take(a, kind, cn, pass, priority, seen)
         n = { next_at = os.clock() + math.random() * k.every, extra = was and was.extra or {} }
         if cn:find(STATUE_CLASS, 1, true) then
             n.name, n.name_src = kind == "statue" and "Knight statue" or "Stone knight", "statue"
+        elseif kind == "magic" then
+            n.name, n.name_src = KIND_NOUN.magic, "category"
         else
             n.name, n.name_src = name_of(a, kind)
         end
@@ -759,7 +766,9 @@ local function scan_step()
     else
         static_i = static_i % #STATICS + 1
         local st = STATICS[static_i]
-        run_pass(st.cls, st.cls, static_i, function(_, cn)
+        run_pass(st.cls, st.cls, static_i, function(a, cn)
+            -- A fake hotspot is set dressing, not ancient magic to gather.
+            if st.kind == "magic" then return a.FakeHotSpot ~= true and "magic" or nil end
             if st.kind ~= "usable" then return st.kind end
             -- Stations are spots characters stand at to act something out: not for the player.
             if cn:find("Station", 1, true) then return nil end
@@ -797,7 +806,7 @@ local function ambient()
             if math.sqrt(dx * dx + dy * dy + dz * dz) <= n.range then
                 audio.play(n.sound, x, y, z + 60, 0.7, n.pitch)
                 local names = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
-                                collect = "Collectible", door = "Door" }
+                                collect = "Collectible", door = "Door", magic = "Ancient magic" }
                 state.cue((names[n.kind] or n.kind) .. " " .. state.where(px, py, yaw_now, x, y))
                 played = played + 1
             end
