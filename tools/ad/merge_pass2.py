@@ -8,7 +8,7 @@ Second-pass files (<pass2 dir>/span<NN>_<k>.json) hold {"items": [{"line": <tran
 first-pass slot (desc2/batches2) is kept; a new item joins the slot triggered by the same
 transcript line, else starts a new slot. An item with "replaces" swaps out that first-pass
 description (a vaguer or wrong one); other items that mostly repeat a description already on
-that line are dropped.
+that line are dropped. An item with "removes" (and no text) deletes that first-pass description.
 """
 import glob
 import json
@@ -72,11 +72,18 @@ for b in sorted(batch_list, key=lambda b: b["t0"]):
     else:
         slots[li] = {"after": tr[li]["text"], "items": items, "t0": b["t0"], "span": b.get("span")}
 
-added, dropped, replaced = 0, 0, 0
+added, dropped, replaced, removed = 0, 0, 0, 0
 for f in sorted(glob.glob(os.path.join(pass2, "span*_*.json"))):
     data = json.load(open(f, encoding="utf-8"))
     for it in data.get("items", []):
         li, text = it.get("line"), (it.get("text") or "").strip()
+        gone = (it.get("removes") or "").strip()
+        if gone and li is not None and li in slots:
+            # A first-pass description that only repeats the dialogue or talks over a line.
+            match = [i for i in slots[li]["items"] if i["text"].strip() == gone]
+            if match:
+                slots[li]["items"].remove(match[0])
+                removed += 1
         if li is None or not text or li < 0 or li >= len(tr):
             continue
         delay = max(0.0, float(it.get("delay", 0.5)))
@@ -117,5 +124,5 @@ for old in glob.glob(os.path.join(out_desc, "batch_*.json")) + glob.glob(os.path
     os.remove(old)
 json.dump(out_s, open(os.path.join(out_desc, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 json.dump(out_b, open(os.path.join(out_batches, "batch_0.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-print("%d slots, %d second-pass descriptions added (%d replacing first-pass ones), %d dropped as repeats, "
-      "%d descriptions in all" % (len(out_s), added, replaced, dropped, sum(len(s["items"]) for s in out_s)))
+print("%d slots, %d second-pass descriptions added (%d replacing first-pass ones), %d first-pass ones removed, %d dropped as repeats, "
+      "%d descriptions in all" % (len(out_s), added, replaced, removed, dropped, sum(len(s["items"]) for s in out_s)))

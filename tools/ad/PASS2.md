@@ -33,6 +33,11 @@ spoilers, no guessed motives.
   the first packets, fixed Oct 8). Write only where it's 1.2 s or more.
 - A line near a packet's edge appears in two packets. Describe only the stretch of its silence
   your frames cover; the neighbouring packet does the rest.
+- The transcript misses some short or whispered lines ("Ahem", "Hmm?", "Stay close", a spell's
+  name like "Reparo!"). Compare the subtitles in the frames with the packet's lines, and keep
+  descriptions out of the time an unlisted line takes.
+- The packets' cutscene marks get dark scenes wrong: where the frames show the gameplay HUD
+  (health bar bottom right), it's gameplay; follow the gameplay rule below.
 - The story's very first moments, before anyone speaks, are described by the mod itself (the
   golden sparks, the street, the carriage, Professor Fig): don't repeat them after line 0.
 - Every description hangs off a line: `line` is that line's `index`; `delay` is seconds after
@@ -43,7 +48,9 @@ spoilers, no guessed motives.
   the previous one. Never repeat.
 - Do not repeat `existing` descriptions. Add what they miss. Where an existing one is vague or
   wrong for what the frames show, write a better one and set `replaces` to the existing text
-  exactly; it will be swapped out.
+  exactly; it will be swapped out. Where one should simply go (it only repeats the dialogue, or
+  talks over a line, even an unlisted one), write an item with no text and `removes` set to the
+  existing text exactly: {"line": 210, "removes": "Fig ponders."}.
 - The first time something important happens during a line (an action the words don't
   explain), describe it in the next silence: "Fig hands you a small green vial."
 - The player is "you". Never describe your face, hair, skin, body, clothes or gender (each
@@ -87,7 +94,8 @@ with the Write tool (UTF-8):
 
     {"span": 4, "chunk": 0, "ui": false,
      "items": [{"line": 212, "delay": 0.5, "text": "..."},
-               {"line": 214, "delay": 0.4, "text": "...", "replaces": "Fig turns."}],
+               {"line": 214, "delay": 0.4, "text": "...", "replaces": "Fig turns."},
+               {"line": 216, "removes": "Fig ponders."}],
      "notes": ["anything a reviewer should know"]}
 
 Items in time order. Reply at the end with one line per packet: file name, number of items,
