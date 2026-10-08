@@ -1481,12 +1481,14 @@ end
 
 local repeat_depth, last_repeat = 0, -10
 local function repeat_last()
-    -- Press again quickly to go further back through what was said.
-    if os.clock() - last_repeat < 1.5 then repeat_depth = repeat_depth + 1 else repeat_depth = 1 end
+    -- The last thing said; press again quickly to go further back. (It used to skip the last
+    -- one, and each repeat joined the history: F7 at the start page said the screen before
+    -- "Press Any Key to Start", Oct 8.)
+    if os.clock() - last_repeat < 2 then repeat_depth = repeat_depth + 1 else repeat_depth = 1 end
     last_repeat = os.clock()
-    local t = speech.recent(repeat_depth + 1)   -- +1: skip whatever is being said right now
-    if not t then repeat_depth = 0; t = speech.recent(2) end
-    if t then speech.say(t) end
+    local t = speech.recent(repeat_depth)
+    if not t then repeat_depth = 1; t = speech.recent(1) end
+    if t then speech.say_again(t) end
 end
 
 -- Developer aid (Ctrl+Shift+;): log the current item's widget chain with its true/false and

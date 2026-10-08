@@ -20,5 +20,10 @@ speech.say("Tutorial text")
 assert(last():find("say%+ Tutorial text"), "a second after the key, it waits: " .. last())
 speech.alert("Protego, q")
 assert(last():find("say! Protego"), "alerts cut in: " .. last())
+-- The repeat key: the last thing said, then further back, without disturbing the history.
+assert(speech.recent(1) == "Protego, q" and speech.recent(2) == "Tutorial text", "history newest first")
+speech.say_again(speech.recent(1))
+assert(last():find("say %(again%) Protego"), "said again: " .. last())
+assert(speech.recent(1) == "Protego, q" and speech.recent(2) == "Tutorial text", "a repeat doesn't join the history")
 print = real_print
 print("speech test passed")

@@ -179,6 +179,15 @@ end
 --- n-th most recent utterance (1 = last).
 function M.recent(n) return history[n] end
 
+--- Say an utterance again (the repeat key), cutting in, without adding it to the history:
+--- recorded, repeats shifted the history under the next press.
+function M.say_again(text)
+    if text == nil then return end
+    log("say (again) " .. text)
+    if muted or not game_in_front() then return end
+    emit(text, true)
+end
+
 --- Toggle all mod speech off/on. Returns the new state (true = muted).
 function M.toggle_mute()
     if muted then
