@@ -133,6 +133,8 @@ end
 -- Instructions written for sight or the mouse, said in terms that work for the player.
 local REWRITES = {
     { "Steady your wand with Mouse.-symbol's path%.$", function()
+        -- The lesson introduces itself (spells.lua): this tutorial right after it adds nothing.
+        if state.activity and state.activity.tutorial then return state.activity.tutorial() end
         if state.activity and state.activity.instructions then return state.activity.instructions() end
         return "Spell lesson. Press " .. require("bindings").spoken("UMGStartSpellMiniGame", "SpaceBar") ..
             " to trace it yourself by ear with the arrow keys, or " .. key_name("press") .. " for tracing assistance."
