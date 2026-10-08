@@ -11,13 +11,17 @@
 --
 -- The audio version gives the same information, and no more:
 --   * each visible knight sounds its note now and then, from where it kneels;
+--   * whose light leads its reflection is said as it changes: the reflection points at that
+--     light. Matt (Oct 8): the pitches "technically work", but without the idea of the light
+--     or where to stand they didn't help;
 --   * while your own light leads a knight's reflection, the reflection's note follows the
 --     knight's: the further the reflection is turned from the way the knight faces, the
---     further its pitch from the knight's (above when it's turned to the knight's right,
---     below when to its left). In unison: lined up.
+--     further its pitch from the knight's. Above means step to your right as you face the
+--     knight, below to your left (round the knight, toward where it looks); in unison you're
+--     in line, and too close or too far is said;
 --   * where the game shows a knight's hint line, standing on that line adds a soft hum;
 --   * a knight that shows only as a reflection is described once, and the scanner (Home on
---     a knight) says which way the knight and its reflection face.
+--     a knight) says which way the knight faces from where you stand, and which way to step.
 -- No spot is marked and nothing walks you there: finding it is the puzzle (Matt, Oct 7).
 --
 -- Rules kept: knights are read only inside the world scan's pass (world.on_scan), from fresh
@@ -220,6 +224,32 @@ end
 local COUNT_WORDS = { "One", "Two", "Three", "Four", "Five", "Six" }
 local function count_word(n) return COUNT_WORDS[n] or tostring(n) end
 
+-- Which way a knight faces, from where you stand and face (Unreal yaw grows clockwise).
+local function facing_words(knight_yaw, my_yaw)
+    local rel = wrap(knight_yaw - my_yaw)
+    if math.abs(rel) <= 45 then return "away from you" end
+    if math.abs(rel) >= 135 then return "toward you" end
+    return rel > 0 and "to your right" or "to your left"
+end
+-- Which way to step to bring a reflection that points at you in line with its knight: round
+-- the knight, toward the side it looks to, as a direction from the way you face. (bearing:
+-- from the knight to you, the game's TargetAngle.)
+local STEPS = { "forward", "to your right", "back", "to your left" }
+local function step_words(bearing, align_to, my_yaw)
+    local dir = wrap(bearing - align_to) > 0 and bearing - 90 or bearing + 90
+    return STEPS[math.floor(((wrap(dir - my_yaw) % 360) + 45) / 90) % 4 + 1]
+end
+M.step_words = step_words
+-- Whose light leads a reflection, by name when the scan knows it.
+local function light_of(s)
+    if s.mine then return "your" end
+    for _, e in ipairs(world.entries and world.entries() or {}) do
+        if e.path == s.target and e.name then return e.name .. "'s" end
+    end
+    return "someone else's"
+end
+local REACH_MIN, REACH_MAX = 80, 800   -- the corridor's reach, cm out from the knight
+
 local function tick()
     if generation ~= state.generation then
         generation = state.generation
@@ -288,12 +318,30 @@ local function tick()
         end
         if shown == 1 then
             speech.say("A stone knight kneels here, with its reflection in the floor. You hear the knight's note. " ..
-                "While your own light leads the reflection, the reflection's note follows the knight's, " ..
-                "and the two sound as one when the reflection lines up with the knight.", true)
+                "The reflection turns to point at whoever's light leads it, wherever they stand. The knight " ..
+                "comes alive when its reflection faces the same way it does.", true)
         elseif shown > 1 then
             speech.say(count_word(shown) .. " stone knights kneel here, each with its reflection in the floor. " ..
-                "You hear each knight's note. While your own light leads a reflection, its note follows its " ..
-                "knight's, and the two sound as one when that reflection lines up with its knight.", true)
+                "You hear each knight's note. Each reflection turns to point at whoever's light leads it, " ..
+                "and a knight comes alive when its reflection faces the same way it does.", true)
+        end
+        -- Whose light leads each reflection, as it changes: the reflection points at that light.
+        for _, s in ipairs(seen) do
+            local k = s.k
+            if s.statue_visible and k.said_intro and s.reflection_visible and s.target and s.mine ~= k.led_by_me
+               and os.clock() >= (k.next_light_say or 0) then
+                k.led_by_me, k.next_light_say = s.mine, os.clock() + 5
+                if s.mine and not k.taught then
+                    k.taught = true
+                    speech.say("The reflection now follows your light, so it points at you. Its note follows " ..
+                        "the knight's: higher, step to your right as you face the knight; lower, step to your " ..
+                        "left; the same note, you're in line with where it looks. Home on the knight says more.", true)
+                elseif s.mine then
+                    speech.say("The reflection follows your light again.", true)
+                else
+                    speech.say("Its reflection follows " .. light_of(s) .. " light now, not yours.", true)
+                end
+            end
         end
     end
     -- "Lined up" once per alignment, as a sighted player would see it: from where the light
@@ -304,10 +352,18 @@ local function tick()
         -- ...and only within the corridor's reach (1.1 to 7.1 m out for the vault's knights):
         -- in line but further off, the game does nothing.
         local reach = s.root and dist2(s.root, me) or 0
-        local aligned = s.mine and num(s.target_angle) and num(s.align_to)
-            and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG and reach >= 80 and reach <= 800
+        local in_line = s.mine and num(s.target_angle) and num(s.align_to)
+            and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG
+        local aligned = in_line and reach >= REACH_MIN and reach <= REACH_MAX
         if aligned and not k.aligned then speech.say(#seen > 1 and "That knight is lined up." or "Lined up.") end
         k.aligned = aligned
+        -- In line but out of the corridor's reach, the game does nothing: say which way to go.
+        local off_reach = in_line and (reach < REACH_MIN and "close" or reach > REACH_MAX and "far") or nil
+        if off_reach and off_reach ~= k.off_reach then
+            speech.say(off_reach == "close" and "In line, but too close to the knight: step back." or
+                "In line, but too far from the knight: step closer.")
+        end
+        k.off_reach = off_reach
     end
     if now >= next_log and #seen > 0 then
         next_log = now + 3
@@ -354,12 +410,20 @@ function M.describe(path)
     if not s.statue_visible and s.reflection_visible then
         return "only its reflection shows, facing " .. state.compass(s.current or s.yaw)
     end
-    local t = "kneeling, facing " .. state.compass(s.yaw)
-    if s.reflection_visible and num(s.current) then
-        t = t .. (s.off and math.abs(s.off) <= ALIGNED_DEG and "; its reflection faces the same way"
-            or ("; its reflection faces " .. state.compass(s.current)))
+    local px, py, _, my_yaw = world.position()
+    my_yaw = my_yaw or 0
+    local t = "kneeling, facing " .. facing_words(s.yaw, my_yaw) .. " (" .. state.compass(s.yaw) .. ")"
+    if not (s.reflection_visible and num(s.current)) then return t end
+    if not s.mine then return t .. "; its reflection points at " .. light_of(s) .. " light, not yours" end
+    if not (num(s.target_angle) and num(s.align_to)) then return t .. "; its reflection points at you" end
+    if math.abs(wrap(s.target_angle - s.align_to)) > ALIGNED_DEG then
+        return t .. "; its reflection points at you. To line it up, step " ..
+            step_words(s.target_angle, s.align_to, my_yaw) .. ", round the knight"
     end
-    return t
+    local reach = s.root and dist2(s.root, { px, py }) or 0
+    if reach < REACH_MIN then return t .. "; you're in line, but too close: step back" end
+    if reach > REACH_MAX then return t .. "; you're in line, but too far: step closer" end
+    return t .. "; its reflection faces the same way: lined up"
 end
 
 -- --- Game events (logged: they show what the game decided) -------------------------------

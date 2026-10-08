@@ -79,17 +79,24 @@ assert(not heard("Revelio") and not heard("walks you"), "no solution is given aw
 knight.bStatueVisible = true
 t.run(1)
 assert(heard("A stone knight kneels here"), "the revealed knight is introduced")
--- Fig's light leads the reflection: only the knight's note, no reflection note.
+-- Fig's light leads the reflection: only the knight's note, no reflection note, and whose
+-- light it follows is said (Matt, Oct 8: the pitches meant nothing without the idea of the light).
+assert(heard("point at whoever's light leads it"), "the light is explained")
+assert(heard("follows someone else's light now, not yours"), "whose light leads it is said")
 notes = {}
 knight.TargetAngle, knight.CurrentAngle = 200, 200
 t.run(3)
 for _, s in ipairs(notes) do assert(s.pitch == 1.0, "no reflection note while someone else's light leads") end
 
--- Your light leads it: the reflection's note follows the knight's, off by the angle.
+-- Your light leads it: the reflection's note follows the knight's, off by the angle, and what
+-- the pitches mean is said as an action.
 knight.TargetActor = pawn
 knight.TargetAngle, knight.CurrentAngle = 180, 180
 notes = {}
 t.run(3)
+t.run(3)
+assert(heard("now follows your light") and heard("higher, step to your right as you face the knight"),
+    "the reflection following you is said, with what its note means")
 local high = false
 for _, s in ipairs(notes) do
     if math.abs(s.pitch - 2 ^ (90 / 180)) < 1e-6 then high = true end
@@ -111,10 +118,26 @@ n = #said
 t.run(3)
 assert(#said == n, "lined up is said once per alignment")
 
--- What a glance shows, for the scanner.
+-- In line but out of the corridor's reach: which way to go.
+px = 900
+t.run(1)
+assert(said[#said] == "In line, but too far from the knight: step closer.", "too far: " .. tostring(said[#said]))
+px = 500
+t.run(1)
+
+-- What a glance shows, for the scanner: the knight's facing from where you stand, and which
+-- way to step. You face north (yaw 0); the knight faces east (90); the light is south of it.
 knight.TargetAngle, knight.CurrentAngle = 180, 180
 local d = statues.describe(knight_path)
-assert(d == "kneeling, facing east; its reflection faces south", "describe: " .. tostring(d))
+assert(d == "kneeling, facing to your right (east); its reflection points at you. To line it up, step to your right, round the knight",
+    "describe: " .. tostring(d))
+-- South of a knight facing east, facing it (north): round it to the right brings you east of it.
+assert(statues.step_words(180, 90, 0) == "to your right", "south of an east-facing knight: right")
+assert(statues.step_words(0, 90, 180) == "to your left", "north of it, facing it: left")
+assert(statues.step_words(180, 90, 90) == "forward", "south of it, facing east: forward")
+knight.TargetActor = fig
+assert(statues.describe(knight_path):find("points at someone else's light, not yours", 1, true), "not your light")
+knight.TargetActor = pawn
 
 -- Hint lines: standing on one (inside the corridor) with your light hums; stepping off stops it.
 knight.VFX_HintLine_Alpha = 1

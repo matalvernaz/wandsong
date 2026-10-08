@@ -28,7 +28,7 @@ local LEGEND = {
     { "warn", "Incoming attack: the high alert means you can block with Protego." },
     { "warn", "Unblockable attack: the lower alert means dodge.", 0.65 },
     { "note", "Statue puzzle, the knight's note: a clear bell from where a puzzle knight kneels." },
-    { "note", "Statue puzzle, the reflection's note: right after the knight's while your own light leads its reflection. Higher or lower means the reflection is turned away from the way the knight faces; the same note means lined up.", 1.12 },
+    { "note", "Statue puzzle, the reflection's note: right after the knight's while your own light leads its reflection, which points at you. Higher: step to your right as you face the knight; lower: step to your left; the same note: you're in line with where the knight looks.", 1.12 },
     { "note", "Spell lesson, the way to go: a bell from the left or the right, higher for up and lower for down. It repeats while you're off course or not steering.", 1.3 },
     { "tick", "Spell lesson, on course: the arrow you hold points the way the stroke goes.", 1.3 },
     { "step_blocked", "Spell lesson, off course: the arrow you hold points another way." },
