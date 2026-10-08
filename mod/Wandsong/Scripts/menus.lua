@@ -256,6 +256,7 @@ local function is_loading_class(cls)
 end
 
 -- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
+local tips_reset_at = -100
 local function on_read_menu(widget)
     local okv, alive = pcall(function() return widget:IsValid() end)
     if not (okv and alive) then return end
@@ -266,6 +267,13 @@ local function on_read_menu(widget)
     -- A modal tutorial pauses play: the world layer stands down so the review keys can read
     -- it and press its Continue (some must be held; the press key holds those).
     if cls:find("Tutorial_Modal", 1, true) then state.modal_since = os.clock() end
+    -- Finishing a new character (name, witch or wizard) starts a new playthrough: the mod's
+    -- first-time tips play again, as the game's own tutorials do (Matt, Oct 8).
+    if cls:find("CharCreator_Finalize", 1, true) and os.clock() - tips_reset_at > 60 then
+        tips_reset_at = os.clock()
+        require("tips").reset()
+        log("new character: the first-time tips will play again")
+    end
     -- "Quest failed" (Try Again, Exit to the Main Menu) and being defeated: real menus that the
     -- UI manager doesn't report as one. The world layer stands down while they're up.
     if cls:find("MissionFailScreen", 1, true) or cls:find("GameOver", 1, true) then state.fail_screen_since = os.clock() end

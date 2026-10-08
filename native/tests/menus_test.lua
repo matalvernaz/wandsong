@@ -32,7 +32,8 @@ FindAllOf = function() return {} end
 StaticFindObject = function(path) return objects[path] end
 RegisterLoadMapPostHook = function() end
 package.loaded.audio_bridge = { init = function() return true end, play_ui = function() end, listener = function() end, stop_all = function() end }
-package.loaded.tips = { once = function() end }
+local tips_resets = 0
+package.loaded.tips = { once = function() end, reset = function() tips_resets = tips_resets + 1 end }
 package.loaded.guide = { welcome = function() return "Welcome" end }
 local said = {}
 require("speech").say = function(s) said[#said + 1] = s end
@@ -111,4 +112,15 @@ tutorial_system.CurrentTutorialScreen = nil
 t.run(0.6)
 t.action("read_all")()
 assert(not said[#said]:find("G to Heal", 1, true), "dismissed tutorials never linger in review")
+
+-- Finishing a new character starts a new playthrough: the first-time tips play again.
+local finalize = obj("UI_BP_CharCreator_Finalize_C", "/Engine/Transient.GI.UI_BP_CharCreator_Finalize_C_1",
+    { Visibility = 0, RenderOpacity = 1, IsInViewport = function() return true end,
+      GatherMenuReaderStrings = function() return { "Name" } end })
+read_menu({ get = function() return finalize end })
+t.run(0.6)
+assert(tips_resets == 1, "tips reset for a new character, " .. tips_resets)
+read_menu({ get = function() return finalize end })
+t.run(0.6)
+assert(tips_resets == 1, "once per new character, not on every focus move")
 print("menus test passed")
