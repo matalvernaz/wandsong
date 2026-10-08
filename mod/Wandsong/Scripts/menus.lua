@@ -399,13 +399,10 @@ RegisterHook("/Script/Phoenix.PhoenixUserWidget:ReadMenu", function(ctx)
         p:find("LoadingScreen", 1, true) ~= nil or p:find("UI_BP_PSO_FS", 1, true) ~= nil) end
 end)
 
--- A map load starting stops the mod until it finishes (state.begin_map_load); a finished load
--- also counts as loading for a few seconds (the new world settles).
-local pre_ok, pre_err = pcall(RegisterLoadMapPreHook, function()
-    diag.trace("LoadMap starting")
-    state.begin_map_load()
-end)
-log((pre_ok and "hooked" or "could not hook") .. " the start of map loads" .. (pre_ok and "" or (": " .. tostring(pre_err))))
+-- A finished map load also counts as loading for a few seconds (the new world settles).
+-- Never RegisterLoadMapPreHook (UE4SS 3.0.1): its callback threw out of HookedLoadMap at the
+-- game's first map load and crashed every start (Oct 8, 05:54 and 05:59; stack: HookedLoadMap,
+-- LuaMod on_program_start lambda, Lua::call_function, std::runtime_error).
 pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
     state.end_map_load()
