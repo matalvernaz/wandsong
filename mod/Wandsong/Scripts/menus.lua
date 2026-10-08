@@ -134,8 +134,11 @@ local REWRITES = {
             " to trace it yourself by ear with the arrow keys, or " .. key_name("press") .. " for tracing assistance."
     end },
     { "Review your objectives to reveal the way forward%.?", function()
-        return "Review your objectives: " .. key_name("where_am_i") ..
-               " says your quest, its current task and which way the objective is." end },
+        -- The game waits for its own objectives key (AM_Navigation): until it's pressed, this
+        -- tutorial comes back about every 40 seconds (Oct 8, the vault fight).
+        return "Review your objectives: press " .. require("bindings").spoken("AM_Navigation", "V") ..
+               ", the game's objectives key; the game waits for it. " .. key_name("where_am_i") ..
+               " also says your quest, its current task and which way the objective is." end },
     { "^Mouse Look Around%.?$", function()
         return "Look around: " .. key_name("turn_left") .. " and " .. key_name("turn_right") ..
                " turn you, " .. key_name("where_am_i") .. " says which way you face." end },
