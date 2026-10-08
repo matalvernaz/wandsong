@@ -116,8 +116,18 @@ In the world:
 - Grave accent: explain recent sounds. F5: objective beacon on/off.
 - Shift+F5: world sounds on/off. Scanning and navigation stay available.
 - Shift+F8: resume world features if a previous crash paused them.
-- End: health and healing potions from the HUD (new, needs game verification).
+- End: health, healing potions and your target from the HUD (new, needs game verification).
+- F11: places. Floo Flames you can travel to and what the map marks near you, nearest first.
+  Press twice on a Floo Flame to travel; once on anything else to set the game's route to it.
 - Shift+End: optional teleport near the objective when stuck.
+- Locking on (the game's lock-on key) says your target and its shield; a high tick is the game
+  picking a new target. The game's own audio cues are turned on for you: being spotted, a beast
+  noticing you and where a hit came from are spoken.
+
+On the first start, Wandsong turns on the game's own audio cues, subtitles, path line,
+target names and highlights and objective markers, and tells you which it changed. The Controls
+menu (Ctrl+apostrophe) lists them, with the game's spell toggle, sprint toggle and camera aiming,
+to switch any of them.
 
 The game's own keys still work as normal, for example Escape for the pause menu, Q and E to
 switch tabs, and F to continue.

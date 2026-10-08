@@ -22,6 +22,8 @@ local LEGEND = {
     { "hop", "Low obstacle ahead: something knee-high you can jump or vault over with " .. require("bindings").spoken("AM_Jump", "SpaceBar") .. "." },
     { "climb", "Climbable ledge ahead: walk into it and press " .. require("bindings").spoken("AM_Jump", "SpaceBar") .. " to climb up." },
     { "tick", "Lined up: a soft tick right after an obstacle sound means it's straight ahead of you. Also plays when you turn with the arrow keys." },
+    { "tick", "New target: a higher tick from where the enemy is when the game picks a new target for your spells. Locking on says its name and shield.", 1.3 },
+    { "item", "Loot: the collectible sparkle from where something dropped, when the game's audio cues mark loot." },
     { "warn", "Incoming attack: the high alert means you can block with Protego." },
     { "warn", "Unblockable attack: the lower alert means dodge.", 0.65 },
     { "note", "Statue puzzle, the knight's note: a clear bell from where a puzzle knight kneels." },
