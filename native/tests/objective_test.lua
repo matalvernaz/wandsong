@@ -72,6 +72,11 @@ assert(said[#said] == "2 of 3.", "progress on the same task: " .. tostring(said[
 task_text = "Destroy statues (0/4)"
 t.run(16)
 assert(said[#said] == "New objective: Destroy statues, 0 of 4.", "a new counted task: " .. tostring(said[#said]))
+-- The HUD names the action by its icon; the key that does it is said too.
+task_text = "Tap to destroy statues with Basic Cast"
+t.run(16)
+assert(said[#said] == "New objective: Destroy statues with Basic Cast (left mouse button)",
+    "the objective names the key: " .. tostring(said[#said]))
 task_text = "Find Professor Fig"
 t.run(16)
 local found = false

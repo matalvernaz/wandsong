@@ -217,6 +217,9 @@ local function snapshot(s, why)
         tostring(s.target), s.mine and "yours" or "not yours", f(s.hint)))
 end
 
+local COUNT_WORDS = { "One", "Two", "Three", "Four", "Five", "Six" }
+local function count_word(n) return COUNT_WORDS[n] or tostring(n) end
+
 local function tick()
     if generation ~= state.generation then
         generation = state.generation
@@ -265,17 +268,32 @@ local function tick()
     local ok_sub, subtitles = pcall(require, "subtitles")
     local quiet = not (ok_sub and type(subtitles) == "table" and subtitles.quiet_for) or subtitles.quiet_for(1.5)
     if settled and quiet then
+        -- Knights that appear together get one sentence: the vault's second puzzle shows three
+        -- reflections at once, and each used to say the same line (Oct 8).
+        local hidden, shown = 0, 0
         for _, s in ipairs(seen) do
             local k = s.k
             if s.reflection_visible and not s.statue_visible and not k.said_hidden then
                 k.said_hidden = true
-                speech.say("Only a knight's reflection shows in the floor. No knight stands above it.", true)
+                hidden = hidden + 1
             elseif s.statue_visible and not k.said_intro then
                 k.said_intro, k.said_hidden = true, true
-                speech.say("A stone knight kneels here, with its reflection in the floor. You hear the knight's note. " ..
-                    "While your own light leads the reflection, the reflection's note follows the knight's, " ..
-                    "and the two sound as one when the reflection lines up with the knight.", true)
+                shown = shown + 1
             end
+        end
+        if hidden == 1 then
+            speech.say("Only a knight's reflection shows in the floor. No knight stands above it.", true)
+        elseif hidden > 1 then
+            speech.say(count_word(hidden) .. " knights' reflections show in the floor. No knights stand above them.", true)
+        end
+        if shown == 1 then
+            speech.say("A stone knight kneels here, with its reflection in the floor. You hear the knight's note. " ..
+                "While your own light leads the reflection, the reflection's note follows the knight's, " ..
+                "and the two sound as one when the reflection lines up with the knight.", true)
+        elseif shown > 1 then
+            speech.say(count_word(shown) .. " stone knights kneel here, each with its reflection in the floor. " ..
+                "You hear each knight's note. While your own light leads a reflection, its note follows its " ..
+                "knight's, and the two sound as one when that reflection lines up with its knight.", true)
         end
     end
     -- "Lined up" once per alignment, as a sighted player would see it: from where the light

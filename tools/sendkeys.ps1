@@ -9,7 +9,13 @@
 # game (not the mod's own key handling, which reads the keyboard state) and can't land in any
 # other window. For when something on the PC filters injected letters, digits, space, enter
 # and arrows (Oct 7 and Oct 8; F-keys, brackets and backslash still passed).
-param([string[]]$Keys, [int]$DelayMs = 700, [switch]$Probe, [switch]$Post)
+# Before every key, any keyboard or mouse input since this tool's last key that is under
+# -IdleSeconds old means someone is using the PC: the run stops and nothing more is sent (Oct 8:
+# the game came to the front at launch and Matt was reading its start screen himself). Run
+# tools/input_watch.ps1 alongside: it tells real keyboard and mouse use from injected input.
+# Without it, the tools' own keys are told apart by the time of the last key sent (kept in
+# %TEMP%), but the mod's own camera turns still look like someone at the PC.
+param([string[]]$Keys, [int]$DelayMs = 700, [switch]$Probe, [switch]$Post, [int]$IdleSeconds = 10)
 # powershell -File passes "a,b" as one string: split it.
 $Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
@@ -23,6 +29,10 @@ public class HaKeys {
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int v);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+ [StructLayout(LayoutKind.Sequential)] public struct LII { public uint cbSize; public uint dwTime; }
+ [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LII i);
+ [DllImport("kernel32.dll")] public static extern uint GetTickCount();
+ public static uint LastInput(){ var i=new LII(); i.cbSize=8; GetLastInputInfo(ref i); return i.dwTime; }
  public static void Post(IntPtr h, uint vk, bool ext, bool up){
   uint sc = MapVirtualKey(vk, 0);
   long l = 1 | ((long)sc << 16) | (ext ? (1L << 24) : 0) | (up ? ((1L << 30) | (1L << 31)) : 0);
@@ -63,9 +73,31 @@ if ($hwnd -eq [IntPtr]::Zero) { Write-Output "Hogwarts Legacy has no game window
 # icons and menus to Matt (Oct 7). If the game isn't in front, nothing is sent at all.
 function Game-In-Front { return [HaKeys]::GetForegroundWindow() -eq $hwnd }
 
+$sentFile = Join-Path $env:TEMP 'wandsong_keys_sent.txt'
+$watchFile = Join-Path $env:TEMP 'wandsong_physical_input.txt'
+function Mark-Sent { Set-Content -Path $sentFile -Value ([HaKeys]::GetTickCount()) }
+function Others-Active {
+    # tools/input_watch.ps1, when running, knows real keyboard and mouse use from injected input.
+    $now = [int64][HaKeys]::GetTickCount()
+    $w = Get-Content $watchFile -Raw -ErrorAction SilentlyContinue
+    if ($w -match '^(\d+) (\d+)' -and $now - [int64]$matches[1] -lt 3000) {
+        $idle = $now - [int64]$matches[2]
+        return ($idle -ge 0) -and ($idle -lt $IdleSeconds * 1000)
+    }
+    # Without it, any input after this tool's last key counts, the mod's own camera turns too.
+    $sent = [uint32]0
+    $t = Get-Content $sentFile -Raw -ErrorAction SilentlyContinue
+    if ($t) { [void][uint32]::TryParse($t.Trim(), [ref]$sent) }
+    $last = [int64][HaKeys]::LastInput()
+    $idle = [int64][HaKeys]::GetTickCount() - $last
+    return ($last -gt [int64]$sent + 300) -and ($idle -ge 0) -and ($idle -lt $IdleSeconds * 1000)
+}
+
 foreach ($k in $Keys) {
     # Never type into another window: if the game isn't (or stops being) in front, abort.
     if (-not (Game-In-Front)) { Write-Output "ABORT: Hogwarts Legacy is not the window in front; switch to it and run again. Nothing was sent."; exit 2 }
+    # Never play over someone using the PC, the game included.
+    if (Others-Active) { Write-Output "ABORT: someone used the PC in the last $IdleSeconds s; no more keys sent."; exit 3 }
     Start-Sleep -Milliseconds 150
     if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"
@@ -120,6 +152,7 @@ foreach ($k in $Keys) {
         [HaKeys]::Key($vk, $extended -contains $name, $true)
         if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
         if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }
+        Mark-Sent
     }
     if ($lostFocus) { Write-Output "ABORT: Hogwarts Legacy lost focus while holding $k; keys released."; exit 2 }
     Start-Sleep -Milliseconds $DelayMs

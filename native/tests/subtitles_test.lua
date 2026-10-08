@@ -6,7 +6,8 @@ package.loaded.descriptions={{after="We must hurry, the carriage is waiting.",de
     {id="Fig_20",after="Wait. We do not know what",items={{delay=2,text="A dragon swoops."},{delay=6,text="The carriage breaks apart."},{delay=12,text="You fall."}}},
     {id="Fig_30",after="Give me your hand!",items={{delay=1,text="Fig grabs your hand."}}},
     {id="PlayerFemale_500",after="What's that glow?",items={{delay=0.5,text="You point."}}},
-    {after="Revelio.",prev="Revelio.",items={{delay=0.5,text="A white cat sits in a corridor."}}}}
+    {after="Revelio.",prev="Revelio.",items={{delay=0.5,text="A white cat sits in a corridor."}}},
+    {after="I'm going to have to fight my way out of here.",items={{delay=1,text="A stone basin."}}}}
 local said={}
 require("speech").say=function(s) said[#said+1]=s end
 local keys=require("keys")
@@ -87,5 +88,15 @@ t.run(2); n0=#said
 line("Let me think. Hmm. Revelio, perhaps.",1,"Fig_40"); t.run(1.5)
 line("Revelio?",0.5,"Player_41"); t.run(3)
 assert(#said==n0,"a word inside a longer line does not satisfy a short prev")
+-- Said as a fight begins, described as the cutscene after it (the vault, Oct 8): held through
+-- the fight's lines, timed from the scene's start.
+state.set_cinematic(false); t.run(3); n0=#said
+line("It seems I have no choice – I'm going to have to fight my way out of here.",4.7,"PlayerFemale_32518"); t.run(10)
+line("Protego!",0.6,"PlayerFemale_00414"); t.run(0.2); line("Confringo!",1,"EleazarFig_1"); t.run(60)
+assert(#said==n0,"nothing described over the fight: "..tostring(said[#said]))
+state.set_cinematic(true); t.run(0.5)
+assert(#said==n0,"the scene's own timing")
+t.run(1)
+assert(said[#said]=="A stone basin.","described once the scene starts: "..tostring(said[#said]))
 assert(not next(t.hooks),"custom subtitle event needs no repeated RegisterHook attempts")
 print("subtitles test passed")

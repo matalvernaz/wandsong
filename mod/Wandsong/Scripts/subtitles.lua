@@ -73,16 +73,25 @@ local CORRECTIONS = {
             { delay = 0.2, text = "Stone knights stir all around you. A knight raises its sword at you." },
         } },
     } },
+    -- Said as the vault's last fight begins; its descriptions are the cutscene after the fight
+    -- (the recording's silence came minutes later). Held, they wait for that scene to start
+    -- instead of describing a stone basin over the fight (Oct 8).
+    { after = "I'm going to have to fight my way out of here.", hold = true },
 }
 for _, c in ipairs(CORRECTIONS) do
     for i, d in ipairs(DESCRIPTIONS) do
         if d.after == c.after and type(d.items) == "table" then
-            while #d.items > c.keep do table.remove(d.items) end
-            for j, extra in ipairs(c.add or {}) do table.insert(DESCRIPTIONS, i + j, extra) end
+            if c.hold then d.hold = true end
+            if c.keep then
+                while #d.items > c.keep do table.remove(d.items) end
+                for j, extra in ipairs(c.add or {}) do table.insert(DESCRIPTIONS, i + j, extra) end
+            end
             break
         end
     end
 end
+-- A held description waits this long at most for its scene.
+local HOLD_MAX = 900
 
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
@@ -137,9 +146,16 @@ local generation, scene = state.generation, state.scene
 local serial = 0
 local last_tick = os.clock()
 
-local function cancel_descriptions()
+-- keep_held: dialogue cut short now doesn't concern a description held for a scene to come.
+local function cancel_descriptions(keep_held)
     serial = serial + 1
-    scheduled = {}
+    local keep = {}
+    if keep_held then
+        for _, item in ipairs(scheduled) do
+            if item.held then item.serial = serial; keep[#keep + 1] = item end
+        end
+    end
+    scheduled = keep
 end
 
 local recent = {}
@@ -180,12 +196,15 @@ local function on_line(e)
     if sound_only then
         -- nothing to hold back
     elseif cut_short then
-        cancel_descriptions()
+        cancel_descriptions(true)
     else
         local keep = {}
         for _, item in ipairs(scheduled) do
-            if item.due < line_ends + 0.3 then item.due = line_ends + 0.3 end
-            if item.due - item.planned <= MAX_LATE then keep[#keep + 1] = item end
+            if item.held then keep[#keep + 1] = item
+            else
+                if item.due < line_ends + 0.3 then item.due = line_ends + 0.3 end
+                if item.due - item.planned <= MAX_LATE then keep[#keep + 1] = item end
+            end
         end
         scheduled = keep
     end
@@ -209,27 +228,31 @@ local function on_line(e)
     if not i then return end
     local d = DESCRIPTIONS[i]
     local items = d.items or { { delay = d.delay, text = d.text } }
+    -- Held for the scene to come: timed from that scene's start, not from this line.
+    local held = d.hold and not state.cinematic or nil
+    local function wait_for(it) return (held and 0 or (e.dur or 0)) + (it.delay or 0.3) end
     -- This line starts its own descriptions: ones still waiting from an earlier line that fall
     -- after its first would describe the same moments twice, out of order.
     local first
     for _, it in ipairs(items) do
         if it.text and it.text ~= "" then
-            local due = now + math.max(0, (e.dur or 0) + (it.delay or 0.3))
+            local due = now + math.max(0, wait_for(it))
             first = first and math.min(first, due) or due
         end
     end
     if first then
         local keep = {}
-        for _, item in ipairs(scheduled) do if item.due < first then keep[#keep + 1] = item end end
+        for _, item in ipairs(scheduled) do if item.held or item.due < first then keep[#keep + 1] = item end end
         scheduled = keep
     end
     for _, it in ipairs(items) do
         if it.text and it.text ~= "" then
-            local wait = (e.dur or 0) + (it.delay or 0.3)
-            log(string.format("description %d (match %.2f) in %.1f s: %s", i, s, wait, it.text))
+            local wait = wait_for(it)
+            log(string.format("description %d (match %.2f) in %.1f s%s: %s", i, s, wait,
+                held and " of the next scene" or "", it.text))
             local due = now + math.max(0, wait)
             scheduled[#scheduled + 1] = { due = due, planned = due, at = now, text = it.text,
-                serial = serial, generation = generation, scene = scene }
+                serial = serial, generation = generation, scene = scene, held = held }
         end
     end
 end
@@ -292,7 +315,7 @@ dispatch.every(100, function()
             -- Only what the scene queued ends with it; a line spoken since keeps its own.
             local keep = {}
             for _, item in ipairs(scheduled) do
-                if item.at >= exit_since then item.scene = state.scene; keep[#keep + 1] = item end
+                if item.held or item.at >= exit_since then item.scene = state.scene; keep[#keep + 1] = item end
             end
             scheduled = keep
             scene, exit_since = state.scene, nil
@@ -317,7 +340,13 @@ dispatch.every(100, function()
     local keep = {}
     for _, item in ipairs(scheduled) do
         if item.serial == serial and item.generation == generation and item.scene == scene and describe then
-            if now >= item.due then speech.say(item.text, true) else keep[#keep + 1] = item end
+            if item.held and state.cinematic then item.held = nil end
+            if item.held then
+                -- Waiting for its scene: the countdown starts when the scene does.
+                item.due, item.planned = item.due + elapsed, item.planned + elapsed
+                if now - item.at <= HOLD_MAX then keep[#keep + 1] = item end
+            elseif now >= item.due then speech.say(item.text, true)
+            else keep[#keep + 1] = item end
         end
     end
     scheduled = keep

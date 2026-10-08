@@ -85,8 +85,10 @@ local function clean(t)
     -- Other mouse buttons have no keyboard meaning for the player; the action they trigger
     -- is still reachable as a shortcut item in the review list.
     t = t:gsub('<img%s+src="cbi_Mouse_[^"]+"%s*/>%s*,?%s*', "")
+    -- Spell icons read as the spell's name, next to the name itself ("a Stupefy TUT_Stupefy
+    -- counter-attack", Oct 8): rewrite() then drops the doubled name.
     t = t:gsub('<img%s+src="([^"]+)"%s*/>', function(k)
-        return (k:gsub("^cbi_", ""):gsub("_", " "))
+        return (k:gsub("^cbi_", ""):gsub("^TUT_", ""):gsub("_", " "))
     end)
     t = t:gsub("<[^>]->", "")          -- any other rich-text tag
     t = t:gsub("%s+", " ")

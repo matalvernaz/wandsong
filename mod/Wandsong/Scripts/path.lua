@@ -877,6 +877,21 @@ local function quest_widgets()
     end
     return found
 end
+-- Tasks name actions the way the HUD's icons show them: "Tap to destroy statues with Basic
+-- Cast" (the vault, Oct 8). Say the key that does it, in the player's current bindings.
+local HUD_ACTIONS = { { "basic cast", "AM_Stupefy", "LeftMouseButton" } }
+local function with_keys(t)
+    local lower = t:lower()
+    for _, a in ipairs(HUD_ACTIONS) do
+        local _, e = lower:find(a[1], 1, true)
+        if e then
+            t = t:sub(1, e) .. " (" .. bindings.spoken(a[2], a[3]) .. ")" .. t:sub(e + 1)
+            t = t:gsub("^Tap to (%l)", string.upper)
+            break
+        end
+    end
+    return t
+end
 local function objective_text()
     if world.ui_busy and world.ui_busy() then return nil end
     local tasks, seen, title = {}, {}, nil
@@ -884,7 +899,7 @@ local function objective_text()
         if w.kind == "task" then
             local t
             pcall(function() t = widget_text(w.obj.CheckboxText) end)
-            if t and not seen[t] then seen[t] = true; tasks[#tasks + 1] = t end
+            if t and not seen[t] then seen[t] = true; tasks[#tasks + 1] = with_keys(t) end
         elseif not title then
             pcall(function() title = widget_text(w.obj.StepTitleText) end)
         end

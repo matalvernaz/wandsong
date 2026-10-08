@@ -16,6 +16,7 @@ public class HaReflex {
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+ [DllImport("kernel32.dll")] public static extern uint GetTickCount();
  public static void Post(IntPtr h, uint vk, bool up){
   uint sc = MapVirtualKey(vk, 0);
   long l = 1 | ((long)sc << 16) | (up ? ((1L << 30) | (1L << 31)) : 0);
@@ -46,6 +47,8 @@ function Press([int]$vk, [string]$why) {
         [HaReflex]::Post($hwnd, [uint32]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Post($hwnd, [uint32]$vk, $true)
     } else {
         [HaReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Key([uint16]$vk, $true)
+        # Injected keys count as input: sendkeys.ps1 tells them from someone using the PC by this.
+        Set-Content -Path (Join-Path $env:TEMP 'wandsong_keys_sent.txt') -Value ([HaReflex]::GetTickCount())
     }
     Write-Output "$(Get-Date -Format HH:mm:ss.fff) pressed $why"
 }
