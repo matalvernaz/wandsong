@@ -101,12 +101,29 @@ local function fail(why)
     speech.say("The hat didn't take that choice, so nothing was decided. Choose again.")
 end
 
+local function chosen(h)
+    busy_until = -1
+    log("accepted " .. h.name)   -- the hat says it: nothing over its verdict
+    if state.screen_open(M) and state.close_screen then state.close_screen() end
+end
+
+--- Accept the house picked (tries: Accepts already sent). After an Accept the screen may linger
+--- on its way out in a view of its own: that's waited out, never called a failure.
 local function accept(h, tries, since)
     tries, since = tries or 0, since or os.clock()
     local w = screen()
-    if not w then return fail("the screen closed") end
-    if int(w, "HouseStateIndex") ~= PICKED or int(w, "NewHouse") ~= h.id then
-        return fail("the screen shows house " .. tostring(int(w, "NewHouse")) .. ", state " .. tostring(int(w, "HouseStateIndex")))
+    if not w then
+        if tries > 0 then return chosen(h) end
+        return fail("the screen closed")
+    end
+    local st, shown = int(w, "HouseStateIndex"), int(w, "NewHouse")
+    if st ~= PICKED or shown ~= h.id then
+        if tries == 0 then return fail("the screen shows house " .. tostring(shown) .. ", state " .. tostring(st)) end
+        if os.clock() - since < TALK_WAIT then
+            dispatch.later(500, function() accept(h, tries, since) end, "sorting accepted")
+            return
+        end
+        return fail("after Accept the screen stayed, in state " .. tostring(st))
     end
     local talking = false
     pcall(function() talking = w.HatTalking == true end)
@@ -117,13 +134,8 @@ local function accept(h, tries, since)
     if not send(ACCEPT) then return fail("Accept wasn't sent") end
     log("Accept sent for " .. h.name .. (tries > 0 and (", try " .. (tries + 1)) or ""))
     dispatch.later(GONE_MS, function()
-        if screen() then
-            if tries + 1 < ACCEPT_TRIES then accept(h, tries + 1, os.clock()) else fail("Accept wasn't taken") end
-            return
-        end
-        busy_until = -1
-        log("accepted " .. h.name)   -- the hat says it: nothing over its verdict
-        if state.screen_open(M) and state.close_screen then state.close_screen() end
+        if not screen() then return chosen(h) end
+        if tries + 1 < ACCEPT_TRIES then accept(h, tries + 1, os.clock()) else fail("Accept wasn't taken") end
     end, "sorting accepted")
 end
 

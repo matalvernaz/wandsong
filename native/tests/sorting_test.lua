@@ -13,6 +13,7 @@ local PATH = "/Engine/Transient.GameEngine_1:BP_PhoenixGameInstance_C_1.UI_BP_So
 local CRESTS = { [0] = "gryffindor", [1] = "hufflepuff", [2] = "ravenclaw", [3] = "slytherin" }
 local up, accepted, sent, broken = true, nil, {}, false
 local remark = 0      -- seconds the hat talks after a crest is picked (it ignores input meanwhile)
+local linger = 0      -- seconds the screen stays up after an Accept, in a view of its own (3)
 local talking_until = -1
 local hat = { HouseStateIndex = 0, NewHouse = 2, SuggestedHouse = 2, HasWWHouse = true, HatTalking = false,
     WWHouse = { ToString = function() return "Ravenclaw" end } }
@@ -42,7 +43,14 @@ function mgr.OnInputAction(_, action, event)
     sent[#sent + 1] = action
     if os.clock() < talking_until then return end   -- the hat is talking: input is dropped
     if action == 1 then hat.HouseStateIndex = hat.HouseStateIndex == 1 and 2 or 1
-    elseif action == 75 and hat.HouseStateIndex ~= 1 then accepted = hat.NewHouse; up = false end
+    elseif action == 75 and hat.HouseStateIndex ~= 1 then
+        accepted = hat.NewHouse
+        if linger > 0 then
+            hat.HouseStateIndex = 3
+            local gone_at = os.clock() + linger
+            hat.IsInViewport = function() if os.clock() >= gone_at then up = false end; return up end
+        else up = false end
+    end
 end
 StaticFindObject = function(p) if p == PATH then return hat end end
 -- The hat's talk flag follows the fake's clock.
@@ -137,6 +145,21 @@ press(); press()
 t.run(6)
 mgr.OnInputAction = real
 assert(accepted == 3 and #sent == 2, "a dropped Accept is sent again: " .. tostring(accepted) .. ", " .. #sent)
+
+-- An Accept that took, while the screen lingers 4 s on its way out in a view of its own: the
+-- menu waits it out and says nothing false.
+next_scenario()
+hat.IsInViewport = function() return up end
+hat.HouseStateIndex, hat.NewHouse, linger = 2, 2, 4
+read_screen()
+local n_said = #said
+press(); press()
+t.run(8)
+linger = 0
+hat.IsInViewport = function() return up end
+assert(accepted == 2 and #sent == 1, "accepted once: " .. #sent)
+for i = n_said + 1, #said do assert(not said[i]:find("didn't take", 1, true), "no false failure: " .. said[i]) end
+assert(not state.screen_open(sorting), "the menu closed once the screen went")
 
 -- If the screen doesn't take the house (shows another), nothing is accepted.
 next_scenario()
