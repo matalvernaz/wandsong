@@ -235,7 +235,7 @@ local function refresh_route()
         -- Walking to something picked in the scanner: it's the destination (followed like a
         -- person if it moves), whatever the quest says.
         route, dest_is_guide = {}, false
-        local d = world.locate(chosen.path)
+        local d = chosen.point and { chosen.point[1], chosen.point[2], chosen.point[3] } or world.locate(chosen.path)
         if not d then dest = nil; return end
         if source ~= "chosen" then trail, dest_moved_at, source = {}, -100, "chosen" end
         dest = d
@@ -792,8 +792,8 @@ local function toggle_walk()
     log("autowalk started, " .. #route .. " route points" .. (dest_is_person() and ", following" or ""))
 end
 
---- Walk to a scanner entry (by object path).
-function M.walk_to(path, name, kind)
+-- Walk to something picked in the scanner: { path = object path } or { point = { x, y, z } }.
+local function walk_chosen(c)
     if not world.in_game() then speech.say(world.not_ready_reason()) return end
     if not (input and input.mouse_move) then
         speech.say("Autowalk isn't available: its input module is missing or out of date. Reinstall the mod.")
@@ -801,9 +801,10 @@ function M.walk_to(path, name, kind)
     end
     if walking then stop("") end
     if not VK_W then speech.say("Assign a keyboard key to forward movement before using autowalk."); return end
-    chosen = { path = path, name = name, kind = kind }
+    chosen = c
     nav_cache = nil
     refresh_route()
+    local name = c.name
     if not dest then chosen = nil; speech.say(name .. " has gone.") return end
     if route_failure then
         speech.say("Can't walk to " .. name .. ": " .. route_failure .. ".")
@@ -817,8 +818,14 @@ function M.walk_to(path, name, kind)
     still_since, still_x, still_y, still_z = os.clock(), px, py, pz
     speech.say(string.format("Walking to %s, %d metres. Press any movement key or %s to stop.", name,
         math.floor(dist2d(px, py, dest) / 100 + 0.5), keys.describe_combo(keys.combo_of("autowalk"))))
-    log("autowalk to " .. path)
+    log("autowalk to " .. (c.path or string.format("%.0f %.0f %.0f", dest[1], dest[2], dest[3])))
 end
+
+--- Walk to a scanner entry (by object path).
+function M.walk_to(path, name, kind) walk_chosen({ path = path, name = name, kind = kind }) end
+--- Walk to a fixed point picked in the scanner (a quest marker over no thing), that one and no
+--- other, wherever the general objective is.
+function M.walk_point(x, y, z, name) walk_chosen({ point = { x, y, z }, name = name, kind = "objective" }) end
 
 -- --- Facing a target ---------------------------------------------------------------------
 -- One key turns the camera toward the nearest enemy (or creature, or else the objective), so

@@ -104,6 +104,25 @@ path.walk_to("/Game/Chest","Chest","chest")
 nav=nil; t.run(1.5)
 assert(not pressed[73] and said[#said]:find("no path found"),"failed route refresh stops movement")
 
+-- Audit A14: a quest marker picked in the scanner is walked to itself, not to the objective
+-- (here straight ahead, while the marker is off to the left).
+px,py,pz=0,0,0; yaw=0; pawn.Controller.ControlRotation.Yaw=0
+local navigated_to
+StaticFindObject=function(p)
+    if p:find("NavigationSystem",1,true) then return {FindPathToLocationSynchronously=function(_,_,_,goal)
+        navigated_to=goal; return {PathPoints=arr({{X=0,Y=0,Z=0},{X=goal.X,Y=goal.Y,Z=goal.Z}})}
+    end} end
+    return mgr
+end
+path.walk_point(0,2000,0,"Quest marker")
+assert(navigated_to and navigated_to.X==0 and navigated_to.Y==2000,"the route is asked for the marker picked")
+assert(said[#said]:find("Walking to Quest marker, 20 metres",1,true),"and said: "..said[#said])
+t.run(1.2)
+assert(yaw>60,"turns toward the marker, not the objective ahead: "..yaw)
+assert(path.objective()==nil,"the marker is the destination, not the general objective")
+t.action("autowalk")()
+assert(not pressed[73],"stops as any scanner walk does")
+
 sound_on=false
 local silent=tones
 t.action("turn_left")(); t.run(0.3)

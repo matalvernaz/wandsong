@@ -59,12 +59,13 @@ local function build()
     local out = {}
     if kind == "objective" then
         -- The game's quest markers first (the people the step wants, by name), nearest first;
-        -- then the route's end, unless a marker is already there.
+        -- then the route's end, unless a marker is already there. A marker over no thing is
+        -- known by where it stands, so the selection stays on it when the list is rebuilt.
         local ok, markers = pcall(require, "markers")
-        for i, mk in ipairs(ok and markers.list() or {}) do
+        for _, mk in ipairs(ok and markers.list() or {}) do
             local p = mk.path and world.locate(mk.path)
             local x, y, z = p and p[1] or mk.x, p and p[2] or mk.y, p and p[3] or mk.z
-            out[#out + 1] = { path = p and mk.path or ("quest marker " .. i), point = p == nil,
+            out[#out + 1] = { path = p and mk.path or string.format("quest marker %.0f %.0f %.0f", x, y, z), point = p == nil,
                               name = p and (mk.name .. ", quest marker") or "Quest marker",
                               kind = p and mk.kind or "objective", x = x, y = y, z = z,
                               floor = math.abs(z - pz) <= SAME_FLOOR_CM,
@@ -212,6 +213,7 @@ local function with_selected(fn)
     if not ready() then return end
     if stale() or CATEGORIES[cat_i].kind == "objective" then build() end
     local i = selected and index_of(selected)
+    if not i and selected then speech.say("What you picked has gone. Use page down to pick again.") return end
     if not i then speech.say("Nothing selected. Use page down to pick something first.") return end
     fn(list[i])
 end
@@ -228,7 +230,10 @@ keys.action{ id = "scan_cat_prev", name = "Previous scanner category", group = "
              run = function() category(-1) end }
 keys.action{ id = "scan_walk", name = "Walk to the current thing", group = "Scanner", default = "shift+home",
              run = function() with_selected(function(e)
-                 if e.point then require("path").walk_objective() else require("path").walk_to(e.path, e.name, e.kind) end
+                 -- The route's end follows the game's own route; a marker is walked to itself.
+                 if e.path == "objective" then require("path").walk_objective()
+                 elseif e.point then require("path").walk_point(e.x, e.y, e.z, e.name)
+                 else require("path").walk_to(e.path, e.name, e.kind) end
              end) end }
 
 -- Developer: everything the world scan is tracking, with name sources and positions.
