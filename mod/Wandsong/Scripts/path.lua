@@ -157,6 +157,7 @@ local source = nil              -- "route", "mission" or "guide": a change start
 -- Forward-declared above for target classification.
 local last_objective = nil      -- the current task, as the game words it (when it does)
 local leash = nil               -- "Stay close to <name>": { name, generation, level } (below)
+local detour = nil              -- after the game sent you back: the ancient magic to walk to next
 
 -- Someone the current objective names ("Find Professor Fig"), among the characters the story
 -- has introduced by name (subtitles): the world scan keeps those even far away.
@@ -567,7 +568,20 @@ local function walk_tick()
     local px, py, pz = world.position()
     if walk_from and dist3(walk_from, { px, py, pz }) > TELEPORT_CM then
         walk_from = nil
-        stop("the game moved you back, so that way isn't open")
+        -- The vault's dark maze (Oct 8 and 9): straight at Professor Fig the game sends you back;
+        -- the way is the ancient magic its wisps lead sighted players to. Name it, and let the
+        -- next autowalk press go there.
+        local mp, mpath
+        if world.nearest then mp, mpath = world.nearest("magic", 15000) end
+        if mp and mpath and not (chosen and chosen.path == mpath) then
+            detour = { path = mpath, until_t = os.clock() + 120 }
+            local _, _, _, yaw = world.position()
+            stop("the game moved you back, so that way isn't open. Ancient magic is " ..
+                 state.where(px, py, yaw or 0, mp[1], mp[2]) .. ": press " ..
+                 keys.describe_combo(keys.combo_of("autowalk")) .. " to walk to it")
+        else
+            stop("the game moved you back, so that way isn't open")
+        end
         return
     end
     walk_from = { px, py, pz }
@@ -733,6 +747,13 @@ end
 
 local function toggle_walk()
     if walking then stop("") return end
+    if detour and os.clock() < detour.until_t then
+        local d = detour
+        detour = nil
+        M.walk_to(d.path, "the ancient magic", "magic")
+        return
+    end
+    detour = nil
     local ai = package.loaded.ai_walk
     if ai and ai.active and ai.active() then ai.stop("walk key"); return end
     if not world.in_game() then speech.say(world.not_ready_reason()) return end

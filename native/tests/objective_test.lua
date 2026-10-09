@@ -91,9 +91,25 @@ assert(nav_to and nav_to.X == 10000, "the navmesh is asked for a path to Fig")
 
 -- The game puts the player back (the dark maze returns you to its start when you stray):
 -- autowalk stops instead of walking into it again and again.
+-- In the vault's dark maze the way is the ancient magic the wisps lead to: it's named, and the
+-- next autowalk press walks there (Oct 9: Matt stuck at "Find Professor Fig").
+local w = package.loaded.world
+w.nearest = function(kind) if kind == "magic" then return { 500, -8000, 0 }, "/Game/Vault.Hotspot" end end
+local locate = w.locate
+w.locate = function(path)
+    if path == "/Game/Vault.Hotspot" then return { 500, -8000, 0 } end
+    return locate(path)
+end
 px = -3000
 t.run(0.5)
 assert(said[#said]:find("the game moved you back", 1, true), "stops when moved back: " .. tostring(said[#said]))
+assert(said[#said]:find("Ancient magic is", 1, true) and said[#said]:find("to walk to it", 1, true),
+    "names the ancient magic and how to walk there: " .. tostring(said[#said]))
+t.action("autowalk")()
+assert(said[#said]:find("^Walking to the ancient magic"), "the next press walks there: " .. tostring(said[#said]))
+t.action("autowalk")()
+w.nearest = function() return nil end
+w.locate = locate
 
 -- "Stay close to Professor Fig" holds after the objective moves on: wandering 15 m off
 -- failed the quest (Oct 8, the statue puzzle). Past 10 m the mod says where Fig is, past 14 m
