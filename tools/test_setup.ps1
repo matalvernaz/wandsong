@@ -6,8 +6,8 @@ param([string]$SetupExe = (Join-Path (Split-Path -Parent $PSScriptRoot) "install
 $ErrorActionPreference = "Stop"
 $env:WANDSONG_SETUP_QUIET = "1"
 $env:WANDSONG_SETUP_OFFLINE = "1"   # deterministic: no online check
-$base = Join-Path $env:TEMP "WandsongSetupTest"
-if (Test-Path $base) { Remove-Item -Recurse -Force $base }
+$testTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
+$base = Join-Path $testTempRoot ("WandsongSetupTest-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $base | Out-Null
 $fails = 0
 function Check($cond, $what) { if ($cond) { Write-Output "ok   $what" } else { Write-Output "FAIL $what"; $script:fails++ } }
@@ -71,7 +71,7 @@ Check ((Get-Content "$w\Mods\Wandsong\version.txt") -eq "0.4.0") "version.txt in
 Check (Test-Path "$w\Mods\Wandsong\Scripts\old.lua") "all payload files installed"
 Check ((Get-Content "$w\UE4SS-settings.ini" -Raw) -match "bUseUObjectArrayCache = false") "UE4SS settings patched"
 Check ((Get-Content "$w\Mods\mods.txt" -Raw) -match "Wandsong : 1\r?\n; Built-in keybinds") "mods.txt enables the mod before Keybinds"
-Check ((Get-Content "$w\Wandsong-manifest.txt")[0] -match "Wandsong 0.4.0") "install record names the version"
+Check ((Get-Content "$w\Wandsong-manifest.txt")[0] -match "^# Wandsong \S+ installed files") "install record names the setup version"
 Check (-not (Test-Path "$w\Wandsong-backup")) "no backup on a clean game"
 Check (-not (Test-Path "$w\Wandsong-write-test.tmp")) "write test leaves nothing"
 
@@ -90,11 +90,13 @@ Check ((Get-Content "$w\Mods\Wandsong\Scripts\main.lua") -eq "-- main 0.4.1") "f
 $mods = (Get-Content "$w\Mods\mods.txt" | Where-Object { $_ -match "^Wandsong" }).Count
 Check ($mods -eq 1) "mods.txt lists the mod once after an update"
 
-# 3. Uninstall: the game folder as it was.
+# 3. Uninstall removes recorded files, preserving the player's unrecorded settings.
 $r = Run-Setup "$base\setup2.exe" @("--uninstall", "--game", $g)
 Check ($r.code -eq 0) "uninstall exits 0"
 $left = @(Get-ChildItem -Recurse -File $w | ForEach-Object { $_.FullName.Substring($w.Length + 1) })
-Check ($left.Count -eq 1 -and $left[0] -eq "HogwartsLegacy.exe") "uninstall leaves only the game: $($left -join ', ')"
+Check ($left.Count -eq 3 -and (Test-Path "$w\HogwartsLegacy.exe") -and
+    (Get-Content "$w\Mods\Wandsong\keys.ini") -eq "player keys" -and
+    (Get-Content "$w\Mods\Wandsong\Scripts\keys.ini") -eq "player keys 2") "uninstall preserves only the game and unrecorded settings: $($left -join ', ')"
 
 # 4. Someone else's UE4SS: backed up, and put back on uninstall.
 $g2 = New-Game "otherue4ss"
@@ -108,7 +110,7 @@ Check ((Get-Content "$w2\Mods\mods.txt" -Raw) -match "TheirMod : 1") "their mods
 $r = Run-Setup "$base\setup1.exe" @("--uninstall", "--game", $g2)
 Check ((Get-Content "$w2\dwmapi.dll") -eq "their loader") "their loader is put back"
 
-# 5. A copy installed by hand (no record): updated without a backup of our own files.
+# 5. A copy installed by hand has no ownership record: preserve every overwritten original.
 $g3 = New-Game "devcopy"
 $w3 = "$g3\Phoenix\Binaries\Win64"
 New-Item -ItemType Directory -Force "$w3\Mods\Wandsong\Scripts" | Out-Null
@@ -118,7 +120,7 @@ Set-Content -Encoding ascii "$w3\Mods\Wandsong\version.txt" "dev abc1234"
 $r = Run-Setup "$base\setup1.exe" @("--check", "--game", $g3)
 Check ($r.out -match "development build") "a development build is recognised"
 $r = Run-Setup "$base\setup1.exe" @("--install", "--game", $g3)
-Check ($r.code -eq 0 -and -not (Test-Path "$w3\Wandsong-backup")) "updating a hand-made copy backs nothing up"
+Check ($r.code -eq 0 -and (Get-Content "$w3\Wandsong-backup\dwmapi.dll") -eq "our old loader") "updating a hand-made copy preserves its unrecorded loader"
 
 # 6. Interactive with input closed: nothing changes.
 $g4 = New-Game "eof"
@@ -138,4 +140,10 @@ $r = Run-Setup $SetupExe @("--install", "--game", (New-Game "nopack"))
 Check ($r.code -ne 0 -and $r.out -match "missing the mod's files") "no payload: refused"
 
 Write-Output "$fails failed"
+$resolvedTestBase = [System.IO.Path]::GetFullPath($base)
+if (-not $resolvedTestBase.StartsWith($testTempRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to remove a test folder outside the temporary directory: $resolvedTestBase"
+}
+Remove-Item -LiteralPath $resolvedTestBase -Recurse -Force
 if ($fails -gt 0) { exit 1 }
+exit 0

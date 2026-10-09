@@ -127,5 +127,21 @@ state.ui_blocker = "InPauseMode"
 world_ran = 0
 for _ = 1, 8 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
 assert(not d.ticking() and not state.loading() and world_ran > 0, "in a menu, the fallback runs everything")
+-- A05: this must still work after the stall timeout, not just during a short tick gap.
+local menu_key = false
+for _ = 1, 110 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+d.run(function() menu_key = true end, "paused menu key")
+for _ = 1, 5 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(not state.loading() and menu_key, "a menu with no Blueprint ticks stays usable after 11 seconds")
+local after_load = false
+state.mark_loading(2)
+d.run(function() after_load = true end, "new menu action after load")
+for _ = 1, 10 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(state.loading() and not after_load, "an explicit load still blocks menu work")
+for _ = 1, 15 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(not state.loading() and after_load, "menu work resumes once the explicit load settles")
+state.ui_blocker = "no UI manager"
+for _ = 1, 25 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(state.loading(), "an unknown UI state does not authorize menu work during lost ticks")
 state.ui_blocker = nil
 print("dispatcher test passed")

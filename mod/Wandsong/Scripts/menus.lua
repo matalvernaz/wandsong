@@ -1305,16 +1305,17 @@ end
 local function bound_event(owner, button, kind)
     local bname = ""
     pcall(function() bname = button:GetFName():ToString() end)
-    local found, fallback = nil, nil
+    if bname == "" then return nil end
+    local prefix = "BndEvt__" .. bname .. "_K2Node_ComponentBoundEvent_"
+    local found
     local cls
     pcall(function() cls = owner:GetClass() end)
     while cls and cls:IsValid() and not found do
         pcall(function()
             cls:ForEachFunction(function(fn)
                 local n = fn:GetFName():ToString()
-                if n:find(kind, 1, true) then
-                    if n:find("BndEvt__" .. bname .. "_", 1, true) then found = n
-                    elseif not fallback then fallback = n end
+                if n:sub(1, #prefix) == prefix and n:find(kind, #prefix + 1, true) then
+                    found = n
                 end
             end)
         end)
@@ -1322,7 +1323,9 @@ local function bound_event(owner, button, kind)
         pcall(function() super = cls:GetSuperStruct() end)
         cls = super
     end
-    return found or fallback
+    -- A matching signature on a different button is never an activation fallback.
+    -- The caller can use this button's actual native delegate, or report unavailable.
+    return found
 end
 
 local function click_handler(owner, button) return bound_event(owner, button, "OnButtonClickedEvent") end

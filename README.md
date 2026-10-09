@@ -57,11 +57,16 @@ version, and Enter downloads it, checks it against its published checksum and in
 download the newer setup yourself and run it. Updating replaces the mod's files, removes files
 the old version had that the new one doesn't, and keeps your settings and keys. The same setup
 uninstalls (type 2) and switches vanilla mode on and off (type 3: play without mods).
+An update keeps vanilla mode on if you switched mods off.
 
 Setup is read out by your screen reader; without one running, it speaks with Windows' own voice.
 If the game is in a folder Windows protects, setup asks for permission first. If someone else's
 UE4SS mods were already installed, setup backs up the files it replaces and puts them back when
 you uninstall.
+Setup stages and verifies file changes before applying them. If a file is locked or a write
+fails, it restores the previous files or keeps a recovery record for the next attempt. Keep
+the backup, transaction folder and install record if setup reports that recovery is pending;
+close programs using the affected files and run setup again.
 
 If Windows SmartScreen warns about an unrecognised app, choose More info, then Run anyway.
 The file is not code-signed yet.
@@ -160,8 +165,10 @@ switch tabs, and F to continue.
 
 ## Uninstalling
 
-Run the setup, type 2 and press Enter. Wandsong and its settings are removed, and any
-files setup replaced are put back.
+Run the setup, type 2 and press Enter. Files recorded as installed by Wandsong are removed,
+and files setup backed up are put back, including shared mod helpers. Your settings, logs
+and other unrecorded files stay in place. When updating a hand-installed copy without an
+install record, setup preserves the files it replaces; uninstall restores that earlier copy.
 
 ## Building from source
 

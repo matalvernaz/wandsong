@@ -38,7 +38,12 @@ end
 -- Not in menus, though: the settings screen ticks only every half second or so, and holding
 -- work there made every key answer a second late (Oct 8, 21:07). A load started from a menu
 -- still closes the world (world.in_game() and its gate don't look at menus).
-local function held() return state.loading() or (not M.ticking() and not state.ui_blocker) end
+local function menu_without_ticks()
+    local why = state.ui_blocker
+    return why == "InPauseMode" or why == "IsInPreGameplayState" or why == "tutorial"
+        or why == "quest failed" or why == "spell lesson"
+end
+local function held() return state.loading() or (not M.ticking() and not menu_without_ticks()) end
 --- A map load has finished (menus.lua's LoadMap hook): the new world hasn't ticked yet, and
 --- until it does the fallback drives everything again, as at startup. Some screens have no
 --- Blueprint ticks at all (the main menu's first seconds; the London opening scene ran 107 s
@@ -257,7 +262,10 @@ local still_marked = false
 LoopAsync(TICK_MS, function()
     -- (Only once the game has ticked at all: before that, and in the offline tests, every
     -- tick is the fallback's.)
-    local still = last_hook > -math.huge and os.clock() - last_hook > STILL_S
+    -- A known, settled menu may stop Blueprint ticks indefinitely. Keep its key/speech
+    -- work alive; world.in_game() still requires ticks, and explicit loads still hold work.
+    -- An unknown UI state or an in-progress transition is not evidence of a safe menu.
+    local still = last_hook > -math.huge and os.clock() - last_hook > STILL_S and not menu_without_ticks()
     if still then
         if not still_marked then diag.trace("no game ticks: treated as a load") end
         still_marked = true

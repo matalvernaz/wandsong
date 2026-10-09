@@ -22,6 +22,19 @@ jobs:
       - name: Build Windows input module
         if: runner.os == 'Windows'
         run: cmake --build native/build-tests --config Release --target input_bridge
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S installer -B installer/build -A x64 -DWANDSONG_VERSION=0.4.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build installer/build --config Release
+      - name: Test installation, recovery and uninstall in fake games
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tools/test_setup.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/test_setup_failures.py
       - name: Check deployment scripts parse
         if: runner.os == 'Windows'
         shell: pwsh

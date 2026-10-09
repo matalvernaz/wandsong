@@ -11,8 +11,8 @@ M.cinematic = false
 M.paused = false
 -- What the UI manager last said keeps play from being plain gameplay (a menu, pause, a modal
 -- tutorial, a spell lesson), or nil (world.lua's ui_blocker). The dispatcher's barrier for a
--- stop in the game's ticks applies only without one: menus tick sparsely, loads don't come
--- from inside them unannounced.
+-- stop in the game's ticks permits known settled menus to work without Blueprint ticks.
+-- Unknown UI states and transitions still hold work; explicit load marks always take priority.
 M.ui_blocker = nil
 
 function M.loading() return os.clock() < M.loading_until end

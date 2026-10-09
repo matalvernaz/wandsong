@@ -130,6 +130,10 @@ std::string read_file(const fs::path& p) {
     return ss.str();
 }
 
+} // namespace
+#include "file_transaction.h"
+namespace {
+
 bool looks_like_game(const fs::path& dir) {
     std::error_code ec;
     return fs::exists(dir / kBinRel / "HogwartsLegacy.exe", ec);
@@ -244,33 +248,44 @@ std::vector<Item> read_pack(const fs::path& exe) {
     f.read(magic, 8);
     f.read((char*)&offset, 8);
     f.read((char*)&count, 8);
-    if (!f || std::memcmp(magic, kPackMagic, 8) != 0 || offset >= end || count > 100000) return items;
+    if (!f || std::memcmp(magic, kPackMagic, 8) != 0) return items;
+    const uint64_t payload_end = end - 24;
+    if (offset > payload_end || count == 0 || count > 100000 || count > (payload_end - offset) / 13)
+        throw std::runtime_error("Invalid setup payload bounds.");
     f.seekg(offset);
     for (uint64_t i = 0; i < count; ++i) {
+        uint64_t cursor = static_cast<uint64_t>(f.tellg());
+        if (cursor > payload_end || payload_end - cursor < 4)
+            throw std::runtime_error("Truncated setup payload.");
         uint32_t len = 0;
         f.read((char*)&len, 4);
-        if (!f || len == 0 || len > 4096) return {};
+        if (!f || len == 0 || len > 4096 || payload_end - cursor - 4 < uint64_t(len) + 8)
+            throw std::runtime_error("Invalid setup payload path length.");
         std::string rel(len, '\0');
         f.read(rel.data(), len);
         uint64_t size = 0;
         f.read((char*)&size, 8);
-        if (!f) return {};
+        if (!f) throw std::runtime_error("Truncated setup payload entry.");
         Item it;
         it.rel = rel;
         std::replace(it.rel.begin(), it.rel.end(), '/', '\\');
         it.offset = (uint64_t)f.tellg();
         it.size = size;
-        if (it.offset + size > end) return {};
+        if (it.offset > payload_end || size > payload_end - it.offset)
+            throw std::runtime_error("Invalid setup payload file size.");
         items.push_back(it);
         f.seekg(it.offset + size);
     }
+    if (static_cast<uint64_t>(f.tellg()) != payload_end)
+        throw std::runtime_error("Unexpected data at the end of the setup payload.");
     return items;
 }
 
 std::vector<Item> read_folder(const fs::path& payload) {
     std::vector<Item> items;
-    std::error_code ec;
-    for (const auto& entry : fs::recursive_directory_iterator(payload, ec)) {
+    if (!setup_files::present(payload)) return items;
+    for (const auto& entry : fs::recursive_directory_iterator(payload)) {
+        setup_files::checked_path(payload, u8(entry.path().lexically_relative(payload)), false);
         if (!entry.is_regular_file()) continue;
         Item it;
         it.rel = u8(fs::relative(entry.path(), payload));
@@ -284,6 +299,7 @@ std::vector<Item> read_folder(const fs::path& payload) {
 bool write_item(const Item& it, const fs::path& exe, const fs::path& dest, std::error_code& why) {
     std::error_code ec;
     fs::create_directories(dest.parent_path(), ec);
+    if (ec) { why = ec; return false; }
     if (!it.file.empty()) {
         fs::copy_file(it.file, dest, fs::copy_options::overwrite_existing, why);
         return !why;
@@ -291,7 +307,7 @@ bool write_item(const Item& it, const fs::path& exe, const fs::path& dest, std::
     std::ifstream in(exe, std::ios::binary);
     in.seekg(it.offset);
     std::ofstream out(dest, std::ios::binary | std::ios::trunc);
-    if (!out) { why = std::error_code((int)GetLastError(), std::system_category()); return false; }
+    if (!out) { why = std::make_error_code(std::errc::io_error); return false; }
     std::vector<char> buf(1 << 20);
     uint64_t left = it.size;
     while (left > 0) {
@@ -345,6 +361,8 @@ void ini_set(const fs::path& ini, const std::string& section, const std::string&
     }
     std::ofstream out(ini, std::ios::binary);
     for (const auto& l : lines) out << l << "\r\n";
+    out.close();
+    if (!out) throw std::runtime_error("Couldn't save settings: " + u8(ini));
 }
 
 // Make sure mods.txt enables Wandsong (and keeps the UE4SS keybind helper last).
@@ -368,6 +386,8 @@ void enable_in_mods_txt(const fs::path& mods_txt) {
     lines.insert(keybinds, "Wandsong : 1");
     std::ofstream out(mods_txt, std::ios::binary);
     for (const auto& l : lines) out << l << "\r\n";
+    out.close();
+    if (!out) throw std::runtime_error("Couldn't save mod list: " + u8(mods_txt));
 }
 
 std::vector<std::string> read_lines(const fs::path& p) {
@@ -380,11 +400,44 @@ std::vector<std::string> read_lines(const fs::path& p) {
     return v;
 }
 
+void validate_install_path(const std::string& rel) {
+    setup_files::relative_path(rel);
+    std::string key = key_of(rel);
+    if (key == "hogwartslegacy.exe" || key == key_of(u8(kManifest)) ||
+        key == "wandsong-setup.lock" || key == "wandsong-write-test.tmp" ||
+        key == key_of(u8(kBackupDir)) || key.rfind(key_of(u8(kBackupDir)) + "\\", 0) == 0 ||
+        key == key_of(u8(setup_files::transaction_dir)) ||
+        key.rfind(key_of(u8(setup_files::transaction_dir)) + "\\", 0) == 0)
+        throw std::runtime_error("Reserved installation path: " + rel);
+}
+
 std::vector<std::string> manifest_files(const fs::path& bin) {
     std::vector<std::string> v;
-    for (const auto& l : read_lines(bin / kManifest))
-        if (l[0] != '#') v.push_back(l);
+    fs::path path = setup_files::checked_path(bin, u8(kManifest));
+    if (!setup_files::present(path)) return v;
+    std::ifstream in(path);
+    std::string line;
+    if (!std::getline(in, line) || line.rfind("# Wandsong ", 0) != 0)
+        throw std::runtime_error("Invalid installation record: " + u8(path));
+    std::set<std::string> seen;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty() || line.front() == '#') continue;
+        validate_install_path(line);
+        if (!seen.insert(key_of(line)).second) throw std::runtime_error("Duplicate installation record: " + line);
+        v.push_back(line);
+    }
+    if (in.bad() || v.empty()) throw std::runtime_error("Incomplete installation record: " + u8(path));
     return v;
+}
+
+std::map<std::string, std::string> backup_files(const fs::path& bin) {
+    std::map<std::string, std::string> result;
+    for (const auto& rel : setup_files::tree_files(bin, u8(kBackupDir))) {
+        validate_install_path(rel);
+        result.emplace(key_of(rel), rel);
+    }
+    return result;
 }
 
 // Which Wandsong is installed: its version, "" for one too old to say, nothing for none.
@@ -425,8 +478,8 @@ bool game_running(const fs::path& game) {
 // Can we write into the game's folder? Steam's folder usually allows it; elsewhere Windows may
 // want permission first.
 bool can_write(const fs::path& bin) {
-    fs::path probe = bin / "Wandsong-write-test.tmp";
-    HANDLE h = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+    fs::path probe = bin / ("Wandsong-write-test-" + std::to_string(GetCurrentProcessId()) + ".tmp");
+    HANDLE h = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                            FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
     if (h == INVALID_HANDLE_VALUE) return GetLastError() != ERROR_ACCESS_DENIED;
     CloseHandle(h);
@@ -450,90 +503,111 @@ bool run_elevated(const std::wstring& args) {
     return code == 0;
 }
 
-// Remove a file and the folders it leaves empty, up to (not including) `stop`.
-void remove_with_empty_parents(const fs::path& file, const fs::path& stop) {
-    std::error_code ec;
-    fs::remove(file, ec);
-    for (fs::path dir = file.parent_path(); dir != stop && u8(dir).size() > u8(stop).size(); dir = dir.parent_path())
-        if (!fs::is_empty(dir, ec) || !fs::remove(dir, ec)) break;
-}
-
 bool install(const fs::path& game, const fs::path& exe, const std::vector<Item>& items) {
     fs::path bin = game / kBinRel;
-    bool has_loader = std::any_of(items.begin(), items.end(), [](const Item& i) { return key_of(i.rel) == "dwmapi.dll"; });
-    if (!has_loader) {
+    std::set<std::string> packaged;
+    for (const auto& item : items) {
+        validate_install_path(item.rel);
+        std::string key = key_of(item.rel);
+        if (key == "dwmapi.dll.off" || !packaged.insert(key).second)
+            throw std::runtime_error("Duplicate or inactive loader in payload: " + item.rel);
+        setup_files::checked_path(bin, item.rel);
+    }
+    if (!packaged.count("dwmapi.dll") || !packaged.count("ue4ss.dll") ||
+        !packaged.count("mods\\wandsong\\scripts\\main.lua")) {
         say("This setup is missing the mod's files. Download it again.");
         return false;
     }
-    std::error_code ec;
     auto before = installed_version(bin);
-    std::vector<std::string> prior = manifest_files(bin);
+    auto prior = manifest_files(bin);
+    auto backups = backup_files(bin);
+    if (prior.empty() && !backups.empty())
+        throw std::runtime_error("Backups exist without an installation record. Keep Wandsong-backup for recovery.");
+    bool active = setup_files::present(setup_files::checked_path(bin, "dwmapi.dll"));
+    bool inactive = setup_files::present(setup_files::checked_path(bin, "dwmapi.dll.off"));
+    if (active && inactive)
+        throw std::runtime_error("Both dwmapi.dll and dwmapi.dll.off exist. Keep both and resolve the loader conflict before updating.");
+    const std::string loader = inactive ? "dwmapi.dll.off" : "dwmapi.dll";
+    std::set<std::string> owned;
+    for (const auto& rel : prior) {
+        setup_files::checked_path(bin, rel);
+        owned.insert(key_of(rel) == "dwmapi.dll.off" ? "dwmapi.dll" : key_of(rel));
+    }
     say(before ? "Updating Wandsong in " + u8(bin) + "." : "Installing Wandsong into " + u8(bin) + ".");
-
-    // Someone else's UE4SS (no Wandsong yet): keep its files to put back on uninstall.
-    fs::path backup = bin / kBackupDir;
-    if (!before && !fs::exists(backup, ec)) {
-        for (const char* f : {"dwmapi.dll", "UE4SS.dll", "UE4SS-settings.ini", "Mods\\mods.txt"}) {
-            if (!fs::exists(bin / f, ec)) continue;
-            fs::create_directories((backup / f).parent_path(), ec);
-            fs::copy_file(bin / f, backup / f, fs::copy_options::overwrite_existing, ec);
-        }
-    }
-
-    bool had_settings = fs::exists(bin / "UE4SS-settings.ini", ec);
-    bool had_mods_txt = fs::exists(bin / "Mods" / "mods.txt", ec);
-    std::vector<std::string> installed;
-    std::set<std::string> now;
+    setup_files::Transaction transaction(bin);
+    std::map<std::string, std::pair<std::string, fs::path>> outputs;
     for (const auto& it : items) {
-        // A player's existing UE4SS configuration is patched below, never replaced.
-        if (key_of(it.rel) == "ue4ss-settings.ini" && had_settings) continue;
-        if (key_of(it.rel) == "mods\\mods.txt" && had_mods_txt) continue;
-        fs::path dest = bin / from_u8(it.rel);
+        std::string key = key_of(it.rel), rel = key == "dwmapi.dll" ? loader : it.rel;
+        fs::path staged = transaction.stage(rel);
+        fs::path current = setup_files::checked_path(bin, rel);
+        if ((key == "ue4ss-settings.ini" || key == "mods\\mods.txt") && setup_files::present(current)) {
+            setup_files::copy_verified(current, staged);
+            outputs[key] = {rel, staged};
+            continue;
+        }
         std::error_code why;
-        if (!write_item(it, exe, dest, why)) {
-            say("Couldn't write " + it.rel + ": " + why.message());
-            return false;
-        }
-        unblock(dest);
-        installed.push_back(it.rel);
-        now.insert(key_of(it.rel));
+        if (!write_item(it, exe, staged, why))
+            throw std::runtime_error("Couldn't stage " + it.rel + ": " + why.message());
+        outputs[key] = {rel, staged};
     }
-
-    // Files an earlier version installed in the mod's folder that this one doesn't have. Only
-    // what the record lists: the player's settings and logs live there too and stay.
-    int removed = 0;
-    std::string mod_prefix = key_of(u8(kModDir)) + "\\";
-    for (const auto& rel : prior) {
-        std::string k = key_of(rel);
-        if (k.rfind(mod_prefix, 0) == 0 && !now.count(k) && fs::exists(bin / from_u8(rel), ec)) {
-            remove_with_empty_parents(bin / from_u8(rel), bin / kModDir);
-            ++removed;
+    for (const std::string rel : {"UE4SS-settings.ini", "Mods\\mods.txt"}) {
+        std::string key = key_of(rel);
+        if (!outputs.count(key)) {
+            fs::path staged = transaction.stage(rel), current = setup_files::checked_path(bin, rel);
+            if (setup_files::present(current)) setup_files::copy_verified(current, staged);
+            else setup_files::write_text(staged, "");
+            outputs[key] = {rel, staged};
         }
     }
-    // Earlier records outside the mod's folder (a settings file this setup created back then)
-    // stay recorded, so uninstalling still removes them.
-    for (const auto& rel : prior) {
-        std::string k = key_of(rel);
-        if (k.rfind(mod_prefix, 0) != 0 && !now.count(k)) { installed.push_back(rel); now.insert(k); }
-    }
-
-    // Settings Hogwarts Legacy needs with UE4SS 3.0.1 (found the hard way).
-    fs::path ini = bin / "UE4SS-settings.ini";
+    fs::path ini = outputs.at("ue4ss-settings.ini").second;
     ini_set(ini, "EngineVersionOverride", "MajorVersion", "4");
     ini_set(ini, "EngineVersionOverride", "MinorVersion", "27");
     ini_set(ini, "Debug", "GuiConsoleEnabled", "0");
     ini_set(ini, "Debug", "ConsoleEnabled", "0");
     ini_set(ini, "General", "bUseUObjectArrayCache", "false");
-    enable_in_mods_txt(bin / "Mods" / "mods.txt");
-
-    std::ofstream manifest(bin / kManifest, std::ios::binary);
-    manifest << "# Wandsong " << kVersion << " installed files (relative to Win64)\r\n";
-    for (const auto& f : installed) manifest << f << "\r\n";
-    manifest.close();
-
-    if (removed > 0) say("Removed " + std::to_string(removed) + " files the earlier version needed and this one doesn't.");
+    enable_in_mods_txt(outputs.at("mods\\mods.txt").second);
+    std::map<std::string, std::string> installed;
+    // Every previously unowned destination gets its own verified original, even in a
+    // hand-installed copy. Never guess that a shared file belongs to this mod.
+    for (const auto& [key, output] : outputs) {
+        const auto& [rel, staged] = output;
+        fs::path dest = setup_files::checked_path(bin, rel);
+        if (!owned.count(key) && !backups.count(key_of(rel)) && setup_files::present(dest)) {
+            std::string backup = u8(kBackupDir / from_u8(rel));
+            setup_files::checked_path(bin, backup);
+            fs::path original = transaction.stage(backup);
+            setup_files::copy_verified(dest, original);
+            transaction.put(backup, original);
+        }
+        installed[key] = key == "dwmapi.dll" ? "dwmapi.dll" : rel;
+    }
+    std::string mod_prefix = key_of(u8(kModDir)) + "\\";
+    for (const auto& rel : prior) {
+        std::string key = key_of(rel);
+        if (key == "dwmapi.dll.off") key = "dwmapi.dll";
+        if (outputs.count(key)) continue;
+        if (key.rfind(mod_prefix, 0) != 0) { installed[key] = rel; continue; }
+        if (backups.count(key)) {
+            std::string backup = u8(kBackupDir / from_u8(backups.at(key)));
+            fs::path restored = transaction.stage(rel);
+            setup_files::copy_verified(setup_files::checked_path(bin, backup), restored);
+            transaction.put(rel, restored);
+            transaction.erase(backup);
+        } else transaction.erase(rel);
+    }
+    for (const auto& [key, output] : outputs)
+        if (key != "dwmapi.dll") transaction.put(output.first, output.second);
+    std::string manifest = std::string("# Wandsong ") + kVersion + " installed files (relative to Win64)\r\n";
+    for (const auto& [key, rel] : installed) manifest += rel + "\r\n";
+    fs::path staged_manifest = transaction.stage(u8(kManifest));
+    setup_files::write_text(staged_manifest, manifest);
+    transaction.put(u8(kManifest), staged_manifest);
+    // Commit the loader only after all payload, settings and ownership records are in place.
+    transaction.put(loader, outputs.at("dwmapi.dll").second);
+    transaction.commit();
     say(std::string("Done. Wandsong ") + kVersion + (before ? " is updated." : " is installed."));
     if (before) say("Your Wandsong settings and keys are kept.");
+    if (inactive) { say("Vanilla mode is still on. Use setup's vanilla toggle when you want mods again."); return true; }
     say("Start Hogwarts Legacy as usual. Once it has loaded you'll hear \"Wandsong ready\"; "
         "press F6 in the game for the guide and every key.");
     return true;
@@ -541,30 +615,41 @@ bool install(const fs::path& game, const fs::path& exe, const std::vector<Item>&
 
 bool uninstall(const fs::path& game) {
     fs::path bin = game / kBinRel;
-    std::error_code ec;
-    if (!fs::exists(bin / kManifest, ec)) {
-        say(fs::exists(bin / kModDir, ec)
+    if (!setup_files::present(setup_files::checked_path(bin, u8(kManifest)))) {
+        say(setup_files::present(setup_files::checked_path(bin, u8(kModDir), false))
                 ? "This copy of Wandsong has no install record, so I can't tell its files from others. "
                   "Install it with this setup first (press Enter at the start), then uninstall."
                 : "Wandsong isn't installed here.");
         return false;
     }
-    for (const auto& rel : manifest_files(bin)) remove_with_empty_parents(bin / from_u8(rel), bin);
-    fs::remove_all(bin / kModDir, ec);
-    fs::remove(bin / "dwmapi.dll.off", ec);
-    // Put back whatever was there before.
-    fs::path backup = bin / kBackupDir;
-    if (fs::exists(backup, ec)) {
-        for (const auto& entry : fs::recursive_directory_iterator(backup, ec)) {
-            if (!entry.is_regular_file()) continue;
-            fs::path dest = bin / fs::relative(entry.path(), backup);
-            fs::create_directories(dest.parent_path(), ec);
-            fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing, ec);
-        }
-        fs::remove_all(backup, ec);
+    auto prior = manifest_files(bin);
+    auto backups = backup_files(bin);
+    std::map<std::string, std::string> affected;
+    bool inactive = !setup_files::present(setup_files::checked_path(bin, "dwmapi.dll")) &&
+                    setup_files::present(setup_files::checked_path(bin, "dwmapi.dll.off"));
+    for (auto rel : prior) {
+        if (key_of(rel) == "dwmapi.dll" || key_of(rel) == "dwmapi.dll.off")
+            rel = inactive ? "dwmapi.dll.off" : "dwmapi.dll";
+        setup_files::checked_path(bin, rel);
+        affected[key_of(rel)] = rel;
     }
-    fs::remove(bin / kManifest, ec);
-    say("Wandsong is removed, with its settings, and the game's folder is as it was before.");
+    for (const auto& [key, rel] : backups) {
+        setup_files::checked_path(bin, rel);
+        affected[key] = rel; // includes legacy backups omitted from the old manifest
+    }
+    setup_files::Transaction transaction(bin);
+    for (const auto& [key, rel] : affected) {
+        if (!backups.count(key)) { transaction.erase(rel); continue; }
+        fs::path original = setup_files::checked_path(bin, u8(kBackupDir / from_u8(backups.at(key))));
+        fs::path staged = transaction.stage(rel);
+        setup_files::copy_verified(original, staged);
+        transaction.put(rel, staged);
+    }
+    // Backups and the ownership record are removed only in the same recoverable commit.
+    for (const auto& [key, rel] : backups) transaction.erase(u8(kBackupDir / from_u8(rel)));
+    transaction.erase(u8(kManifest));
+    transaction.commit();
+    say("Wandsong's installed files are removed and backed-up files are restored. Your settings, logs and other unrecorded files are kept.");
     return true;
 }
 
@@ -740,11 +825,12 @@ int run_online(const Online& o, const fs::path& game, bool pause) {
     {
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
         out.write(data->data(), (std::streamsize)data->size());
+        out.close();
         if (!out) { say("Couldn't save the download. Nothing was changed."); return 1; }
     }
     say("Downloaded and checked. Starting Wandsong " + o.version + "'s setup.");
     wait_for_speech();
-    std::wstring cmd = L"\"" + file.wstring() + L"\" --install" + (pause ? L" --pause" : L"") + L" --game \"" +
+    std::wstring cmd = L"\"" + file.wstring() + L"\" --install --allow-elevation" + (pause ? L" --pause" : L"") + L" --game \"" +
                        game.wstring() + L"\"";
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
@@ -773,6 +859,7 @@ int wmain(int argc, wchar_t** argv) {
     std::string action;
     std::optional<fs::path> game_arg;
     bool pause_at_end = false;
+    bool allow_elevation = false; // interactive download may ask for Windows' permission
     bool offline = GetEnvironmentVariableW(L"WANDSONG_SETUP_OFFLINE", nullptr, 0) > 0;  // tests
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
@@ -781,6 +868,7 @@ int wmain(int argc, wchar_t** argv) {
         else if (a == L"--vanilla") action = "vanilla";
         else if (a == L"--check") action = "check";
         else if (a == L"--pause") pause_at_end = true;
+        else if (a == L"--allow-elevation") allow_elevation = true;
         else if (a == L"--offline") offline = true;
         else if (a == L"--game" && i + 1 < argc) game_arg = fs::path(argv[++i]);
     }
@@ -796,8 +884,6 @@ int wmain(int argc, wchar_t** argv) {
     say(std::string("Wandsong setup, version ") + kVersion + ".", true);
 
     fs::path exe = self_path();
-    std::vector<Item> items = read_pack(exe);
-    if (items.empty()) items = read_folder(exe.parent_path() / "payload");
 
     auto game = locate_game(game_arg, interactive);
     if (!game) {
@@ -859,7 +945,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (!can_write(bin)) {
         say("Windows needs your permission to change the game's folder.");
-        if (!interactive) return finish(1);
+        if (!interactive && !allow_elevation) return finish(1);
         auto go = ask("Press Enter to ask for it (Windows will show its permission prompt), or type 4 to leave.");
         if (!go || !go->empty()) { say("Nothing was changed."); return finish(1); }
         std::wstring args = L"--" + widen(action) + L" --pause --game \"" + game->wstring() + L"\"";
@@ -869,8 +955,24 @@ int wmain(int argc, wchar_t** argv) {
     }
 
     bool ok = false;
-    if (action == "install") ok = install(*game, exe, items);
-    else if (action == "uninstall") ok = uninstall(*game);
-    else if (action == "vanilla") ok = toggle_vanilla(*game);
+    try {
+        setup_files::Lock lock(bin);
+        setup_files::recover(bin);
+        try {
+            if (action == "install") {
+                std::vector<Item> items = read_pack(exe);
+                if (items.empty()) items = read_folder(exe.parent_path() / "payload");
+                ok = install(*game, exe, items);
+            } else if (action == "uninstall") ok = uninstall(*game);
+            else if (action == "vanilla") ok = toggle_vanilla(*game);
+        } catch (const std::exception& e) {
+            say(std::string("Setup couldn't finish: ") + e.what());
+            try { setup_files::recover(bin); }
+            catch (const std::exception& recovery) {
+                say(std::string("Recovery couldn't finish: ") + recovery.what());
+                say("Keep Wandsong-backup, Wandsong-transaction and Wandsong-manifest.txt. Close programs using these files, then run setup again to retry recovery.");
+            }
+        }
+    } catch (const std::exception& e) { say(std::string("Setup stopped: ") + e.what()); }
     return finish(ok ? 0 : 1);
 }

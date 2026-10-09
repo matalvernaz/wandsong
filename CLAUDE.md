@@ -11,6 +11,14 @@ Current handoff: the reliability update was implemented away from the game PC. R
 Offline Windows/Linux tests pass; actual game verification remains outstanding. Do not
 confuse earlier game observations with proof that this revision fixes the freezes or steps.
 
+October 9 audit fixes: [docs/AUDIT_FIXES-2026-10-09.md](docs/AUDIT_FIXES-2026-10-09.md)
+tracks the first implementation batch (A01-A09) and the remaining work. Installer changes
+use `installer/src/file_transaction.h`: checked staging, original-file ownership, a flushed
+rollback journal, loader disabled during replacement, and verified recovery before cleanup.
+Uninstall keeps unrecorded player settings/logs. Never remove backup or transaction files
+by hand to bypass a recovery error. `tools/test_setup_failures.py` tests failure/retry only
+in private temporary fake games; CI runs it alongside `tools/test_setup.ps1`.
+
 ## Goal and design rules (from Matt; non-negotiable)
 
 - Exploration first, Swamp / A Hero's Call style. Guided play is opt-in only. "A game where
@@ -214,7 +222,7 @@ In the game's Mods\Wandsong\ folder:
   hop, climb, ledge), input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 14 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 37 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also

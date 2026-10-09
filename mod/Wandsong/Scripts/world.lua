@@ -279,6 +279,15 @@ local function ui_blocker()
 end
 
 local function gate_check()
+    -- This barrier applies to recovery mode too: the UI manager can be torn down while
+    -- world features are crash-paused. Ticks alone do not make an explicit load safe.
+    if state.loading() then
+        if in_game or pawn_path then log("loading: pausing the world layer") end
+        close_gate("loading")
+        clear_world(true)
+        pawn_path, world_key = nil, nil
+        return
+    end
     if not enabled then
         if fuse_blown and not state.loading() then
             fuse_blown = false
@@ -293,14 +302,6 @@ local function gate_check()
             diag.trace("gate: UI manager")
             ui_blocker()
         end
-        return
-    end
-    -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
-    if state.loading() then
-        if in_game or pawn_path then log("loading: pausing the world layer") end
-        close_gate("loading")
-        clear_world(true)
-        pawn_path, world_key = nil, nil
         return
     end
     -- The game has stopped ticking: this is the fallback's tick, perhaps inside UEngine::LoadMap
@@ -369,6 +370,7 @@ function M.sounds_enabled() return sounds_on and not speech.is_muted() end
 --- moment after any such change: widget trees are being torn down then, and reading them
 --- crashed the game (Oct 6, pause menu, twice).
 function M.ui_busy()
+    if state.loading() then return true end
     ui_blocker()
     if os.clock() - ui_changed_at < UI_SETTLE then return true end
     local ui = resolve(ui_path)

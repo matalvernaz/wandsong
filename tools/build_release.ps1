@@ -46,6 +46,25 @@ function Build($name, [string[]]$extra = @()) {
     if ($LASTEXITCODE -ne 0) { throw "build of $name failed" }
 }
 
+function Remove-BuildDirectory([string]$Path) {
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $outputRoot = [System.IO.Path]::GetFullPath($dist).TrimEnd('\')
+    if (-not $full.StartsWith($outputRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove a build folder outside dist: $full"
+    }
+    if (Test-Path -LiteralPath $full) {
+        $entry = Get-Item -Force -LiteralPath $full
+        if ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to remove a linked build folder: $full"
+        }
+        $links = @(Get-ChildItem -Force -Recurse -LiteralPath $full | Where-Object {
+            $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        })
+        if ($links.Count) { throw "A linked file or folder exists inside the build output: $full" }
+        Remove-Item -LiteralPath $full -Recurse -Force
+    }
+}
+
 # Appends every file under $dir to a copy of the setup program: per file a uint32 path length,
 # the path (UTF-8, relative to the game's Win64 folder), a uint64 size and the bytes; then the
 # footer the setup looks for: "HWAPACK1", the uint64 offset of the first file, the uint64 count.
@@ -80,8 +99,20 @@ Build "helper"
 Build "installer" @("-DWANDSONG_VERSION=$Version")
 Build "native"
 
+# Test the installer that this package will carry, with synthetic payloads and fake games.
+# No packaging or publication after a failed runtime, install or recovery check.
+Push-Location $root
+try {
+    python tools/run_tests.py
+    if ($LASTEXITCODE -ne 0) { throw "Mod tests failed; no package was made." }
+    powershell -NoProfile -ExecutionPolicy Bypass -File tools/test_setup.ps1 -SetupExe (Join-Path $root "installer\build\Release\WandsongSetup.exe")
+    if ($LASTEXITCODE -ne 0) { throw "Installer tests failed; no package was made." }
+    python tools/test_setup_failures.py --setup (Join-Path $root "installer\build\Release\WandsongSetup.exe")
+    if ($LASTEXITCODE -ne 0) { throw "Installer recovery tests failed; no package was made." }
+} finally { Pop-Location }
+
 # Everything that goes into the game's Win64 folder, as it will be laid out there.
-if (Test-Path $payload) { Remove-Item -Recurse -Force $payload }
+Remove-BuildDirectory $payload
 New-Item -ItemType Directory -Force (Join-Path $payload "Mods") | Out-Null
 $ue = Join-Path $third "ue4ss"
 Copy-Item (Join-Path $ue "dwmapi.dll"), (Join-Path $ue "UE4SS.dll") $payload
@@ -121,7 +152,7 @@ $count = Write-Pack (Join-Path $root "installer\build\Release\WandsongSetup.exe"
 Write-Output "Built $setup ($count files)"
 
 # The zip: the setup, the README and the licenses.
-if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+Remove-BuildDirectory $stage
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item $setup (Join-Path $stage "WandsongSetup.exe")
 Copy-Item (Join-Path $root "README.md"), (Join-Path $root "LICENSE") $stage
