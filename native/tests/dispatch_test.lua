@@ -119,4 +119,13 @@ assert(not d.ticking() and world_ran == 0, "no ticks: world work held")
 d.new_world()
 for _ = 1, 40 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
 assert(d.ticking() and not state.loading() and world_ran > 0, "after a map load, before its first tick: all runs")
+
+-- Menus tick sparsely (the settings screen, every half second or so, Oct 8): with a menu up, a
+-- stop in the ticks holds nothing, or every key there answered a second late.
+for _ = 1, 5 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
+state.ui_blocker = "InPauseMode"
+world_ran = 0
+for _ = 1, 8 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(not d.ticking() and not state.loading() and world_ran > 0, "in a menu, the fallback runs everything")
+state.ui_blocker = nil
 print("dispatcher test passed")

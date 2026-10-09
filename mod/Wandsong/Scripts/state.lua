@@ -9,6 +9,11 @@ M.generation = 0
 M.scene = 0
 M.cinematic = false
 M.paused = false
+-- What the UI manager last said keeps play from being plain gameplay (a menu, pause, a modal
+-- tutorial, a spell lesson), or nil (world.lua's ui_blocker). The dispatcher's barrier for a
+-- stop in the game's ticks applies only without one: menus tick sparsely, loads don't come
+-- from inside them unannounced.
+M.ui_blocker = nil
 
 function M.loading() return os.clock() < M.loading_until end
 

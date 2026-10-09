@@ -228,7 +228,7 @@ end
 local UI_SETTLE = 0.75              -- seconds after any UI change in which widgets may still be dying
 local ui_last_why, ui_changed_at = false, -10
 local function ui_blocker()
-    if state.spell_lesson then return "spell lesson" end
+    if state.spell_lesson then state.ui_blocker = "spell lesson"; return "spell lesson" end
     local why
     local ui_manager = resolve(ui_path)
     if not ui_manager then ui_manager = find_live("UIManager"); ui_path = path_of(ui_manager) end
@@ -274,6 +274,7 @@ local function ui_blocker()
         end
     end
     if why ~= ui_last_why then ui_last_why, ui_changed_at = why, os.clock() end
+    state.ui_blocker = why
     return why
 end
 

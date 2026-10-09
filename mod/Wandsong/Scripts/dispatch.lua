@@ -35,7 +35,10 @@ local last_hook = -math.huge   -- when a Blueprint tick last reached the dispatc
 function M.ticking()
     return last_hook == -math.huge or os.clock() - last_hook <= FALLBACK_AFTER_S
 end
-local function held() return state.loading() or not M.ticking() end
+-- Not in menus, though: the settings screen ticks only every half second or so, and holding
+-- work there made every key answer a second late (Oct 8, 21:07). A load started from a menu
+-- still closes the world (world.in_game() and its gate don't look at menus).
+local function held() return state.loading() or (not M.ticking() and not state.ui_blocker) end
 --- A map load has finished (menus.lua's LoadMap hook): the new world hasn't ticked yet, and
 --- until it does the fallback drives everything again, as at startup. Some screens have no
 --- Blueprint ticks at all (the main menu's first seconds; the London opening scene ran 107 s
