@@ -10,11 +10,12 @@ $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist"
 $setup = Join-Path $dist "WandsongSetup-$Version.exe"
 $zip = Join-Path $dist "Wandsong-$Version.zip"
-foreach ($f in $setup, $zip) { if (-not (Test-Path $f)) { throw "Missing $f: run tools\build_release.ps1 -Version $Version first." } }
+foreach ($f in $setup, $zip) { if (-not (Test-Path $f)) { throw "Missing ${f}: run tools\build_release.ps1 -Version $Version first." } }
 
 $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
 $sum = "$setup.sha256"
-Set-Content -Encoding ascii -NoNewline $sum "$hash  WandsongSetup-$Version.exe"
+[System.IO.File]::WriteAllText($sum, "$hash  WandsongSetup-$Version.exe")   # (Set-Content wrote nothing here)
+if (-not (Test-Path $sum)) { throw "Couldn't write $sum" }
 
 if (-not $Notes) {
     $Notes = "Download WandsongSetup-$Version.exe and run it with Hogwarts Legacy closed. It finds the game, " +
