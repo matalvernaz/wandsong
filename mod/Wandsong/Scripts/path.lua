@@ -937,6 +937,26 @@ local function with_keys(t)
     end
     return t
 end
+local OBJECTIVE_HINTS = {
+    { "^Protego", function()
+        return "When the alarm sounds, press " .. bindings.spoken("AM_Protego", "Q") ..
+               " once, right away. A chime means it worked."
+    end },
+    { "[Dd]estroy statues", function()
+        local ok, combat = pcall(require, "combat")
+        local n = ok and combat.enemies_left and combat.enemies_left() or 0
+        if n < 1 then return nil end
+        return (n == 1 and "One statue" or (n .. " statues")) .. " to destroy: " ..
+               bindings.spoken("LockOn", "Period") .. " locks on, " .. bindings.spoken("AM_Stupefy", "Slash") ..
+               " casts. A tick means a hit."
+    end },
+}
+local function objective_hint(task)
+    for _, h in ipairs(OBJECTIVE_HINTS) do
+        if task:find(h[1]) then return h[2]() end
+    end
+end
+
 local function objective_text()
     if world.ui_busy and world.ui_busy() then return nil end
     local tasks, seen, title = {}, {}, nil
@@ -978,6 +998,10 @@ dispatch.every(4000, function()
     if base and was == base then speech.say(done .. " of " .. total .. ".", true)
     elseif base then speech.say("New objective: " .. base .. ", " .. done .. " of " .. total .. ".", true)
     else speech.say("New objective: " .. task, true) end
+    -- What the objective asks, in the mod's terms, where the HUD's words aren't enough (Oct 9:
+    -- the Protego lesson's timing, and how many statues there are to destroy).
+    local hint = not (base and was == base) and objective_hint(base or task)
+    if hint then speech.say(hint, true) end
 end, "objective watch")
 
 -- "Stay close to Professor Fig" holds for the rest of that stretch of the quest: working out

@@ -27,6 +27,8 @@ local LEGEND = {
     { "item", "Loot: the collectible sparkle from where something dropped, when the game's audio cues mark loot." },
     { "warn", "Incoming attack: the high alert means you can block with Protego." },
     { "warn", "Unblockable attack: the lower alert means dodge.", 0.65 },
+    { "chime", "A block that worked: a bright chime, right after you block an attack.", 1.6 },
+    { "tick", "Your spell hitting an enemy: a soft tick; higher means a weak spot.", 1.6 },
     { "note", "Statue puzzle, the knight's bell: a clear bell from where a puzzle knight kneels." },
     { "note", "Spell lesson, the way to go: a bell from the left or the right, higher for up and lower for down. It repeats while you're off course or not steering.", 1.3 },
     { "tick", "Spell lesson, on course: the arrow you hold points the way the stroke goes.", 1.3 },

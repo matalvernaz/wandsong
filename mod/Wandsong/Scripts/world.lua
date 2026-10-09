@@ -604,10 +604,11 @@ end
 local function enemy_tip()
     require("tips").once("enemy", function()
         local t = require("tips")
-        return "An enemy is nearby: the low growl. " .. t.key("face_target") .. " turns you to face " ..
-               "the nearest enemy, " .. require("bindings").spoken("AM_Stupefy", "Slash") ..
-               " casts, " .. require("bindings").spoken("LockOn", "Period") .. " locks on, and " ..
-               require("bindings").spoken("AM_Protego", "Q") .. " blocks."
+        -- One thing at a time, two seconds before the first attack (Oct 9: four keys in one
+        -- sentence, cut off by the first alarm). How to fight back comes after the first block
+        -- (combat.lua).
+        return "An enemy is nearby: the low growl. When the alarm sounds, press " ..
+               require("bindings").spoken("AM_Protego", "Q") .. " to block."
     end)
 end
 
