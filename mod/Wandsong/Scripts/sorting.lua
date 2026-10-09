@@ -32,8 +32,9 @@ local HOUSES = {
 local STEP_MS = 800                           -- the screen's own transitions between steps
 -- The screen takes no input while the hat talks (HatTalking): Accept sent during its remark on a
 -- picked crest was dropped (Oct 9), and the mod had already said the house. So Accept waits for
--- the hat, up to TALK_WAIT, and the choice counts as made only once the screen has gone.
-local TALK_WAIT, GONE_MS, ACCEPT_TRIES = 25, 2500, 3
+-- the hat, up to TALK_WAIT, and the choice counts as made only once the screen has gone. Should
+-- the flag not show a remark, the tries 2.5 s apart outlast one (the longest seen: 6.3 s).
+local TALK_WAIT, GONE_MS, ACCEPT_TRIES = 25, 2500, 5
 local CONFIRM_FOR = 15                        -- seconds a first press waits for the second (its
                                               -- question alone takes 4 s to say: 6 was too short)
 
