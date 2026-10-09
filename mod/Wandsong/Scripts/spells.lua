@@ -4,7 +4,7 @@
 -- current segment goes keeps it at speed; without that it coasts and slows. At checkpoints an
 -- input window opens, and pressing its key (Space, F, or a mouse button) gives a burst. Three
 -- seconds in, a chasing spark sets off behind; if it catches up the trace fails and waits to be
--- started again. (Measured Oct 7: see NOTEBOOK.)
+-- started again. (Measured Oct 7, in the maintainer's notebook.)
 --
 -- Played by ear (the default, once the player starts it with the game's own key):
 --   * the arrow to hold is named a moment before each stroke: "up", "right", or two at once

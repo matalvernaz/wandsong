@@ -5,7 +5,7 @@ minigames. Rule from earlier work: an equivalent audio puzzle, never the answer 
 marked. Timed ones: name it before it comes, one sound means now, never drown speech.
 
 None of this is built. Each needs the game's own data probed first (positions, angles, states).
-Ordered by when bob meets them in the story.
+Ordered by when a new player meets them in the story.
 
 ## The ones already built, redesigned
 
