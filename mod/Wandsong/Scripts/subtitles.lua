@@ -220,9 +220,13 @@ local exit_since = nil
 -- description still to come. Now what a scene still had to describe within CARRY_MAX waits
 -- for the scene after the load, in order and as far apart as planned; if no scene starts
 -- within CARRY_WAIT of the load, they're dropped. Any other load (fast travel, a reload after
--- defeat) still ends them.
-local CARRY_MAX, CARRY_WAIT = 40, 15
-local carried = nil              -- { items = { { text, gap } }, since = when the load ended }
+-- defeat) still ends them. A load the player started from a menu (a save, Try Again, the main
+-- menu) leads somewhere else: nothing is carried over a load that came within MENU_BEFORE_LOAD
+-- of a menu, and a menu or another load before the next scene drops what was. At the title card
+-- (Oct 8) neither came: the new map opened in play for 10 s, then its scene took them.
+local CARRY_MAX, CARRY_WAIT, MENU_BEFORE_LOAD = 40, 15, 3
+local carried = nil              -- { items = { { text, gap } }, generation, since = when the load ended }
+local menu_at = -100             -- when the UI manager last said a menu or screen was up
 local cinematic_at = -100        -- when a scene was last seen playing
 local binding = require("bindings")
 local skip_vk = binding.virtual_key(binding.key("UMGSkipCinematicOrConversation", "Delete"))
@@ -357,15 +361,21 @@ dispatch.every(100, function()
         pending, recent, before, carried = {}, {}, {}, nil
     end
     if state.cinematic and not state.loading() then cinematic_at = now end
+    if state.ui_blocker then menu_at = now end
+    if carried and (carried.generation ~= state.generation or state.ui_blocker) then
+        log("descriptions carried over the load dropped: " .. (state.ui_blocker and "a menu came up" or "another load followed"))
+        carried = nil
+    end
     if generation ~= state.generation or state.loading() then
-        if state.loading() and not carried and describe and now - cinematic_at < 5 then
+        if state.loading() and not carried and describe and now - cinematic_at < 5
+           and now - menu_at > MENU_BEFORE_LOAD then
             local items = {}
             for _, item in ipairs(scheduled) do
                 if item.serial == serial and not item.held and item.due - now <= CARRY_MAX then items[#items + 1] = item end
             end
             table.sort(items, function(a, b) return a.due < b.due end)
             if #items > 0 then
-                carried = { items = {} }
+                carried = { items = {}, generation = state.generation }
                 for i, it in ipairs(items) do carried.items[i] = { text = it.text, gap = it.due - items[1].due } end
                 log("descriptions carried over a load in a scene: " .. #items)
             end
