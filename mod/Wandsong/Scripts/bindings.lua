@@ -76,7 +76,20 @@ function M.movement_vk(vk)
     end
     return vk == M.virtual_key(M.forward()) or vk == 65 or vk == 83 or vk == 68
 end
+--- The game action using an Unreal key name, if any, and when: "until restart" when only the
+--- bindings in force have it (Input.ini moved it away), "from next start" when only Input.ini
+--- has it (moved there this session), nil when both do.
 function M.conflict(key, except)
-    for _, b in ipairs(read()) do if b.key == key and b.id ~= except then return b.id end end
+    local now, later
+    for _, b in ipairs(active) do if b.key == key and b.id ~= except then now = b.id; break end end
+    for _, b in ipairs(read()) do if b.key == key and b.id ~= except then later = b.id; break end end
+    if later then return later, (not now) and "from next start" or nil end
+    if now then return now, "until restart" end
+end
+--- Whether a UE4SS key (enum name, "DEL") is an Unreal key (name, "Delete"): compared as the
+--- virtual key both stand for.
+function M.same_key(enum_name, ue_key)
+    local vk = M.virtual_key(ue_key)
+    return vk ~= nil and type(Key) == "table" and Key[enum_name] == vk
 end
 return M

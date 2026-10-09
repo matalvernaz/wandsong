@@ -123,17 +123,18 @@ local function read_game()
     return actions, order
 end
 
--- Which game action already uses an Unreal key (keyboard), if any.
+-- Which game action uses an Unreal key (keyboard), if any: { id, name, when }. Both the
+-- bindings in force and Input.ini's edited copy count, since game key changes wait for a
+-- restart; `when` says which one alone has it (bindings.conflict).
 local function game_user_of(ue_key, except)
-    local actions = read_game() or {}
-    for id, a in pairs(actions) do
-        if id ~= except then
-            for _, k in ipairs(a.keys) do if k == ue_key then return a end end
-        end
-    end
-    local id = bindings.conflict(ue_key, except)
-    if id then return { id = id, name = NAMES[id] or humanize(id) } end
+    local id, when = bindings.conflict(ue_key, except)
+    if id then return { id = id, name = NAMES[id] or humanize(id), when = when } end
     return nil
+end
+local function until_when(game)
+    if game.when == "until restart" then return " until you restart the game" end
+    if game.when == "from next start" then return " from the next time you start the game" end
+    return ""
 end
 
 -- Replace the keyboard keys of a game action with one key, keeping mouse bindings.
@@ -202,7 +203,7 @@ local function rebind_mod(a)
         local ue = to_ue(enum_name)
         local game = ue and game_user_of(ue)
         if game then
-            speech.say(spoken .. " is the game's key for " .. game.name ..
+            speech.say(spoken .. " is the game's key for " .. game.name .. until_when(game) ..
                        "; the game would react to it too. Press another key, or Escape.")
             return rebind_mod(a)
         end
@@ -236,6 +237,8 @@ local function rebind_game(a)
         local ue = to_ue(enum_name)
         if not ue then speech.say("I can't give the game that key. Press another one, or Escape."); return rebind_game(a) end
         local other = game_user_of(ue, a.id)
+        -- The new key takes effect at the next start, when a key in force only until then is free.
+        if other and other.when == "until restart" then other = nil end
         local warn = other and (" Note: " .. spoken .. " also does " .. other.name .. " in some situations.") or ""
         if write_game_key(a.id, ue) then
             speech.say(a.name .. " is now " .. spoken .. ". It takes effect the next time you start the game." .. warn)

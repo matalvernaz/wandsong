@@ -50,8 +50,10 @@ world.on_scan("AncientMagicHotSpot", function(a, e)
     e.extra.hotspot = h
 end)
 
+-- UE4SS names keys its own way ("DEL", "SPACE") and the game its way ("Delete", "SpaceBar"):
+-- compared as the key both stand for.
 keys.observe(function(_, key)
-    if key == bindings.key("AM_Interact", "F") then use_at = os.clock() end
+    if bindings.same_key(key, bindings.key("AM_Interact", "F")) then use_at = os.clock() end
 end)
 
 -- Do what the prompt would: the hotspot found afresh now, its own InteractionInitiated.
@@ -84,8 +86,11 @@ dispatch.every(250, function()
     end
     if os.clock() - use_at < 1 then
         use_at = -100
-        used[here.path] = true
-        if use(here.path) then speech.say("Investigating the ancient magic.") end
+        -- Used once it worked; a failed try can be tried again.
+        if use(here.path) then
+            used[here.path] = true
+            speech.say("Investigating the ancient magic.")
+        end
         return
     end
     stuck_since = stuck_since or os.clock()
