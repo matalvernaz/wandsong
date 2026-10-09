@@ -36,6 +36,11 @@ function M.ticking()
     return last_hook == -math.huge or os.clock() - last_hook <= FALLBACK_AFTER_S
 end
 local function held() return state.loading() or not M.ticking() end
+--- A map load has finished (menus.lua's LoadMap hook): the new world hasn't ticked yet, and
+--- until it does the fallback drives everything again, as at startup. Some screens have no
+--- Blueprint ticks at all (the main menu's first seconds; the London opening scene ran 107 s
+--- without one, Oct 6). The load's own mark (state.end_map_load) keeps world work out meanwhile.
+function M.new_world() last_hook = -math.huge end
 
 local function log(s) print("[Wandsong] " .. s .. "\n") end
 

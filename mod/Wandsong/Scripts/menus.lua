@@ -411,6 +411,7 @@ end)
 pcall(RegisterLoadMapPostHook, function()
     diag.trace("LoadMap finished")
     state.end_map_load()
+    dispatch.new_world()
     log("map loaded")
     -- Every screen read before the load belongs to the old map and may be freed: looking one
     -- up again (the help key, right after loading a save) crashed in StaticFindObject.
@@ -1346,8 +1347,8 @@ local function full_help()
 end
 
 -- Mod actions are declared with keys.action (rebindable; keys.lua runs them on the game thread).
-local function act(id, name, default, run)
-    keys.action{ id = id, name = name, group = "Menus and screens", default = default, run = run }
+local function act(id, name, default, run, any_time)
+    keys.action{ id = id, name = name, group = "Menus and screens", default = default, run = run, any_time = any_time }
 end
 
 local function read_all()
@@ -1545,8 +1546,8 @@ act("dev_sdk", "Developer: dump all game classes and functions to files", "ctrl+
 end)
 -- F keys, not Ctrl: the game ignores modifiers and Left Ctrl is its Dodge. F1-F4 are the
 -- game's spell sets; F5-F9 are free.
-act("repeat", "Repeat what was said; again to go further back", "f7", repeat_last)
-act("mute", "Turn Wandsong speech and sounds off or on", "f9", function() speech.toggle_mute() end)
+act("repeat", "Repeat what was said; again to go further back", "f7", repeat_last, true)
+act("mute", "Turn Wandsong speech and sounds off or on", "f9", function() speech.toggle_mute() end, true)
 act("guide", "The Wandsong guide and every key", "f6", function() open_screen(require("guide"), "use it") end)
 act("details", "Description of the current item", "shift+;", read_details)
 

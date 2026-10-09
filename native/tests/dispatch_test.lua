@@ -110,4 +110,13 @@ assert(load_ran > 0, "work allowed during loads carries on")
 assert(state.generation == gen, "a hitch drops nothing")
 for _ = 1, 3 do t.now = t.now + 0.1; hooks.Tick() end
 assert(d.ticking() and world_ran > 0 and one_off, "ticks back: the waiting work runs")
+
+-- A finished map load starts a world that hasn't ticked yet: until it does, the fallback drives
+-- everything again, as at startup (screens with no Blueprint ticks, after quitting to the menu).
+world_ran = 0
+for _ = 1, 30 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(not d.ticking() and world_ran == 0, "no ticks: world work held")
+d.new_world()
+for _ = 1, 40 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(d.ticking() and not state.loading() and world_ran > 0, "after a map load, before its first tick: all runs")
 print("dispatcher test passed")

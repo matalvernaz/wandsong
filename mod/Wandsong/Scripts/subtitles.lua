@@ -450,12 +450,12 @@ dispatch.every(100, function()
 end, "subtitles", true)
 
 keys.action{ id = "read_subtitles", name = "Read subtitles aloud, on or off", group = "Speech", default = "shift+f7",
-             run = function()
+             any_time = true, run = function()
                  read_aloud = not read_aloud
                  speech.say("Reading subtitles " .. (read_aloud and "on" or "off"))
              end }
 keys.action{ id = "audio_description", name = "Audio description of cutscenes, on or off", group = "Speech",
-             default = "shift+f6", run = function()
+             default = "shift+f6", any_time = true, run = function()
                  describe = not describe
                  cancel_descriptions()
                  speech.say("Audio description " .. (describe and "on" or "off") ..

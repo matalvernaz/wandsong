@@ -9,6 +9,8 @@
 --   keys.action{ id = "review_next", name = "Next item on screen", group = "Menus",
 --                default = "]", run = function() ... end }
 -- Combos are written like "]", "shift+]", "ctrl+;", "ctrl+shift+;", "f9", "pagedown".
+-- any_time = true: the action touches no game object (speech, the log), so it runs during
+-- loads and while the game isn't ticking too, instead of waiting for them to end.
 -- The player's choices are saved in keys.ini beside this script; anything not listed there
 -- uses its default.
 
@@ -229,7 +231,7 @@ local function on_press(ctrl, shift, key)
     dispatch.run(function()
         -- Focus can change between the key event and the game-thread callback.
         if focused() then a.run() end
-    end, "action " .. id)
+    end, "action " .. id, a.any_time)
 end
 
 local registered = 0
