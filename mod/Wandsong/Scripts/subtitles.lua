@@ -333,6 +333,23 @@ local function capture(ctx, data, text)
         end)
         if #pending < 64 then pending[#pending + 1] = e end
 end
+-- The game's pre-rendered films (the Pensieve memories) show their lines as "standalone"
+-- subtitles, without line data: none of the vault's memory reached BPAddSubtitleEvent (Oct 9).
+-- Same queue, text only, timed by its length since the game gives no duration.
+local function capture_standalone(ctx, text)
+    diag.trace("hook standalone subtitle")
+    local e = { generation = state.generation, voice = "film" }
+    pcall(function() e.text = text:get():ToString() end)
+    if type(e.text) ~= "string" or e.text == "" then return end
+    e.dur = math.max(1.5, #plain(e.text) / 15)
+    if #pending < 64 then pending[#pending + 1] = e end
+end
+if type(RegisterCustomEvent) == "function" then
+    for _, name in ipairs({ "BPAddStandaloneSubtitle", "BPUpdateStandaloneSubtitle" }) do
+        local ok, err = pcall(RegisterCustomEvent, name, capture_standalone)
+        if not ok then log("could not hook " .. name .. ": " .. tostring(err)) end
+    end
+end
 local function hook_ok(fn, quiet)
     local ok, err = pcall(RegisterHook, fn, capture)
     if ok or not quiet then log((ok and "hooked " or "could not hook ") .. fn .. (ok and "" or (": " .. tostring(err)))) end

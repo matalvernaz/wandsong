@@ -278,6 +278,36 @@ local function ui_blocker()
     return why
 end
 
+-- The game's pre-rendered films (Content\Movies\FMV: the Pensieve memories, the seasons, the
+-- credits) play through the cinematic scene actions' own Bink player. During the vault's
+-- memory the player's cinematic flag was off and the gate opened over the film (Oct 9): world
+-- sounds played over it and its descriptions ended with the "scene". The player says when a
+-- film plays (an asset as long-lived as the game; IsPlaying checked in game, Oct 9). One said
+-- to play for over MOVIE_MAX is no longer believed: a stuck player must never shut the world.
+local MOVIE_PLAYER = "/Game/Cinematics/SceneActions/PlayBinkMedia/MP_PlayBinkMedia.MP_PlayBinkMedia"
+local MOVIE_MAX = 900
+local movie_since = nil
+local function movie_playing()
+    local mp = resolve(MOVIE_PLAYER)
+    local playing = false
+    if mp then
+        local ok, v = pcall(function() return mp:IsPlaying() end)
+        playing = ok and v == true
+    end
+    if not playing then
+        if movie_since then log("film ended"); movie_since = nil end
+        return false
+    end
+    if not movie_since then
+        movie_since = os.clock()
+        local url = ""
+        pcall(function() url = mp.URL:ToString() end)
+        log("film playing: " .. (url:match("[^/\\]+[/\\][^/\\]+$") or url))
+    end
+    return os.clock() - movie_since < MOVIE_MAX
+end
+M.movie_playing = movie_playing
+
 local function gate_check()
     -- This barrier applies to recovery mode too: the UI manager can be torn down while
     -- world features are crash-paused. Ticks alone do not make an explicit load safe.
@@ -318,6 +348,7 @@ local function gate_check()
     local blocked = not valid(pawn)
     if not blocked then
         local okc, cine = pcall(function() return pawn.InCinematic end)
+        if okc and cine ~= true and movie_playing() then cine = true end
         if okc then state.set_cinematic(cine) end
         if okc and cine == true then close_gate("cutscene"); return end
     end
