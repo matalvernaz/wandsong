@@ -640,6 +640,11 @@ int wmain(int argc, wchar_t** argv) {
     auto version = installed_version(bin);
     say(describe_installed(version));
     if (action == "check") return finish(0);
+    // Said before any question: nothing can be changed while the game has its files open.
+    if (game_running(*game)) {
+        say("Hogwarts Legacy is running. Quit the game, then run setup again.");
+        return finish(1);
+    }
 
     if (interactive) {
         say(main_action(version));
