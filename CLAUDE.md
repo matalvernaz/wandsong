@@ -150,6 +150,10 @@ In the game's Mods\Wandsong\ folder:
   class name); 3D ambient sounds via audio_bridge.dll; crash fuse (world_active.flag); status
   and memory reports. API: in_game, enabled, ui_busy, not_ready_reason, entries, locate,
   nearest, position, pawn. Shift+F5 only mutes sounds; it does not close the gameplay gate.
+  Films (Content\Movies\FMV: the Pensieve memories, seasons, credits) play with the player's
+  InCinematic off: the gate also asks the cinematic Bink player (MP_PlayBinkMedia:IsPlaying,
+  an asset) and counts a film as a scene, believed for 15 minutes at most. The Sorting Hat's
+  house screen is a menu (ui_blocker "sorting") while state.sorting_path is in the viewport.
   Shift+F8 separately resumes crash-paused world features. Gate settling uses elapsed time.
 - surroundings.lua: footsteps, landing, blocked bump; 16 wall rays (LineTraceSingle on the
   Kismet CDO, through dispatch.call_out) grouped into at most 4 wall loops; side openings;
@@ -195,6 +199,13 @@ In the game's Mods\Wandsong\ folder:
   StartFastTravelUsingID(id, 1, 0) after its checks, two presses; other markers set the game's
   route (BP_PathNavigationManager_C SetBeaconPathTarget). Names through feedback.translate.
   tools/probe_places.lua reads the list without pressing anything.
+- sorting.lua: the Sorting Hat's house screen (UI_BP_SortingHat_C) as a mod screen of the four
+  houses in the game's words, starting on the hat's suggestion and naming the Wizarding World
+  house; two presses (15 s) choose. The screen listens to Confirm, Back and Accept (F) only; a
+  different house needs its crest clicked. HouseStateIndex: 0 opening view (never accepted
+  there), 1 all crests, 2 picked; Back goes 0 to 1, 1 to 2, 2 to 1. The mod sends Back, runs
+  the crest's own BndEvt__UI_BP_SortingHat_<crest>_..._OnHouseSelected, then Accept (75) only
+  if NewHouse is the house chosen. tools/probe_sorting.lua and probe_sorting_calls.lua read it.
 - feedback.lua: event-based HUD interaction prompts, health/potion values, half/critical
   health announcements and different block/dodge warning pitches. End reads gauges. Hooks
   record values/paths only; prompt properties are read fresh during settled gameplay.
@@ -224,12 +235,13 @@ In the game's Mods\Wandsong\ folder:
   replayable descriptions, cancellation on skip/new line/load/scene exit, pause-aware delays.
   Descriptions cut by a load carry to the next scene only without a menu just before the
   load, a menu after it or another load (the title card goes on; a loaded save doesn't).
+  Films' lines come as standalone subtitles (BPAdd/UpdateStandaloneSubtitle), text only.
 - native/: prism_bridge.c, click_bridge.cpp, audio_bridge.cpp (synthesized sounds, including
   hop, climb, ledge; stop_all stops one-shots already playing, playing() counts them),
   input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 45 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 49 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also
