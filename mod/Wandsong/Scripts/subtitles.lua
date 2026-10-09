@@ -115,8 +115,10 @@ for _, c in ipairs(CORRECTIONS) do
 end
 M.descriptions = DESCRIPTIONS   -- for the tests: the catalogue with its corrections applied
 
--- A held description waits this long at most for its scene.
-local HOLD_MAX = 900
+-- A held description waits this long at most for its scene (a load still ends it). Oct 9: the
+-- vault's basin, held from "I'm going to have to fight my way out of here", came 22 minutes later
+-- for Matt (the fight, the dark maze, the stuck gate), and 15 minutes had dropped its opening.
+local HOLD_MAX = 3600
 
 -- The story's first moments come before anyone speaks, so no line can key them. They play when
 -- the first scene starts after a new character is finished (menus.lua sets state.new_story_since
