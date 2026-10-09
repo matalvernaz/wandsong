@@ -56,6 +56,8 @@ end
 M.modal_since = nil
 -- Set when the quest-failed (or defeated) screen has been read; cleared once it's gone.
 M.fail_screen_since = nil
+-- The Sorting Hat's house screen, by path, while it's up (sorting.lua; world.lua clears it).
+M.sorting_path = nil
 
 -- Recent sound cues, so the player can ask what a sound was. Newest first.
 M.cues = {}

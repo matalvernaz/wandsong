@@ -272,6 +272,16 @@ local function ui_blocker()
             end)
             if up and os.clock() - state.fail_screen_since < 600 then why = "quest failed" else state.fail_screen_since = nil end
         end
+        -- The Sorting Hat's house screen (Oct 9): up in a scene the UI manager doesn't report,
+        -- with the player's cinematic flag off, so the world opened over it and the arrows turned
+        -- the camera. Menus noted its path (sorting.lua); it's a menu while it's in the viewport.
+        if not why and state.sorting_path then
+            diag.trace("gate: house screen")
+            local up = false
+            local scr = resolve(state.sorting_path)
+            if scr then pcall(function() up = scr:IsInViewport() == true end) end
+            if up then why = "sorting" else state.sorting_path = nil end
+        end
     end
     if why ~= ui_last_why then ui_last_why, ui_changed_at = why, os.clock() end
     state.ui_blocker = why

@@ -41,7 +41,7 @@ end
 local function menu_without_ticks()
     local why = state.ui_blocker
     return why == "InPauseMode" or why == "IsInPreGameplayState" or why == "tutorial"
-        or why == "quest failed" or why == "spell lesson"
+        or why == "quest failed" or why == "spell lesson" or why == "sorting"
 end
 local function held() return state.loading() or (not M.ticking() and not menu_without_ticks()) end
 --- A map load has finished (menus.lua's LoadMap hook): the new world hasn't ticked yet, and

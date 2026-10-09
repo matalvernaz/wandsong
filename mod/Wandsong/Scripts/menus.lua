@@ -422,6 +422,13 @@ local function on_read_menu(widget)
     -- "Quest failed" (Try Again, Exit to the Main Menu) and being defeated: real menus that the
     -- UI manager doesn't report as one. The world layer stands down while they're up.
     if cls:find("MissionFailScreen", 1, true) or cls:find("GameOver", 1, true) then state.fail_screen_since = os.clock() end
+    -- The Sorting Hat's house screen: the mod's own house menu speaks for it (sorting.lua).
+    if cls == "UI_BP_SortingHat_C" then
+        choice_up_at = nil   -- a reply said before it isn't still waiting for the arrows
+        log("ReadMenu " .. cls .. " -> the house menu")
+        require("sorting").noticed(path_of(widget))
+        return
+    end
 
     -- Loading screens tell the world layer to keep its hands off until the load is over.
     if is_loading_class(cls) then
@@ -1572,7 +1579,7 @@ act("press_enter", "Press the current item with Enter", "enter", function()
     local in_world = require("world").gameplay()
     if in_world and not virtual then return end
     if not refresh() then return end
-    if not in_world and review_top_cls
+    if not virtual and review_top_cls
        and (review_top_cls:find("Popup", 1, true) or review_top_cls:find("OptionPanel", 1, true)) then return end
     press_current()
 end)
@@ -1587,14 +1594,25 @@ act("back", "Go back", "shift+\\", function()
 end)
 
 -- Open a screen made by the mod (Controls, the sound legend) over whatever is showing.
+-- A provider may give intro() for its opening words and initial() for the entry to start on
+-- (the house menu: the hat's suggestion).
 local function open_screen(provider, what)
     virtual = provider
     review_index, review_key, selection_lost = 0, nil, false
     refresh()
-    speak(provider.title .. ", " .. #review_items .. " entries. " .. key_name("review_next") ..
+    local intro = provider.intro and provider.intro() or (#review_items .. " entries. " .. key_name("review_next") ..
           " to go through them, " .. key_name("press") .. " to " .. what .. ", " .. key_name("back") .. " to close.")
+    local first = provider.initial and provider.initial()
+    local item = first and review_items[first]
+    if item then
+        review_index, review_key = first, item_key(item)
+        intro = intro .. " " .. describe(item) .. ", " .. first .. " of " .. #review_items
+    end
+    speak(provider.title .. (provider.intro and ". " or ", ") .. intro)
 end
 state.open_screen = open_screen
+--- True while this mod screen is the one open.
+state.screen_open = function(provider) return virtual ~= nil and virtual == provider end
 -- Close a mod screen without a key press (Places, before a journey starts).
 state.close_screen = function()
     virtual = nil
