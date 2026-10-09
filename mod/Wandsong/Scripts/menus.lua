@@ -984,6 +984,12 @@ end
 local review_items, review_index, review_top = {}, 0, nil
 local review_title = "this screen"
 local review_top_cls = nil   -- class of the screen on top at the last refresh
+-- The selected item of a mod screen, by identity: its id if the screen gives one, else its words.
+-- A mod screen's list is built afresh at every refresh (Places sorts by distance, so entries
+-- change places as you move), so the selection follows the entry, not its position, and Press
+-- never lands on whatever moved into its old place.
+local review_key, selection_lost = nil, false
+local function item_key(it) return it and (it.id or it.text) end
 
 forget_screens = function()
     screens = {}
@@ -1100,7 +1106,15 @@ local function refresh()
     end
     if virtual then
         local items = virtual.items()
-        if review_top ~= virtual then review_index = 0 end
+        if review_top ~= virtual then
+            review_index, review_key, selection_lost = 0, nil, false
+        elseif review_index > 0 and review_key ~= nil and item_key(items[review_index]) ~= review_key then
+            -- Rebuilt in another order: follow the selected entry while it's there, once.
+            local at, count = nil, 0
+            for i, it in ipairs(items) do if item_key(it) == review_key then at, count = i, count + 1 end end
+            if count == 1 then review_index = at end
+            selection_lost = count ~= 1
+        end
         review_top, review_items = virtual, items
         if review_index > #items then review_index = #items end
         return true
@@ -1153,7 +1167,7 @@ end
 
 -- A review key pressed with nothing picked: in the world that's no menu at all.
 local function nothing_selected()
-    if require("world").gameplay() then
+    if not virtual and require("world").gameplay() then
         speak("No menu is open. " .. key_name("press") .. " presses menu buttons.")
     else
         speak("Nothing selected. Use " .. key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick an item first.")
@@ -1210,6 +1224,7 @@ local function select_item(i, edge, with_position, pos, total)
     editing = nil   -- moving the review cursor ends typing echo
     review_index = i
     local item = review_items[i]
+    review_key, selection_lost = item_key(item), false
     hover_details = {}
     capture_until = os.clock() + 0.8
     hover(item)
@@ -1531,6 +1546,11 @@ local function press_current()
     if not virtual and state.choice_confirm() then return end   -- says the dialogue reply in focus
     local before, prev = review_top, review_items[review_index]
     if not refresh() then nothing_to_read("No menu is open."); return end
+    if virtual and selection_lost then
+        speak("The list has changed and what you picked isn't in it any more, so I didn't press anything. Use " ..
+              key_name("review_prev") .. " and " .. key_name("review_next") .. " to pick again.")
+        return
+    end
     local item = review_items[review_index]
     if review_top ~= before and not (item and prev and item.text == prev.text) then
         review_index = 0
@@ -1545,18 +1565,22 @@ end
 act("press", "Press, toggle or use the current item", "\\", press_current)
 -- Enter presses too (Matt, Oct 8), except where the game takes Enter itself: finishing a typed
 -- name, and its pop-ups and option panels, which confirm the focused button on Enter
--- (UMGOptionPanelConfirm), so pressing there as well would press twice.
+-- (UMGOptionPanelConfirm), so pressing there as well would press twice. In the world Enter
+-- presses only on the mod's own screens (Controls, Places, the guide).
 act("press_enter", "Press the current item with Enter", "enter", function()
-    if editing or require("world").gameplay() then return end
+    if editing then return end
+    local in_world = require("world").gameplay()
+    if in_world and not virtual then return end
     if not refresh() then return end
-    if review_top_cls and (review_top_cls:find("Popup", 1, true) or review_top_cls:find("OptionPanel", 1, true)) then return end
+    if not in_world and review_top_cls
+       and (review_top_cls:find("Popup", 1, true) or review_top_cls:find("OptionPanel", 1, true)) then return end
     press_current()
 end)
 act("back", "Go back", "shift+\\", function()
     if virtual then
         speak("Closed " .. virtual.title .. ".")
         virtual = nil
-        review_index = 0
+        review_index, review_key, selection_lost = 0, nil, false
         return
     end
     if not send_action(ACTION_BACK) then speak("Could not go back") end
@@ -1565,7 +1589,7 @@ end)
 -- Open a screen made by the mod (Controls, the sound legend) over whatever is showing.
 local function open_screen(provider, what)
     virtual = provider
-    review_index = 0
+    review_index, review_key, selection_lost = 0, nil, false
     refresh()
     speak(provider.title .. ", " .. #review_items .. " entries. " .. key_name("review_next") ..
           " to go through them, " .. key_name("press") .. " to " .. what .. ", " .. key_name("back") .. " to close.")
@@ -1574,7 +1598,7 @@ state.open_screen = open_screen
 -- Close a mod screen without a key press (Places, before a journey starts).
 state.close_screen = function()
     virtual = nil
-    review_index = 0
+    review_index, review_key, selection_lost = 0, nil, false
 end
 
 local controls = require("controls")

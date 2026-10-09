@@ -352,7 +352,8 @@ function M.items()
             if by_group[g] then
                 heading(g)
                 for _, a in ipairs(by_group[g]) do
-                    items[#items + 1] = { text = describe_game(a), button = true, on_press = function() rebind_game(a) end }
+                    items[#items + 1] = { id = "game " .. a.id, text = describe_game(a), button = true,
+                                          on_press = function() rebind_game(a) end }
                 end
             end
         end
@@ -368,7 +369,7 @@ function M.items()
     for _, g in ipairs(mod_order) do
         heading("Wandsong: " .. g)
         for _, a in ipairs(mod_groups[g]) do
-            items[#items + 1] = { text = a.name .. ": " .. keys.describe_combo(a.combo), button = true,
+            items[#items + 1] = { id = "mod " .. a.id, text = a.name .. ": " .. keys.describe_combo(a.combo), button = true,
                                   on_press = function() rebind_mod(a) end }
         end
     end

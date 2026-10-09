@@ -239,7 +239,7 @@ function M.items()
     for _, o in ipairs(OPTIONS) do
         local v = value(s, o)
         if v ~= nil and allowed(s, o) then
-            items[#items + 1] = { text = o.name .. ": " .. (v and "on" or "off"), button = true,
+            items[#items + 1] = { id = "setting " .. o.id, text = o.name .. ": " .. (v and "on" or "off"), button = true,
                                   on_press = function() M.toggle(o.id) end }
         end
     end

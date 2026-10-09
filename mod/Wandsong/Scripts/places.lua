@@ -234,11 +234,13 @@ function M.items()
         return ftm ~= nil and ask(ftm, "IsFastTravelUnlockedForLocation", r.id) == true
     end)
     table.sort(floos, nearest_first)
-    items[#items + 1] = { text = #floos > 0 and ("Floo Flames you can travel to, nearest first: " .. #floos)
-                                             or "No Floo Flames unlocked yet." }
+    -- Each entry has an id: the list is sorted by distance afresh at every refresh, and the
+    -- review keys and Press follow the entry, not its place in the list.
+    items[#items + 1] = { id = "floo flames", text = #floos > 0 and ("Floo Flames you can travel to, nearest first: " .. #floos)
+                                                                 or "No Floo Flames unlocked yet." }
     for _, r in ipairs(floos) do
         local name = display_name(r)
-        items[#items + 1] = { text = name .. ", " .. where(px, py, yaw, r.x, r.y), button = true,
+        items[#items + 1] = { id = "floo " .. r.id, text = name .. ", " .. where(px, py, yaw, r.x, r.y), button = true,
                               on_press = function() M.travel(r.id, name) end }
     end
 
@@ -246,17 +248,18 @@ function M.items()
         return not HIDDEN[r.state] and ((r.flags or 0) & HIDE_FROM_MAP) == 0 and dist(r) <= MAX_MARKER_CM ^ 2
     end)
     table.sort(marks, nearest_first)
-    items[#items + 1] = { text = #marks > 0 and "On the map near you, nearest first" or "Nothing else on the map within 3 kilometres." }
+    items[#items + 1] = { id = "map markers", text = #marks > 0 and "On the map near you, nearest first" or "Nothing else on the map within 3 kilometres." }
     for i = 1, math.min(#marks, MAX_MARKERS) do
         local r = marks[i]
         local name = display_name(r)
         local kind = KIND[r.type]
         local text = name .. ((kind and kind:lower() ~= name:lower()) and (", " .. kind) or "") ..
                      (STATE_WORDS[r.state] and (", " .. STATE_WORDS[r.state]) or "") .. ", " .. where(px, py, yaw, r.x, r.y)
-        items[#items + 1] = { text = text, button = true, on_press = function() M.route(r.handle, name) end }
+        items[#items + 1] = { id = "marker " .. tostring(r.handle or (r.x .. " " .. r.y)), text = text, button = true,
+                              on_press = function() M.route(r.handle, name) end }
     end
     if route_set then
-        items[#items + 1] = { text = "Clear the route you set", button = true, on_press = M.clear_route }
+        items[#items + 1] = { id = "clear route", text = "Clear the route you set", button = true, on_press = M.clear_route }
     end
     return items
 end
