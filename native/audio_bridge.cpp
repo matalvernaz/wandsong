@@ -15,7 +15,8 @@
 //   audio.play_ui(name [, volume [, pitch]])                 one-shot, centred, no position
 //   audio.loop(id, name, x, y, z [, volume [, pitch]])       start or move a continuous sound
 //   audio.stop(id)                                           stop a continuous sound
-//   audio.stop_all()
+//   audio.stop_all()                                         every sound, at once
+//   audio.playing() -> n                                     one-shot voices still holding a sound
 //   audio.sounds() -> { names }
 //
 // Built-in synthesized sounds: ping, tick, chime, arrive, wall, opening, door, person, item,
@@ -305,6 +306,7 @@ int l_play(lua_State* L) {
     place(v, (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4),
           (float)luaL_optnumber(L, 5, 1.0), (float)luaL_optnumber(L, 6, 1.0));
     submit(v, *s);
+    v->Start();  // stop_all leaves pool voices stopped
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -322,6 +324,7 @@ int l_play_ui(lua_State* L) {
     XAUDIO2_FILTER_PARAMETERS filt = {LowPassFilter, 1.0f, 1.0f};
     v->SetFilterParameters(&filt);
     submit(v, *s);
+    v->Start();  // stop_all leaves pool voices stopped
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -358,8 +361,24 @@ int l_stop(lua_State* L) {
 int l_stop_all(lua_State* L) {
     for (auto& [id, v] : g_loops) if (v.src) { v.src->Stop(); v.src->DestroyVoice(); }
     g_loops.clear();
-    for (auto& v : g_oneshots) v.src->FlushSourceBuffers();
+    // A started voice keeps the buffer it's playing through FlushSourceBuffers, so a sound
+    // already under way played on through a mute or a scene change. Stopped first, a voice
+    // loses every buffer; it's started again when its next sound is submitted, and
+    // free_oneshot only hands it out once the flush has emptied it.
+    for (auto& v : g_oneshots) { v.src->Stop(); v.src->FlushSourceBuffers(); }
     return 0;
+}
+
+// How many one-shot voices still hold a sound (tests and diagnostics).
+int l_playing(lua_State* L) {
+    int n = 0;
+    for (auto& slot : g_oneshots) {
+        XAUDIO2_VOICE_STATE st;
+        slot.src->GetState(&st, XAUDIO2_VOICE_NOSAMPLESPLAYED);
+        if (st.BuffersQueued > 0) ++n;
+    }
+    lua_pushinteger(L, n);
+    return 1;
 }
 
 int l_sounds(lua_State* L) {
@@ -372,6 +391,7 @@ int l_sounds(lua_State* L) {
 const luaL_Reg kFuncs[] = {
     {"init", l_init}, {"listener", l_listener}, {"play", l_play}, {"play_ui", l_play_ui},
     {"loop", l_loop}, {"stop", l_stop}, {"stop_all", l_stop_all}, {"sounds", l_sounds},
+    {"playing", l_playing},
     {nullptr, nullptr}};
 
 }  // namespace
