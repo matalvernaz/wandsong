@@ -217,6 +217,8 @@ function M.toggle(id)
     local now = value(s, o)
     if now == nil then speech.say("That setting can't be read right now."); return end
     if not set(s, o, not now) then speech.say("The game didn't take that change."); return end
+    -- The player's choice stands: what this start switched on is no longer set again.
+    set_this_start[o.id] = nil
     if o.id == "cues" then
         load_file()
         saved.cues = now and "off" or "on"
