@@ -108,12 +108,17 @@ function M.translate(key)
 end
 
 -- What a notification says aloud, or nil for one with nothing readable.
+-- A spell just unlocked, with the key that casts it: the game may stop time right after until
+-- it's cast (Oct 9: after "New Spell Unlocked: Protego" the vault waited for Q, and nothing said so).
+local SPELL_KEYS = { Protego = { "AM_Protego", "Q" }, ["Basic Cast"] = { "AM_Stupefy", "LeftMouseButton" } }
 function M.notice_text(d)
     local n = d.name and d.name ~= "" and M.translate(d.name) or nil
     local unlock = d.unlock and d.unlock ~= "" and M.translate(d.unlock) or nil
     local many = type(d.count) == "number" and d.count > 1
     if d.kind == "item" and n then return "Got " .. (many and (d.count .. " ") or "") .. n
-    elseif d.kind == "special" and n and unlock then return unlock .. ": " .. n
+    elseif d.kind == "special" and n and unlock then
+        local k = SPELL_KEYS[n]
+        return unlock .. ": " .. n .. (k and (". Press " .. bindings.spoken(k[1], k[2]) .. " to cast it.") or "")
     elseif d.kind == "special" and n then return "New item: " .. n
     elseif d.kind == "travel" and n then return "Floo Flame discovered: " .. n
     elseif d.kind == "companion" and n then return n .. " grew stronger"
