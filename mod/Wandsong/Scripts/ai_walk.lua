@@ -13,7 +13,9 @@
 -- every way out (arrival, stuck, timeout, scene, menu, a movement key): stop the character,
 -- stop and unpossess the AI controller, give the character back to the player's controller,
 -- destroy the AI controller, put back the walk speed and capsule if they changed.
--- A load ends it without a hand-back: the world (controllers included) is rebuilt then.
+-- A map load ends it without a hand-back: the world (controllers included) is rebuilt then,
+-- and nothing of the old one is looked up. A load mark in the same world (a menu's screen
+-- loading) only delays the hand-back until objects may be touched again.
 
 local dispatch, state, diag = require("dispatch"), require("state"), require("diag")
 local speech, keys, world = require("speech"), require("keys"), require("world")
@@ -29,7 +31,8 @@ local TIMEOUT = 40          -- seconds
 local NO_PROGRESS = 4       -- seconds without moving half a metre: stuck
 local GIVE_UP_HEIGHT = 250
 
-local walk = nil            -- { pawn_path, pc_path, ai_path, dest, name, started, generation, ... }
+local walk = nil            -- { pawn_path, pc_path, ai_path, dest, name, started, world, ... }
+local owed = nil            -- { w, why, said }: a hand-back waiting for a load in the same world
 
 local function path_of(o)
     local full
@@ -65,7 +68,7 @@ function M.enabled()
     if f then f:close(); return true end
     return false
 end
-function M.active() return walk ~= nil end
+function M.active() return walk ~= nil or owed ~= nil end
 
 -- The hand-back, in a fixed order, every step attempted whatever failed before it.
 -- Returns true once the player's controller holds the character again.
@@ -110,8 +113,14 @@ local function finish(why, said)
     local w = walk
     if not w then return end
     walk = nil
-    -- During or after a load the world (controllers included) is being rebuilt: touch nothing.
-    if state.loading() or w.generation ~= state.generation then log("ended by a load (" .. why .. ")"); return end
+    -- A map load rebuilt the world, controllers included: nothing to hand back, nothing to touch.
+    if w.world ~= state.world then log("ended by a map load (" .. why .. ")"); return end
+    -- The same world, but objects may not be touched now: hand back once they may (the watch).
+    if state.loading() or not dispatch.ticking() then
+        owed = { w = w, why = why, said = said }
+        log("hand-back waits for the load to settle (" .. why .. ")")
+        return
+    end
     local back = hand_back(w, why)
     if not back then
         -- One more try a moment later; then say so plainly.
@@ -129,10 +138,10 @@ function M.stop(why) finish(why or "stopped", "AI walk stopped.") end
 --- Walk to dest ({x, y, z}) with an AI controller. Returns true if it started (or was
 --- already there). Never starts when switched off, outside gameplay, or while one runs.
 function M.start(dest, name)
-    if walk or not M.enabled() or not world.in_game() or state.loading() or not dest then return false end
+    if walk or owed or not M.enabled() or not world.in_game() or state.loading() or not dest then return false end
     local pawn = world.pawn and world.pawn()
     if not pawn then return false end
-    local w = { dest = dest, name = name or "the objective", started = os.clock(), generation = state.generation }
+    local w = { dest = dest, name = name or "the objective", started = os.clock(), world = state.world }
     w.pawn_path = path_of(pawn)
     step("find the player's controller", function()
         local pc = pawn.Controller
@@ -187,7 +196,7 @@ function M.probe()
     if not world.in_game() then return "not in gameplay" end
     local pawn = world.pawn and world.pawn()
     if not pawn then return "no player character" end
-    local w = { dest = { world.position() }, name = "probe", started = os.clock(), generation = state.generation }
+    local w = { dest = { world.position() }, name = "probe", started = os.clock(), world = state.world }
     w.pawn_path = path_of(pawn)
     pcall(function()
         local pc = pawn.Controller
@@ -226,16 +235,28 @@ end
 
 -- Watching the walk.
 dispatch.every(200, function()
-    local w = walk
-    if not w then return end
-    if state.loading() or w.generation ~= state.generation then
-        walk = nil   -- a load rebuilds the world, controllers included; nothing to hand back
-        log("ended by a load")
+    if owed then
+        local o = owed
+        if o.w.world ~= state.world then owed = nil; log("ended by a map load (" .. o.why .. ")"); return end
+        if state.loading() or not dispatch.ticking() then return end
+        owed, walk = nil, o.w
+        finish(o.why, o.said)
         return
     end
-    -- No game ticks: perhaps inside a map load, where handing the character back could crash.
-    -- Wait: a hitch passes, and a load ends the walk above.
-    if not dispatch.ticking() then return end
+    local w = walk
+    if not w then return end
+    if w.world ~= state.world then
+        walk = nil   -- a map load rebuilt the world, controllers included; nothing to hand back
+        log("ended by a map load")
+        return
+    end
+    -- A load mark in the same world (a menu's screen loading), or no game ticks (perhaps inside
+    -- a map load, where handing the character back could crash): wait, the clock for getting
+    -- stuck stopped. A map load ends the walk above.
+    if state.loading() or not dispatch.ticking() then
+        w.last_progress, w.last_pos = os.clock(), { world.position() }
+        return
+    end
     if not world.in_game() then finish("the game paused or a scene started", nil); return end
     local now = os.clock()
     if now - w.started > TIMEOUT then finish("took too long", "The AI walk took too long and stopped.") return end

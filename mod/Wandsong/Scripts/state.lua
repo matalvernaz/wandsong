@@ -6,6 +6,10 @@ local M = {}
 -- down and rebuilt, and touching one mid-teardown crashes inside UE4SS.
 M.loading_until = -1
 M.generation = 0
+-- Counts the worlds the game has built: a map load (or a new player object) replaces every
+-- actor and controller, while a load mark alone may be a menu's screen loading in the same
+-- world. Objects from an earlier world are never looked up.
+M.world = 0
 M.scene = 0
 M.cinematic = false
 M.paused = false
@@ -29,10 +33,12 @@ end
 M.map_loading_since = nil
 function M.begin_map_load()
     M.mark_loading(6)
+    M.world = M.world + 1
     M.map_loading_since = os.clock()
 end
 function M.end_map_load()
     M.map_loading_since = nil
+    M.world = M.world + 1
     M.mark_loading(6)
 end
 --- True while a map load is in progress (at most a minute, should its end never be heard).

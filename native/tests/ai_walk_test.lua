@@ -88,7 +88,8 @@ px = 300; t.run(2)
 assert(not walk.active() and said[#said]:find("stopped 27 metres", 1, true), "path ended short: " .. said[#said])
 move_status = 3
 
--- A scene starting ends it with the hand-back; a load just forgets it.
+-- A scene starting ends it with the hand-back; a map load just forgets it.
+local state = require("state")
 calls, px = {}, 0
 assert(walk.start({ 3000, 0, 100 }, "the door"))
 in_game = false; t.run(0.3)
@@ -96,15 +97,50 @@ assert(not walk.active() and pawn.Controller == pc, "a scene hands back")
 in_game = true
 calls = {}
 assert(walk.start({ 3000, 0, 100 }, "the door"))
-require("state").mark_loading(1); t.run(0.5)
-assert(not walk.active(), "a load ends it")
+state.end_map_load(); t.run(0.5)
+assert(not walk.active(), "a map load ends it")
 assert(not walk.start({ 3000, 0, 100 }, "the door"), "never starts during a load")
 t.run(1)
 -- The load rebuilt the world: the player's controller holds the character again. A walk
 -- never starts from a character an AI controller holds.
 local leftover = pawn.Controller
-assert(leftover == ai, "a load leaves the hand-back to the game")
+assert(leftover == ai, "a map load leaves the hand-back to the game")
+assert(order() == "spawn, ai possesses, move", "and nothing of the old world is touched: " .. order())
 assert(not walk.start({ 3000, 0, 100 }, "the door"), "never hands back to an AI controller")
+pawn.Controller = pc
+t.run(5)
+
+-- Audit A16: a load mark in the same world (a menu's screen loading) keeps the walk and its
+-- hand-back; once objects may be touched again, stopping gives the character back.
+calls, px = {}, 0
+assert(walk.start({ 3000, 0, 100 }, "the door"))
+state.mark_loading(0.5); t.run(1)
+assert(walk.active() and pawn.Controller == ai, "the walk outlives a screen loading")
+walk.stop("menu closed"); t.run(0.2)
+assert(not walk.active() and pawn.Controller == pc, "and its hand-back still works")
+-- Stopped during the screen loading: handed back as soon as it's over.
+calls = {}
+assert(walk.start({ 3000, 0, 100 }, "the door"))
+state.mark_loading(1)
+walk.stop("you moved")
+assert(walk.active() and pawn.Controller == ai, "nothing is touched during the load")
+assert(not walk.start({ 3000, 0, 100 }, "the door"), "no new walk while a hand-back is owed")
+t.run(1.5)
+assert(not walk.active() and pawn.Controller == pc, "handed back once the load is over")
+assert(order():find("player possesses", 1, true), "in the usual order: " .. order())
+-- A menu opening mid-walk (a load mark, then the game no longer in play): handed back after.
+calls = {}
+assert(walk.start({ 3000, 0, 100 }, "the door"))
+state.mark_loading(0.5); in_game = false; t.run(1)
+assert(not walk.active() and pawn.Controller == pc, "the pause menu gets the character back to the player")
+in_game = true
+-- A screen loading, then a map load before the hand-back: forgotten, nothing touched.
+calls = {}
+assert(walk.start({ 3000, 0, 100 }, "the door"))
+state.mark_loading(1)
+walk.stop("you moved")
+state.end_map_load(); t.run(7)
+assert(not walk.active() and order() == "spawn, ai possesses, move", "a map load voids the owed hand-back: " .. order())
 pawn.Controller = pc
 
 -- The character dies mid-walk: nothing to hand back, and no "load your save" alarm.

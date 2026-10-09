@@ -328,6 +328,7 @@ local function gate_check()
         if world_key then
             log("player object changed: dropping cached objects")
             state.generation = state.generation + 1
+            state.world = state.world + 1
             close_gate("player object changed")
         end
         clear_world(world_key ~= nil)
