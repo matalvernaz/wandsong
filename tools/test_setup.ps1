@@ -5,6 +5,7 @@
 param([string]$SetupExe = (Join-Path (Split-Path -Parent $PSScriptRoot) "installer\build\Release\WandsongSetup.exe"))
 $ErrorActionPreference = "Stop"
 $env:WANDSONG_SETUP_QUIET = "1"
+$env:WANDSONG_SETUP_OFFLINE = "1"   # deterministic: no online check
 $base = Join-Path $env:TEMP "WandsongSetupTest"
 if (Test-Path $base) { Remove-Item -Recurse -Force $base }
 New-Item -ItemType Directory -Force $base | Out-Null

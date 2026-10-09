@@ -10,13 +10,16 @@
 // alone. It records what it installed so it can remove it again, and backs up the files it
 // replaces in a game that had someone else's UE4SS.
 //
-// Usage: WandsongSetup.exe [--install | --uninstall | --vanilla | --check] [--game "<dir>"]
-//   --check   says what it found and what's installed, and changes nothing.
+// Usage: WandsongSetup.exe [--install | --uninstall | --vanilla | --check] [--game "<dir>"] [--offline]
+//   --check   says what it found, what's installed and what's online, and changes nothing.
+//   --offline doesn't look online for a newer version (nor does --install).
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <objbase.h>
 #include <sapi.h>
+#include <bcrypt.h>
+#include <winhttp.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 
@@ -596,6 +599,169 @@ std::string main_action(const std::optional<std::string>& v) {
     return std::string("Press Enter to update it to ") + kVersion + ".";
 }
 
+// --- Newer versions online: the public repo's latest release. ---
+//
+// Each release carries WandsongSetup-<version>.exe and its SHA-256 in
+// WandsongSetup-<version>.exe.sha256 (tools/publish_release.ps1). This setup downloads the newer
+// one over HTTPS, checks it against that checksum, and runs it; the newer setup carries
+// everything and does the install itself.
+
+constexpr wchar_t kLatestRelease[] = L"https://api.github.com/repos/matalvernaz/wandsong/releases/latest";
+
+// "0.4.1" or "v0.4.1" -> {0, 4, 1}; empty for anything else ("dev").
+std::vector<int> version_parts(std::string v) {
+    if (!v.empty() && (v[0] == 'v' || v[0] == 'V')) v.erase(0, 1);
+    std::vector<int> parts;
+    std::stringstream ss(v);
+    for (std::string p; std::getline(ss, p, '.');) {
+        if (p.empty() || p.find_first_not_of("0123456789") != std::string::npos) return {};
+        parts.push_back(std::stoi(p));
+    }
+    return parts;
+}
+bool newer_than(const std::string& a, const std::string& b) {
+    auto x = version_parts(a), y = version_parts(b);
+    if (x.empty() || y.empty()) return false;
+    x.resize(std::max(x.size(), y.size())), y.resize(x.size());
+    return x > y;
+}
+
+// One HTTPS GET (redirects followed); the body, or nothing with the reason in `why`.
+std::optional<std::string> http_get(const std::wstring& url, size_t max_bytes, std::string& why) {
+    URL_COMPONENTS uc{sizeof(uc)};
+    wchar_t host[256], path[4096], extra[2048];
+    uc.lpszHostName = host, uc.dwHostNameLength = 256;
+    uc.lpszUrlPath = path, uc.dwUrlPathLength = 4096;
+    uc.lpszExtraInfo = extra, uc.dwExtraInfoLength = 2048;
+    if (!WinHttpCrackUrl(url.c_str(), 0, 0, &uc)) { why = "bad address"; return std::nullopt; }
+    std::string body;
+    bool ok = false;
+    std::wstring agent = L"WandsongSetup/" + widen(kVersion);
+    HINTERNET s = WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                              WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET c = s ? WinHttpConnect(s, host, uc.nPort, 0) : nullptr;
+    HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", (std::wstring(path) + extra).c_str(), nullptr,
+                                         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                         uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
+                    : nullptr;
+    if (r) {
+        WinHttpSetTimeouts(s, 8000, 8000, 15000, 60000);
+        DWORD status = 0, len = sizeof(status);
+        if (WinHttpSendRequest(r, L"Accept: application/vnd.github+json\r\n", (DWORD)-1, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+            WinHttpReceiveResponse(r, nullptr) &&
+            WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
+                                &status, &len, WINHTTP_NO_HEADER_INDEX)) {
+            if (status == 200) {
+                ok = true;
+                for (DWORD avail = 0; WinHttpQueryDataAvailable(r, &avail) && avail > 0;) {
+                    size_t at = body.size();
+                    body.resize(at + avail);
+                    DWORD got = 0;
+                    if (!WinHttpReadData(r, body.data() + at, avail, &got)) { ok = false; why = "the download broke off"; break; }
+                    body.resize(at + got);
+                    if (body.size() > max_bytes) { ok = false; why = "it was larger than expected"; break; }
+                }
+            } else {
+                why = "the server answered " + std::to_string(status);
+            }
+        } else {
+            why = "no connection";
+        }
+    } else {
+        why = "no connection";
+    }
+    if (r) WinHttpCloseHandle(r);
+    if (c) WinHttpCloseHandle(c);
+    if (s) WinHttpCloseHandle(s);
+    if (!ok) return std::nullopt;
+    return body;
+}
+
+std::string sha256_hex(const std::string& data) {
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    BCRYPT_HASH_HANDLE h = nullptr;
+    unsigned char digest[32] = {};
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) return {};
+    if (BCryptCreateHash(alg, &h, nullptr, 0, nullptr, 0, 0) == 0) {
+        BCryptHashData(h, (PUCHAR)data.data(), (ULONG)data.size(), 0);
+        BCryptFinishHash(h, digest, sizeof(digest), 0);
+        BCryptDestroyHash(h);
+    }
+    BCryptCloseAlgorithmProvider(alg, 0);
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    for (unsigned char b : digest) out += hex[b >> 4], out += hex[b & 15];
+    return out;
+}
+
+struct Online {
+    std::string version;   // "0.4.1"
+    std::string setup;     // download address of the setup
+    std::string checksum;  // download address of its .sha256
+};
+
+// The latest release, if it has a setup and a checksum; nothing when offline or unclear.
+std::optional<Online> latest_online(std::string& why) {
+    auto json = http_get(kLatestRelease, 1 << 20, why);
+    if (!json) return std::nullopt;
+    std::smatch m;
+    if (!std::regex_search(*json, m, std::regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\""))) { why = "no version listed"; return std::nullopt; }
+    Online o;
+    o.version = m[1].str();
+    if (!o.version.empty() && (o.version[0] == 'v' || o.version[0] == 'V')) o.version.erase(0, 1);
+    std::regex url_re("\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"");
+    for (std::sregex_iterator it(json->begin(), json->end(), url_re), end; it != end; ++it) {
+        std::string u = (*it)[1];
+        if (std::regex_search(u, std::regex("WandsongSetup-[^/]*\\.exe$"))) o.setup = u;
+        if (std::regex_search(u, std::regex("WandsongSetup-[^/]*\\.exe\\.sha256$"))) o.checksum = u;
+    }
+    if (o.setup.empty() || o.checksum.empty()) { why = "the release has no setup or checksum"; return std::nullopt; }
+    return o;
+}
+
+// Download the newer setup, check it, and run it to install into `game`. Its exit code, or 1.
+int run_online(const Online& o, const fs::path& game, bool pause) {
+    say("Downloading Wandsong " + o.version + ".");
+    std::string why;
+    auto sum = http_get(widen(o.checksum), 4096, why);
+    auto data = sum ? http_get(widen(o.setup), 512u << 20, why) : std::nullopt;
+    if (!sum || !data) {
+        say("Couldn't download it: " + why + ". Nothing was changed.");
+        return 1;
+    }
+    std::string want = lower(sum->substr(0, sum->find_first_of(" \t\r\n")));
+    if (want.size() != 64 || sha256_hex(*data) != want) {
+        say("The download doesn't match its checksum, so it wasn't run. Nothing was changed.");
+        return 1;
+    }
+    wchar_t tmp[MAX_PATH];
+    GetTempPathW(MAX_PATH, tmp);
+    fs::path file = fs::path(tmp) / ("WandsongSetup-" + o.version + ".exe");
+    {
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        out.write(data->data(), (std::streamsize)data->size());
+        if (!out) { say("Couldn't save the download. Nothing was changed."); return 1; }
+    }
+    say("Downloaded and checked. Starting Wandsong " + o.version + "'s setup.");
+    wait_for_speech();
+    std::wstring cmd = L"\"" + file.wstring() + L"\" --install" + (pause ? L" --pause" : L"") + L" --game \"" +
+                       game.wstring() + L"\"";
+    STARTUPINFOW si{sizeof(si)};
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) {
+        say("Couldn't start the downloaded setup. Nothing was changed.");
+        return 1;
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    std::error_code ec;
+    fs::remove(file, ec);
+    return (int)code;
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -607,6 +773,7 @@ int wmain(int argc, wchar_t** argv) {
     std::string action;
     std::optional<fs::path> game_arg;
     bool pause_at_end = false;
+    bool offline = GetEnvironmentVariableW(L"WANDSONG_SETUP_OFFLINE", nullptr, 0) > 0;  // tests
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         if (a == L"--install") action = "install";
@@ -614,6 +781,7 @@ int wmain(int argc, wchar_t** argv) {
         else if (a == L"--vanilla") action = "vanilla";
         else if (a == L"--check") action = "check";
         else if (a == L"--pause") pause_at_end = true;
+        else if (a == L"--offline") offline = true;
         else if (a == L"--game" && i + 1 < argc) game_arg = fs::path(argv[++i]);
     }
     bool interactive = action.empty();
@@ -639,6 +807,17 @@ int wmain(int argc, wchar_t** argv) {
     fs::path bin = *game / kBinRel;
     auto version = installed_version(bin);
     say(describe_installed(version));
+    // A newer Wandsong online is offered first; --install alone (and the setup that update
+    // starts) never looks.
+    std::optional<Online> online;
+    if (!offline && (interactive || action == "check")) {
+        say("Checking online for a newer version.");
+        std::string why;
+        auto o = latest_online(why);
+        if (!o) say("Couldn't check online (" + why + ").");
+        else if (newer_than(o->version, kVersion)) { online = o; say("Wandsong " + o->version + " is available online."); }
+        else say("This is the newest version.");
+    }
     if (action == "check") return finish(0);
     // Said before any question: nothing can be changed while the game has its files open.
     if (game_running(*game)) {
@@ -646,7 +825,24 @@ int wmain(int argc, wchar_t** argv) {
         return finish(1);
     }
 
-    if (interactive) {
+    if (interactive && online) {
+        say("Press Enter to download Wandsong " + online->version + " and install it.");
+        auto choice = ask(std::string("Or type 1 to install this setup's own ") + kVersion + " instead, 2 to uninstall, "
+                          "3 to switch vanilla mode (play without mods) on or off, or 4 to leave.");
+        if (!choice) return finish(0);
+        if (choice->empty()) {
+            // The newer setup asks its own last question; this one just ends.
+            int code = run_online(*online, *game, true);
+            wait_for_speech();
+            if (g_voice) g_voice->Release();
+            CoUninitialize();
+            return code;
+        }
+        if (*choice == "1") action = "install";
+        else if (*choice == "2") action = "uninstall";
+        else if (*choice == "3") action = "vanilla";
+        else { say("Nothing was changed."); return finish(0); }
+    } else if (interactive) {
         say(main_action(version));
         auto choice = ask("Or type 2 and press Enter to uninstall, 3 to switch vanilla mode (play without mods) on or off, "
                           "or 4 to leave.");

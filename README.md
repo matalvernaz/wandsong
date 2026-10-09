@@ -41,9 +41,9 @@ for the update command, expected behavior and logs. The complete game is not yet
 
 ## Installing and updating
 
-Everything comes in one file, WandsongSetup-<version>.exe. There is no published release
-yet: build it as described below. For a development installation, use
-[the update script](docs/TESTING_ON_GAME_PC.md).
+Everything comes in one file, WandsongSetup-<version>.exe, from the
+[latest release](https://github.com/matalvernaz/wandsong/releases/latest). For a development
+installation, use [the update script](docs/TESTING_ON_GAME_PC.md).
 
 1. Quit Hogwarts Legacy if it is running.
 2. Run WandsongSetup-<version>.exe from wherever you saved it.
@@ -52,7 +52,9 @@ yet: build it as described below. For a development installation, use
    game, it asks for the game's folder: paste it and press Enter.
 4. Start the game as usual. When it has loaded you will hear "Wandsong ready".
 
-To update later, run the newer setup the same way. It replaces the mod's files, removes files
+To update later, run any Wandsong setup you have, even an old one: it checks online for a newer
+version, and Enter downloads it, checks it against its published checksum and installs it. Or
+download the newer setup yourself and run it. Updating replaces the mod's files, removes files
 the old version had that the new one doesn't, and keeps your settings and keys. The same setup
 uninstalls (type 2) and switches vanilla mode on and off (type 3: play without mods).
 
@@ -173,6 +175,9 @@ and dist\Wandsong-<version>.zip (that file, this README and the licences). Test 
 against fake game folders, never the real game, with:
 
     powershell -ExecutionPolicy Bypass -File tools\test_setup.ps1
+
+Publish a release (the setup, its SHA-256 and the zip) with
+`tools\publish_release.ps1 -Version <version>`; setups already out there find it themselves.
 
 Run offline checks with Python 3 and CMake on Windows or Linux:
 
