@@ -274,6 +274,13 @@ local function refresh_route()
             local named = named_in_objective()
             d = named and world.locate(named.path) or nil
         end
+        if not (d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1) then
+            -- Still nothing, but the game marks what the step wants (markers.lua): the nearest
+            -- marker (Oct 8, the common room: three students to meet, no route).
+            local ok, markers = pcall(require, "markers")
+            local mk = ok and markers.nearest() or nil
+            d = mk and { mk.x, mk.y, mk.z } or nil
+        end
         if d and (math.abs(d[1]) + math.abs(d[2]) + math.abs(d[3])) > 1 then
             src, guide_path = "mission", nil
         else

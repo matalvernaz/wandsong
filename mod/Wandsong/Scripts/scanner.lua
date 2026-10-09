@@ -58,11 +58,31 @@ local function build()
     local kind = CATEGORIES[cat_i].kind
     local out = {}
     if kind == "objective" then
+        -- The game's quest markers first (the people the step wants, by name), nearest first;
+        -- then the route's end, unless a marker is already there.
+        local ok, markers = pcall(require, "markers")
+        for i, mk in ipairs(ok and markers.list() or {}) do
+            local p = mk.path and world.locate(mk.path)
+            local x, y, z = p and p[1] or mk.x, p and p[2] or mk.y, p and p[3] or mk.z
+            out[#out + 1] = { path = p and mk.path or ("quest marker " .. i), point = p == nil,
+                              name = p and (mk.name .. ", quest marker") or "Quest marker",
+                              kind = p and mk.kind or "objective", x = x, y = y, z = z,
+                              floor = math.abs(z - pz) <= SAME_FLOOR_CM,
+                              d = math.sqrt((x - px) ^ 2 + (y - py) ^ 2 + (z - pz) ^ 2) }
+        end
+        table.sort(out, function(a, b)
+            if a.floor ~= b.floor then return a.floor end
+            return a.d < b.d
+        end)
         local o = require("path").objective()
-        if o then
-            out[1] = { path = "objective", name = o.name, kind = "objective", x = o.x, y = o.y, z = o.z,
-                       point = true, floor = true,
-                       d = math.sqrt((o.x - px) ^ 2 + (o.y - py) ^ 2 + (o.z - pz) ^ 2) }
+        local dup = false
+        for _, e in ipairs(out) do
+            if o and math.sqrt((e.x - o.x) ^ 2 + (e.y - o.y) ^ 2) < 250 then dup = true end
+        end
+        if o and not dup then
+            out[#out + 1] = { path = "objective", name = o.name, kind = "objective", x = o.x, y = o.y, z = o.z,
+                              point = true, floor = true,
+                              d = math.sqrt((o.x - px) ^ 2 + (o.y - py) ^ 2 + (o.z - pz) ^ 2) }
         end
         list, built_at, built_x, built_y = out, os.clock(), px, py
         return
@@ -114,7 +134,11 @@ local function describe(i, detail)
     local dz = p[3] - pz
     local floor = dz > SAME_FLOOR_CM and ", above" or (dz < -SAME_FLOOR_CM and ", below" or "")
     local m = metres(d)
-    local text = string.format("%s, %s, %s%s, %d of %d", e.name, m <= 1 and "close" or (m .. " metres"),
+    local name = e.name
+    -- Marked by the quest (markers.lua): say so in every list, not only the quest category.
+    local okm, markers = pcall(require, "markers")
+    if okm and markers.marked(e.path) and not name:find("quest marker", 1, true) then name = name .. ", quest marker" end
+    local text = string.format("%s, %s, %s%s, %d of %d", name, m <= 1 and "close" or (m .. " metres"),
                                where, floor, i, #list)
     local more = detail and M.details[e.kind] and M.details[e.kind](e.path)
     if more then text = text .. ". " .. more:sub(1, 1):upper() .. more:sub(2) .. "." end

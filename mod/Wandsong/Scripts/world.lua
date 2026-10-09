@@ -493,8 +493,10 @@ local function placed_name(actor)
     leaf = leaf:gsub("^Interact_", ""):gsub("_Interact$", ""):gsub("^Interact$", "")
     return leaf ~= "" and leaf or nil
 end
+-- ("Template": every ordinary door is BP_Door_Template_C, read out as "Door Template", Oct 8.)
 local NOISE_WORDS = { Default = true, Base = true, Character = true, Actor = true, Generic = true,
-                      Phoenix = true, Int = true, Props = true, Prop = true, Items = true, Item = true }
+                      Phoenix = true, Int = true, Props = true, Prop = true, Items = true, Item = true,
+                      Template = true }
 
 local function humanize(id)
     local words = {}
