@@ -233,6 +233,9 @@ dispatch.every(200, function()
         log("ended by a load")
         return
     end
+    -- No game ticks: perhaps inside a map load, where handing the character back could crash.
+    -- Wait: a hitch passes, and a load ends the walk above.
+    if not dispatch.ticking() then return end
     if not world.in_game() then finish("the game paused or a scene started", nil); return end
     local now = os.clock()
     if now - w.started > TIMEOUT then finish("took too long", "The AI walk took too long and stopped.") return end

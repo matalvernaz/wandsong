@@ -92,4 +92,22 @@ for _ = 1, 30 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do 
 assert(state.loading() and world_ran == 0, "still no ticks: still a load, and no world work in it")
 for _ = 1, 30 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
 assert(not state.loading() and world_ran > 0, "ticks back: the load is over and world work resumes")
+
+-- Before the stall guard, the fallback's tick may be inside UEngine::LoadMap (Oct 8, 19:31 and
+-- 19:55: the world gate's player lookup there crashed the game). Only work allowed during loads
+-- runs; the rest waits, kept, for the ticks, and nothing is dropped.
+local load_ran, one_off = 0, false
+d.every(100, function() load_ran = load_ran + 1 end, "speech timer", true)
+for _ = 1, 5 do t.now = t.now + 0.1; hooks.Tick(); t.loop() end
+assert(d.ticking() and world_ran > 0, "ticking: everything runs")
+local gen = state.generation
+world_ran, load_ran = 0, 0
+d.run(function() one_off = true end, "one-off world work")
+for _ = 1, 10 do t.now = t.now + 0.1; t.loop(); for _, run in ipairs(queued) do run() end; queued = {} end
+assert(not d.ticking() and not state.loading(), "1 s without ticks: not ticking, no load marked yet")
+assert(world_ran == 0 and not one_off, "world work waits for the ticks")
+assert(load_ran > 0, "work allowed during loads carries on")
+assert(state.generation == gen, "a hitch drops nothing")
+for _ = 1, 3 do t.now = t.now + 0.1; hooks.Tick() end
+assert(d.ticking() and world_ran > 0 and one_off, "ticks back: the waiting work runs")
 print("dispatcher test passed")

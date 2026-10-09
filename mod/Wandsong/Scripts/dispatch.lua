@@ -22,6 +22,21 @@ local TICK_MS = 100
 local queue = {}     -- functions to run at the next tick
 local timers = {}    -- { due = clock, fn = f, every = ms|nil }
 
+local FALLBACK_AFTER_S = 0.3   -- seconds without a Blueprint tick before the fallback steps in
+local last_hook = -math.huge   -- when a Blueprint tick last reached the dispatcher
+
+--- False while the game, having ticked, has stopped: what runs then is the fallback's tick,
+--- and that can be inside UEngine::LoadMap as the old world's actors are destroyed (UE4SS runs
+--- the pending callback at whatever ProcessEvent comes next). There the world gate looked the
+--- player up and the game crashed in StaticFindObject: at the end of the intro (Oct 8, 05:49)
+--- and twice as the title card gave way to Hogwarts (19:31 and 19:55). So work that isn't
+--- allowed during loads waits for the ticks, and world.in_game() is false meanwhile. Before
+--- the first tick, and in the offline tests, every tick is the fallback's.
+function M.ticking()
+    return last_hook == -math.huge or os.clock() - last_hook <= FALLBACK_AFTER_S
+end
+local function held() return state.loading() or not M.ticking() end
+
 local function log(s) print("[Wandsong] " .. s .. "\n") end
 
 -- Where a task was written ("world.lua:212"), for the trace and error messages.
@@ -121,7 +136,7 @@ local function tick()
     queue = {}
     for _, t in ipairs(now_queue) do
         if t.generation == state.generation then
-            if state.loading() and not t.during_load then queue[#queue + 1] = t else call(t.fn, t.label) end
+            if held() and not t.during_load then queue[#queue + 1] = t else call(t.fn, t.label) end
         end
     end
 
@@ -130,14 +145,14 @@ local function tick()
     local due = {}
     for _, t in ipairs(timers) do
         if not t.cancelled and (t.every or t.during_load or t.generation == state.generation) then
-            if now >= t.due and (t.during_load or not state.loading()) then due[#due + 1] = t else keep[#keep + 1] = t end
+            if now >= t.due and (t.during_load or not held()) then due[#due + 1] = t else keep[#keep + 1] = t end
         end
     end
     timers = keep
     for _, t in ipairs(due) do
         local stop
         if t.cancelled or (not t.every and not t.during_load and t.generation ~= state.generation) then stop = true
-        elseif state.loading() and not t.during_load then timers[#timers + 1] = t; stop = true
+        elseif held() and not t.during_load then timers[#timers + 1] = t; stop = true
         else stop = call(t.fn, t.label) end
         if t.every and stop ~= true and not t.cancelled then
             t.due = now + t.every / 1000
@@ -148,7 +163,7 @@ end
 
 local last_ran, stall_logged = os.clock(), false
 local running, pending = false, false
-local next_tick, last_hook = 0, -math.huge
+local next_tick = 0
 local driver, fallback_calls, callback_freed, callback_missed = "starting", 0, 0, 0
 local function game_tick()
     -- Nothing at all inside a map load, not even work allowed during loads (state.lua).
@@ -223,13 +238,12 @@ end
 function M.driver_stats()
     return driver, fallback_calls, callback_freed, callback_missed
 end
--- The game stopped ticking: a level load has begun. "Try Again" after a failed quest (Oct 8,
--- 15:06) reloads with no loading screen at first, so the world gate stayed open, the fallback
--- ran world scans inside the load, and the game hung there for good. The end of a cutscene
--- loading the next map does the same with the gate shut: the gate's own player lookup crashed
--- the game inside LoadMap at the end of the intro (Oct 8 05:49, and Oct 9 19:31 as the title card
--- gave way to Hogwarts; the trace ended "gate: player" both times). So whenever the ticks stop,
--- work that touches the world waits for them to come back; menus and speech carry on.
+-- The game stopped ticking for longer than a hitch: a level load has begun. "Try Again" after a
+-- failed quest (Oct 8, 15:06) reloads with no loading screen at first, so the world gate stayed
+-- open, the fallback ran world scans inside the load, and the game hung there for good. Marking
+-- the load closes the world gate and drops the old world's work. It is the cleanup, not the
+-- barrier: the fallback's first tick comes sooner (Oct 8, 19:55: the gate looked the player up
+-- 1.3 s after the last tick and crashed; this mark came later still). M.ticking() is the barrier.
 local STILL_S = 1.5
 local still_marked = false
 LoopAsync(TICK_MS, function()
@@ -247,7 +261,7 @@ LoopAsync(TICK_MS, function()
         stall_logged = true
         diag.trace("game thread hasn't run the mod for 8 s (frozen, or a long load)")
     end
-    if (#queue > 0 or #timers > 0) and os.clock() - last_hook > 0.3 then
+    if (#queue > 0 or #timers > 0) and os.clock() - last_hook > FALLBACK_AFTER_S then
         if driver ~= "fallback" then driver = "fallback"; log("dispatcher: fallback (no Blueprint ticks)") end
         fallback()
     end

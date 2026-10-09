@@ -288,8 +288,10 @@ local function gate_check()
         end
         close_gate("switched off")
         -- Keep the pause and load state current (gameplay() asks the UI manager itself).
-        diag.trace("gate: UI manager")
-        ui_blocker()
+        if dispatch.ticking() then
+            diag.trace("gate: UI manager")
+            ui_blocker()
+        end
         return
     end
     -- During a load nothing in the world may be touched (it's being torn down and rebuilt).
@@ -300,6 +302,10 @@ local function gate_check()
         pawn_path, world_key = nil, nil
         return
     end
+    -- The game has stopped ticking: this is the fallback's tick, perhaps inside UEngine::LoadMap
+    -- with the player being destroyed, where looking the player up crashed the game three times
+    -- (dispatch.ticking). Leave everything as it is: a hitch passes, and a load is marked soon.
+    if not dispatch.ticking() then diag.trace("gate: no game ticks, nothing looked up"); return end
     -- Ask the long-lived UI manager first; only look at the player once it says "playing".
     diag.trace("gate: UI manager")
     local why = ui_blocker()
@@ -345,7 +351,9 @@ local function gate_check()
     end
 end
 
-function M.in_game() return in_game and enabled and not state.loading() and not state.spell_lesson end
+function M.in_game()
+    return in_game and enabled and not state.loading() and not state.spell_lesson and dispatch.ticking()
+end
 --- True whenever no menu is up: gameplay, a scene or dialogue, the gate still settling, or
 --- world features off. Menu code must not walk widget trees then; in_game() alone is false in
 --- all of those, and up arrow walking the HUD crashed the game twice (Oct 6). The UI manager
