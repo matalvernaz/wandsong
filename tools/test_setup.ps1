@@ -48,7 +48,9 @@ function New-Game($name) {
     return $g
 }
 function Run-Setup($exe, [string[]]$setupArgs) {
-    $out = & $exe @setupArgs 2>&1 | Out-String
+    # Input closed, never inherited: run from a shell whose input stays open, a question would
+    # wait forever (it did once, and held the test folder locked).
+    $out = $null | & $exe @setupArgs 2>&1 | Out-String
     return @{ code = $LASTEXITCODE; out = $out }
 }
 
