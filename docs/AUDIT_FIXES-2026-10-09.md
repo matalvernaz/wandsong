@@ -1,11 +1,14 @@
-# October 9 audit fixes: first batch
+# October 9 audit fixes
 
 Baseline: `3d99313f0c376150b5c0edec0d1699b30e9b8787`. The original findings and
 bad-behavior probes remain in [the audit](AUDIT-2026-10-09.md). Those probes deliberately
-assert the old defects; use the regression suites below to check the fixes.
+assert the old defects, so after these fixes every one of them fails by design; use the
+regression suites below to check the fixes.
 
-This batch implements A01-A09. A10-A20 remain open. It is an offline-tested local
-candidate, `0.4.1-audit1`, pending the game checks below. It is not a published release.
+The first batch implements A01-A09; the second, A10-A20. All twenty are fixed offline,
+pending the game checks at the end. None of it is a published release.
+
+# First batch: A01-A09
 
 ## Installation and recovery
 
@@ -96,11 +99,60 @@ open/close, actual map loads, and a crash-paused startup. Confirm that selected 
 activate once, that an unavailable action is announced, and that no task errors or unsafe
 object lookups appear around loads. Do not enable the experimental AI walk for this batch.
 
-## Remaining audit work
+# Second batch: A10-A20
 
-A10-A20 remain open: stable menu selection during reorder; explicit settings choices;
-active/pending key conflicts and key-name normalization; selected quest-marker navigation;
-actor identity when addresses are reused; AI possession during UI loads; description
-continuity across save loads; spell-checkpoint fallback; immediate stopping of one-shot
-audio; and Enter on virtual mod screens. Start the next runtime batch with stable selection
-and shared binding conversion, retaining a separate regression case for each finding.
+Each finding has its own regression test, which fails on the audited code and passes now.
+
+- A10, `menu_screens_test`: a mod screen's selection follows the entry picked, by its id
+  (Places, Controls and the game settings give ids) or else its words, when the list is
+  rebuilt in another order or an entry is added before it. An entry that is gone, or can't be
+  told from another, presses nothing and says so. The Places travel question and its
+  confirming press go to the same Floo Flame however the player moved in between.
+- A11, `gamesettings_choice_test`: switching a setting on the Controls screen takes it off the
+  first start's list of settings to set again; untouched ones are still set again.
+- A12, `keys_remap_test`: conflict checks count the bindings in force as well as Input.ini's
+  edited copy, and the Controls menu says which conflict lasts until the restart and which
+  starts with the next one. Rebinding a game key ignores a conflict that ends at the restart,
+  when the new key takes effect.
+- A13, `keys_remap_test`: `bindings.same_key` compares UE4SS and Unreal key names as the
+  virtual key both stand for, so the stuck-hotspot interaction works on Delete, Space,
+  punctuation and number keys. A hotspot counts as used only once its interaction worked.
+- A14, `scanner_marker_test`, `navigation_test`: `path.walk_point` walks to the quest marker
+  picked (a navmesh route, like any scanner target); the route's end still follows the game's
+  route. Markers over no thing are known by position, so the selection survives reordering,
+  and a marker the step dropped walks nowhere.
+- A15, `world_identity_test`: each scan pass compares the fresh object's own path and class
+  with the snapshot at its address and starts a new snapshot when they differ. This costs a
+  GetFullName per tracked actor per pass (far actors already had one): compare the scan
+  timings in the log ("scan NPC_Character: N nearby (X ms)") with earlier sessions.
+- A16, `ai_walk_test`: `state.world` counts the worlds (map loads and a new player object).
+  A map load ends the AI walk touching nothing, as before; a load mark in the same world
+  (a menu's screen loading) only pauses it, and a hand-back asked for meanwhile runs once
+  objects may be touched. The AI walk remains off by default.
+- A17, `subtitles_carry_test`: nothing is carried over a load that came within 3 s of a menu
+  (a save, Try Again, the main menu), and a menu or another load before the next scene drops
+  what was carried. The title card's carry, as in the Oct 8 log (the new map in play for
+  10 s, no menu, then its scene), still works.
+- A18, `spells_checkpoint_keys_test`: the press key answers exactly the checkpoints it was
+  named for (any option on the mouse only or unbound), and a keyboard key remapped onto
+  option 3 or 4 is named as itself.
+- A19, `audio_stop_test` (the real module, silent, skipped without an audio device):
+  `stop_all` stops each one-shot voice before flushing it, and a voice is started again when
+  its next sound is submitted. On this PC the old code left an already playing sound
+  playing after `stop_all`, which the test catches; the fix stops it. `audio.playing()` counts
+  the one-shot voices still holding a sound.
+- A20, `menu_screens_test`: Enter presses on a mod screen in the world; in the world without
+  one it stays the game's, and the typing and pop-up rules are unchanged.
+
+Validation: 45 Lua checks, including the ten new or extended ones above. The native audio
+module needs a full native deploy (`deploy.ps1 -Native`), not the input-module update helper.
+
+## Game checks still required
+
+Both batches: a pause menu lasting at least ten seconds, failure/retry, repeated menu
+open/close, actual map loads and a crash-paused startup, with selected buttons activating
+once, unavailable actions announced, and no task errors or unsafe lookups around loads.
+Second batch: the Places list while walking (pick a Floo Flame, walk, confirm), two quest
+markers, Interact remapped to Delete at a stuck hotspot, a spell checkpoint with option 1 on
+the mouse, F9 mute during a long sound, and scan timings in a busy place. The AI walk stays
+off for these checks.

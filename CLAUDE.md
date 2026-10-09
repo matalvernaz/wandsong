@@ -12,9 +12,10 @@ Offline Windows/Linux tests pass; actual game verification remains outstanding. 
 confuse earlier game observations with proof that this revision fixes the freezes or steps.
 
 October 9 audit fixes: [docs/AUDIT_FIXES-2026-10-09.md](docs/AUDIT_FIXES-2026-10-09.md)
-tracks the first implementation batch (A01-A09) and the remaining work. Installer changes
-use `installer/src/file_transaction.h`: checked staging, original-file ownership, a flushed
-rollback journal, loader disabled during replacement, and verified recovery before cleanup.
+tracks both implementation batches (A01-A20, all fixed offline) and the game checks still
+needed. Installer changes use `installer/src/file_transaction.h`: checked staging,
+original-file ownership, a flushed rollback journal, loader disabled during replacement,
+and verified recovery before cleanup.
 Uninstall keeps unrecorded player settings/logs. Never remove backup or transaction files
 by hand to bypass a recovery error. `tools/test_setup_failures.py` tests failure/retry only
 in private temporary fake games; CI runs it alongside `tools/test_setup.ps1`.
@@ -115,9 +116,12 @@ In the game's Mods\Wandsong\ folder:
   function reference. While state.loading(), only during_load tasks run; obsolete queued
   work and delayed world tasks are discarded across load generations. Likewise while the
   game, having ticked, hasn't for 0.3 s (dispatch.ticking() false; world.in_game() too).
-- state.lua: loading generation, cinematic scene, pause state, modal tutorial, mod screen,
-  recent cues. files.lua: runtime paths and isolated test settings. bindings.lua: startup
-  snapshot of active game keys, separate from next-launch changes written to Input.ini.
+- state.lua: loading generation (every load mark, menus' screen loads included), world
+  counter (map loads and a new player object only: objects of an earlier world are never
+  looked up), cinematic scene, pause state, modal tutorial, mod screen, recent cues.
+  files.lua: runtime paths and isolated test settings. bindings.lua: startup snapshot of
+  active game keys, separate from next-launch changes written to Input.ini; conflict() counts
+  both and says which; same_key() compares UE4SS and Unreal key names by virtual key.
 - speech.lua: Prism in-process (prism_bridge.dll), helper exe fallback; history, mute, copy.
 - keys.lua: every key x 4 modifier sets registered once; actions declared by modules,
   rebindable, saved in keys.ini (only once the player changes one); key observers.
@@ -218,11 +222,14 @@ In the game's Mods\Wandsong\ folder:
   possess, hand back, destroy, without moving) once in game, supervised, before switching it on.
 - subtitles.lua: one persistent BPAddSubtitleEvent hook, short duplicate-delivery window,
   replayable descriptions, cancellation on skip/new line/load/scene exit, pause-aware delays.
+  Descriptions cut by a load carry to the next scene only without a menu just before the
+  load, a menu after it or another load (the title card goes on; a loaded save doesn't).
 - native/: prism_bridge.c, click_bridge.cpp, audio_bridge.cpp (synthesized sounds, including
-  hop, climb, ledge), input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
+  hop, climb, ledge; stop_all stops one-shots already playing, playing() counts them),
+  input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 37 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 45 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also

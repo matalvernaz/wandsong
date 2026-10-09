@@ -1,10 +1,12 @@
 These probes accompany the October 9, 2026 Wandsong audit at commit
 `3d99313f0c376150b5c0edec0d1699b30e9b8787`.
 
-They document existing bugs. A successful Lua probe means it reproduced the bad behavior;
-these are evidence scripts, not regression tests asserting the desired behavior. Convert the
-relevant assertions when implementing fixes. The installer probe records observed outcomes
-as JSON and asserts its setup prerequisites.
+They document the bugs as they were. A successful Lua probe means it reproduced the bad
+behavior; these are evidence scripts, not regression tests asserting the desired behavior.
+All twenty findings have since been fixed (docs/AUDIT_FIXES-2026-10-09.md), so every probe
+now fails by design; the regression tests in native/tests and tools/test_setup_failures.py
+check the fixes. The installer probe records observed outcomes as JSON and asserts its
+setup prerequisites.
 
 Run from the repository root on Windows with Python, CMake and Visual Studio build tools.
 The existing test runner builds the matching Lua host:
