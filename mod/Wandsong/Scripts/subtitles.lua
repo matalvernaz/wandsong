@@ -128,6 +128,15 @@ local OPENING = {
     { delay = 5.0, text = "A carriage waits behind you, an owl on its luggage. Professor Fig, grey-haired, in a green robe, stands by it." },
 }
 
+-- The mod's own hints, spoken after the game's hint lines (not descriptions of the frames).
+local HINTS = {
+    -- The vault's second knight puzzle: your character asks where to stand (Oct 9).
+    { id = "PlayerMale_33204", after = "Where do I need to be to get all of them to stand at once?", items = {
+        { delay = 0.4, text = "Find where all three knights' hums sound together." },
+    } },
+}
+for _, d in ipairs(HINTS) do DESCRIPTIONS[#DESCRIPTIONS + 1] = d end
+
 -- Index the descriptions once: each entry { after = "line text", delay = s, text = "..." }.
 for _, d in ipairs(DESCRIPTIONS) do d.after_words = d.after and select(1, words(d.after)) end
 -- Deduplicate delivery of a line, not the description for the lifetime of the process.

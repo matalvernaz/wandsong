@@ -42,7 +42,7 @@ package.loaded.world = {
 }
 package.loaded.audio_bridge = { init = function() return true end,
     play = function(name, x, y, z, vol, pitch) notes[#notes + 1] = { name = name, x = x, y = y, pitch = pitch } end,
-    play_ui = function() end, loop = function(id, name) loops[id] = name; return true end,
+    play_ui = function() end, loop = function(id, name, x, y) loops[id] = { name = name, x = x, y = y }; return true end,
     stop = function(id) loops[id] = nil end }
 require("speech").say = function(s) said[#said + 1] = s end
 local statues = require("statues")
@@ -79,50 +79,47 @@ assert(not heard("Revelio") and not heard("walks you"), "no solution is given aw
 knight.bStatueVisible = true
 t.run(1)
 assert(heard("A stone knight kneels here"), "the revealed knight is introduced")
--- Fig's light leads the reflection: only the knight's note, no reflection note, and whose
--- light it follows is said (Matt, Oct 8: the pitches meant nothing without the idea of the light).
+-- Fig's light leads the reflection: whose light it follows is said, and what the light does
+-- (Matt, Oct 8: the pitches meant nothing without the idea of the light).
 assert(heard("point at whoever's light leads it"), "the light is explained")
 assert(heard("follows someone else's light now, not yours"), "whose light leads it is said")
-notes = {}
-knight.TargetAngle, knight.CurrentAngle = 200, 200
-t.run(3)
-for _, s in ipairs(notes) do assert(s.pitch == 1.0, "no reflection note while someone else's light leads") end
 
--- Your light leads it: the reflection's note follows the knight's, off by the angle, and what
--- the pitches mean is said as an action.
+-- Your light leads it: said once, with how to use the hum.
 knight.TargetActor = pawn
 knight.TargetAngle, knight.CurrentAngle = 180, 180
-notes = {}
-t.run(3)
-t.run(3)
-assert(heard("now follows your light") and heard("higher, step to your right as you face the knight"),
-    "the reflection following you is said, with what its note means")
-local high = false
-for _, s in ipairs(notes) do
-    if math.abs(s.pitch - 2 ^ (90 / 180)) < 1e-6 then high = true end
-end
-assert(high, "a reflection turned 90 degrees right sounds half an octave above the knight")
-knight.TargetAngle, knight.CurrentAngle = 30, 30
-notes = {}
-t.run(3)
-local low = false
-for _, s in ipairs(notes) do if s.pitch < 1 then low = true end end
-assert(low, "turned left of the knight: below it")
--- Lined up: said once, and the two notes are the same.
-knight.TargetAngle, knight.CurrentAngle = 91, 91
-notes = {}
-t.run(3)
-assert(said[#said] == "Lined up.", "lined up when the reflection matches the knight")
-for _, s in ipairs(notes) do assert(math.abs(s.pitch - 2 ^ (1 / 180)) < 1e-6 or s.pitch == 1.0, "unison") end
+t.run(6)
+assert(heard("now follows your light") and heard("the knight's hum"), "the reflection following you, and the hum, explained")
+for _, s in ipairs(notes) do assert(s.pitch == 1.0, "only the knight's bell: no reflection pitches") end
+
+-- Where the knight looks, heard: its hum sounds along its line of sight (east of it here, 1.1 to
+-- 7.1 m out, its corridor), from the nearest point, only near the line (Oct 9: three knights).
+assert(count_loops() == 0, "away from its line of sight: no hum")
+px, py = 100, 400            -- a metre beside the line, 4 m out
+t.run(0.5)
+local id, hum = next(loops)
+assert(hum and hum.name == "hum" and math.abs(hum.x) < 1 and math.abs(hum.y - 400) < 1,
+    "near its line of sight: its hum, from the nearest point of the line")
+px, py = 0, 900              -- on the line just past the corridor: the hum comes from its end
+t.run(0.5)
+id, hum = next(loops)
+assert(hum and math.abs(hum.y - 712.5) < 1, "the line ends where the corridor does: " .. tostring(hum and hum.y))
+px, py = 500, 0
+t.run(0.5)
+assert(count_loops() == 0, "away again: silent")
+
+-- Lined up: on the line with your light; said once.
+px, py = 0, 400
+knight.TargetAngle, knight.CurrentAngle = 90, 90
+t.run(1)
+assert(said[#said] == "Lined up.", "lined up on its line of sight: " .. tostring(said[#said]))
 n = #said
 t.run(3)
 assert(#said == n, "lined up is said once per alignment")
-
--- In line but out of the corridor's reach: which way to go.
-px = 900
+-- In line but past the corridor: which way to go.
+px, py = 0, 900
 t.run(1)
 assert(said[#said] == "In line, but too far from the knight: step closer.", "too far: " .. tostring(said[#said]))
-px = 500
+px, py = 500, 0
 t.run(1)
 
 -- What a glance shows, for the scanner: the knight's facing from where you stand, and which
@@ -138,19 +135,6 @@ assert(statues.step_words(180, 90, 90) == "forward", "south of it, facing east: 
 knight.TargetActor = fig
 assert(statues.describe(knight_path):find("points at someone else's light, not yours", 1, true), "not your light")
 knight.TargetActor = pawn
-
--- Hint lines: standing on one (inside the corridor) with your light hums; stepping off stops it.
-knight.VFX_HintLine_Alpha = 1
-px, py = 0, 600
-t.run(0.5)
-assert(count_loops() == 1, "on the hint line: a hum")
-px, py = 300, 600
-t.run(0.5)
-assert(count_loops() == 0, "off the line: no hum")
-knight.VFX_HintLine_Alpha = 0
-px, py = 0, 600
-t.run(0.5)
-assert(count_loops() == 0, "no hint line shown, no hum (nothing a sighted player can't see)")
 
 -- Released: silence.
 knight.bHasBeenReleased = true

@@ -14,12 +14,12 @@
 --   * whose light leads its reflection is said as it changes: the reflection points at that
 --     light. Matt (Oct 8): the pitches "technically work", but without the idea of the light
 --     or where to stand they didn't help;
---   * while your own light leads a knight's reflection, the reflection's note follows the
---     knight's: the further the reflection is turned from the way the knight faces, the
---     further its pitch from the knight's. Above means step to your right as you face the
---     knight, below to your left (round the knight, toward where it looks); in unison you're
---     in line, and too close or too far is said;
---   * where the game shows a knight's hint line, standing on that line adds a soft hum;
+--   * each knight's hum sounds along the line it looks, from the nearest point of that line,
+--     louder the closer you are: where a sighted player sees the way it faces (and, later, the
+--     game's white hint lines). The three knights' hums make a chord where all their lines
+--     meet. Matt (Oct 9): with three knights, the old reflection pitches couldn't show where
+--     to stand, and nobody would work it out from them;
+--   * with your light on a knight's line, it stands: how many stand is said as it changes;
 --   * a knight that shows only as a reflection is described once, and the scanner (Home on
 --     a knight) says which way the knight faces from where you stand, and which way to step.
 -- No spot is marked and nothing walks you there: finding it is the puzzle (Matt, Oct 7).
@@ -41,8 +41,7 @@ do
 end
 
 local CLASS = "HogwartsProtector"
-local CYCLE = 1.4                -- seconds between one knight's notes
-local REFLECTION_AFTER = 0.2     -- the reflection's note this long after the knight's
+local CYCLE = 1.4                -- seconds between one knight's bells
 local ALIGNED_DEG = 3            -- reflection within this of the knight's facing: lined up
 local NEAR_CM = 2500             -- knights further than this stay quiet
 local SETTLE = 3                 -- seconds of uninterrupted play before describing anything
@@ -177,7 +176,7 @@ local function read_knight(o, entry)
             local t = o.TargetActor
             if valid(t) then s.target = path_of(t) end
         end)
-        if num(s.hint) and s.hint > 0.05 then pcall(function() s.cor = corridor(o) end) end
+        pcall(function() s.cor = corridor(o) end)
     end
     entry.extra.statue = s
 end
@@ -248,7 +247,37 @@ local function light_of(s)
     end
     return "someone else's"
 end
-local REACH_MIN, REACH_MAX = 80, 800   -- the corridor's reach, cm out from the knight
+-- A knight's line of sight: the way it faces, over the stretch its corridor covers (the box
+-- the game checks your light is in), else 1 to 16 m out.
+local BEAM_CM = 250              -- its hum is heard this close to the line
+local BEAM_FROM, BEAM_TO = 100, 1600
+local function gaze(s)
+    local f = math.rad(num(s.align_to) and s.align_to or s.yaw)
+    return math.cos(f), math.sin(f)
+end
+local function reach_of(s)
+    if s.cor and s.root then
+        local fx, fy = gaze(s)
+        local along = (s.cor.c[1] - s.root[1]) * fx + (s.cor.c[2] - s.root[2]) * fy
+        local half = 0
+        for i = 1, 2 do half = half + math.abs(s.cor.ax[i][1] * fx + s.cor.ax[i][2] * fy) * s.cor.h[i] end
+        return math.max(0, along - half), along + half
+    end
+    return BEAM_FROM, BEAM_TO
+end
+--- The nearest point of a knight's line of sight to p, how far p is from it, and how far out
+--- along the line p is.
+local function on_beam(s, p)
+    local fx, fy = gaze(s)
+    local near, far = reach_of(s)
+    local along = (p[1] - s.root[1]) * fx + (p[2] - s.root[2]) * fy
+    local a = math.max(near, math.min(far, along))
+    local x, y = s.root[1] + fx * a, s.root[2] + fy * a
+    return x, y, math.sqrt((p[1] - x) ^ 2 + (p[2] - y) ^ 2), along
+end
+M.on_beam = on_beam
+local taught = false             -- the light and the hums explained (once, not per knight)
+local standing_said = 0
 
 local function tick()
     if generation ~= state.generation then
@@ -268,7 +297,7 @@ local function tick()
     local pawn = world.pawn and world.pawn()
     local pawn_path = pawn and path_of(pawn)
     local now = os.clock()
-    local seen, hums = {}, {}
+    local seen = {}
     for _, e in ipairs(world.entries and world.entries() or {}) do
         if e.kind == "statue" then
             local s = view(e, pawn_path)
@@ -287,7 +316,6 @@ local function tick()
                 if s.visible and s.root and dist2(s.root, me) < NEAR_CM then
                     seen[#seen + 1] = s
                     s.k = k
-                    if s.cor and inside(s.cor, me, 10) and s.mine then hums[s.path] = s end
                 end
             end
         end
@@ -317,13 +345,13 @@ local function tick()
             speech.say(count_word(hidden) .. " knights' reflections show in the floor. No knights stand above them.", true)
         end
         if shown == 1 then
-            speech.say("A stone knight kneels here, with its reflection in the floor. You hear the knight's note. " ..
-                "The reflection turns to point at whoever's light leads it, wherever they stand. The knight " ..
-                "comes alive when its reflection faces the same way it does.", true)
+            speech.say("A stone knight kneels here, with its reflection in the floor. You hear its bell, and " ..
+                "along the line it looks, its hum. The reflection turns to point at whoever's light leads it; " ..
+                "with your own light on the knight's line of sight, the knight comes alive.", true)
         elseif shown > 1 then
             speech.say(count_word(shown) .. " stone knights kneel here, each with its reflection in the floor. " ..
-                "You hear each knight's note. Each reflection turns to point at whoever's light leads it, " ..
-                "and a knight comes alive when its reflection faces the same way it does.", true)
+                "You hear each knight's bell, and along the line each one looks, its hum. With your own light " ..
+                "on a knight's line of sight, it stands. The hums make a chord where all their lines meet.", true)
         end
         -- Whose light leads each reflection, as it changes: the reflection points at that light.
         for _, s in ipairs(seen) do
@@ -331,11 +359,13 @@ local function tick()
             if s.statue_visible and k.said_intro and s.reflection_visible and s.target and s.mine ~= k.led_by_me
                and os.clock() >= (k.next_light_say or 0) then
                 k.led_by_me, k.next_light_say = s.mine, os.clock() + 5
-                if s.mine and not k.taught then
-                    k.taught = true
-                    speech.say("The reflection now follows your light, so it points at you. Its note follows " ..
-                        "the knight's: higher, step to your right as you face the knight; lower, step to your " ..
-                        "left; the same note, you're in line with where it looks. Home on the knight says more.", true)
+                if s.mine and not taught then
+                    taught = true
+                    speech.say(#seen > 1 and ("The reflections now follow your light. A knight stands while " ..
+                        "you're on its hum's line; find where all the hums sound together.") or ("The reflection " ..
+                        "now follows your light. Walk until you hear the knight's hum, then follow it along."), true)
+                elseif s.mine and not k.taught_said then
+                    k.taught_said = true
                 elseif s.mine then
                     speech.say("The reflection follows your light again.", true)
                 else
@@ -351,49 +381,52 @@ local function tick()
         local k = s.k
         -- ...and only within the corridor's reach (1.1 to 7.1 m out for the vault's knights):
         -- in line but further off, the game does nothing.
-        local reach = s.root and dist2(s.root, me) or 0
+        local near, far = reach_of(s)
+        local _, _, _, along = on_beam(s, me)
         local in_line = s.mine and num(s.target_angle) and num(s.align_to)
             and math.abs(wrap(s.target_angle - s.align_to)) <= ALIGNED_DEG
-        local aligned = in_line and reach >= REACH_MIN and reach <= REACH_MAX
-        if aligned and not k.aligned then speech.say(#seen > 1 and "That knight is lined up." or "Lined up.") end
-        k.aligned = aligned
-        -- In line but out of the corridor's reach, the game does nothing: say which way to go.
-        local off_reach = in_line and (reach < REACH_MIN and "close" or reach > REACH_MAX and "far") or nil
+        k.aligned = in_line and along >= near and along <= far
+        -- In line but out of the corridor (known only from its box), the game does nothing.
+        local off_reach = in_line and s.cor and (along < near and "close" or along > far and "far") or nil
         if off_reach and off_reach ~= k.off_reach then
             speech.say(off_reach == "close" and "In line, but too close to the knight: step back." or
                 "In line, but too far from the knight: step closer.")
         end
         k.off_reach = off_reach
     end
+    -- How many stand, as it changes (one knight: "Lined up.").
+    local standing = 0
+    for _, s in ipairs(seen) do if s.k.aligned then standing = standing + 1 end end
+    if standing > standing_said then
+        if #seen == 1 then speech.say("Lined up.")
+        elseif standing == #seen then speech.say("All " .. count_word(standing):lower() .. " stand.")
+        else speech.say(count_word(standing) .. " of " .. count_word(#seen):lower() .. (standing == 1 and " stands." or " stand.")) end
+    end
+    standing_said = standing
     if now >= next_log and #seen > 0 then
         next_log = now + 3
         for _, s in ipairs(seen) do snapshot(s, "watch") end
         log(string.format("player %.0f %.0f %.0f", px, py, pz))
     end
     if not sounds_ok() then stop_loops(); return end
+    local beams = {}
     for _, s in ipairs(seen) do
         local k = s.k
         if now >= k.next_at then
             k.next_at = now + CYCLE
-            local x, y, z = s.root[1], s.root[2], s.root[3] + 60
-            audio.play("note", x, y, z, 0.6, k.base)
-            if s.mine and s.off then
-                -- Up to an octave away when the reflection faces the opposite way.
-                local pitch = k.base * 2 ^ (s.off / 180)
-                dispatch.later(REFLECTION_AFTER * 1000, function()
-                    if sounds_ok() and world.in_game() then audio.play("note", x, y, z, 0.5, pitch) end
-                end, "statue reflection note")
-            end
+            audio.play("note", s.root[1], s.root[2], s.root[3] + 60, 0.6, k.base)
+        end
+        -- Its line of sight: the hum from the nearest point of it, louder the closer you are.
+        local bx, by, off = on_beam(s, me)
+        if off < BEAM_CM then
+            local id = "statue" .. s.path
+            beams[id] = true
+            audio.loop(id, "hum", bx, by, pz + 60, 0.12 + 0.4 * (1 - off / BEAM_CM), k.base)
+            loops[id] = true
         end
     end
-    -- Hint lines: standing on one (with your light) hums the knight's note.
     for id in pairs(loops) do
-        if not hums[id:sub(7)] then pcall(audio.stop, id); loops[id] = nil end
-    end
-    for path, s in pairs(hums) do
-        local id = "statue" .. path
-        audio.loop(id, "hum", s.root[1], s.root[2], s.root[3] + 60, 0.25, s.k.base)
-        loops[id] = true
+        if not beams[id] then pcall(audio.stop, id); loops[id] = nil end
     end
 end
 
@@ -420,9 +453,10 @@ function M.describe(path)
         return t .. "; its reflection points at you. To line it up, step " ..
             step_words(s.target_angle, s.align_to, my_yaw) .. ", round the knight"
     end
-    local reach = s.root and dist2(s.root, { px, py }) or 0
-    if reach < REACH_MIN then return t .. "; you're in line, but too close: step back" end
-    if reach > REACH_MAX then return t .. "; you're in line, but too far: step closer" end
+    local near, far = reach_of(s)
+    local _, _, _, along = on_beam(s, { px, py })
+    if s.cor and along < near then return t .. "; you're in line, but too close: step back" end
+    if s.cor and along > far then return t .. "; you're in line, but too far: step closer" end
     return t .. "; its reflection faces the same way: lined up"
 end
 

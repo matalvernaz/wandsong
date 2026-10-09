@@ -60,4 +60,20 @@ assert(count("Three stone knights kneel here") == 1, "three revealed knights: on
 assert(count("A stone knight kneels here") == 0, "not the single-knight introduction three times")
 t.run(3)
 assert(#said == 2, "introduced once: " .. table.concat(said, " | "))
+
+-- Your light leads all three: explained once, not once per knight (Oct 9, said three times).
+for _, k in ipairs(knights) do k.o.TargetActor = pawn end
+t.run(6)
+assert(count("The reflections now follow your light") == 1, "the light explained once: " .. table.concat(said, " | "))
+assert(count("The reflection now follows your light") == 0, "not the single-knight line")
+-- How many stand, as it changes (all three face south, 1.1 to 16 m of line each).
+knights[2].o.TargetAngle = 270
+t.run(1)
+assert(said[#said] == "One of three stands.", "one stands: " .. tostring(said[#said]))
+knights[1].o.TargetAngle, knights[3].o.TargetAngle = 270, 270
+t.run(1)
+assert(said[#said] == "All three stand.", "all three: " .. tostring(said[#said]))
+local n = #said
+t.run(3)
+assert(#said == n, "said as it changes, not over and over")
 print("statues group test passed")
