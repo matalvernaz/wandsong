@@ -30,6 +30,10 @@ local HOUSES = {
     { id = 3, name = "Slytherin", crest = "slytherin", words = "known for cunning, ambition and a hunger for power" },
 }
 local STEP_MS = 800                           -- the screen's own transitions between steps
+-- The screen takes no input while the hat talks (HatTalking): Accept sent during its remark on a
+-- picked crest was dropped (Oct 9), and the mod had already said the house. So Accept waits for
+-- the hat, up to TALK_WAIT, and the choice counts as made only once the screen has gone.
+local TALK_WAIT, GONE_MS, ACCEPT_TRIES = 25, 2500, 3
 local CONFIRM_FOR = 15                        -- seconds a first press waits for the second (its
                                               -- question alone takes 4 s to say: 6 was too short)
 
@@ -96,17 +100,30 @@ local function fail(why)
     speech.say("The hat didn't take that choice, so nothing was decided. Choose again.")
 end
 
-local function accept(h)
+local function accept(h, tries, since)
+    tries, since = tries or 0, since or os.clock()
     local w = screen()
     if not w then return fail("the screen closed") end
     if int(w, "HouseStateIndex") ~= PICKED or int(w, "NewHouse") ~= h.id then
         return fail("the screen shows house " .. tostring(int(w, "NewHouse")) .. ", state " .. tostring(int(w, "HouseStateIndex")))
     end
+    local talking = false
+    pcall(function() talking = w.HatTalking == true end)
+    if talking and os.clock() - since < TALK_WAIT then
+        dispatch.later(300, function() accept(h, tries, since) end, "sorting accept")
+        return
+    end
     if not send(ACCEPT) then return fail("Accept wasn't sent") end
-    busy_until = -1
-    log("accepted " .. h.name)
-    if state.close_screen then state.close_screen() end
-    speech.say(h.name .. ".")
+    log("Accept sent for " .. h.name .. (tries > 0 and (", try " .. (tries + 1)) or ""))
+    dispatch.later(GONE_MS, function()
+        if screen() then
+            if tries + 1 < ACCEPT_TRIES then accept(h, tries + 1, os.clock()) else fail("Accept wasn't taken") end
+            return
+        end
+        busy_until = -1
+        log("accepted " .. h.name)   -- the hat says it: nothing over its verdict
+        if state.screen_open(M) and state.close_screen then state.close_screen() end
+    end, "sorting accepted")
 end
 
 local function pick(h)
@@ -123,7 +140,8 @@ end
 local function choose(h)
     local w = screen()
     if not w then speech.say("The Sorting Hat's screen has closed."); return end
-    busy_until = os.clock() + 4
+    busy_until = os.clock() + TALK_WAIT + 15
+    speech.say("Choosing " .. h.name .. ".")
     local st, shown = int(w, "HouseStateIndex"), int(w, "NewHouse")
     log(string.format("choose %s: state %s, shown %s", h.name, tostring(st), tostring(shown)))
     if st == PICKED and shown == h.id then accept(h); return end

@@ -12,14 +12,19 @@ package.loaded.world = { gameplay = function() return false end, in_game = funct
 local PATH = "/Engine/Transient.GameEngine_1:BP_PhoenixGameInstance_C_1.UI_BP_SortingHat_C_1"
 local CRESTS = { [0] = "gryffindor", [1] = "hufflepuff", [2] = "ravenclaw", [3] = "slytherin" }
 local up, accepted, sent, broken = true, nil, {}, false
-local hat = { HouseStateIndex = 0, NewHouse = 2, SuggestedHouse = 2, HasWWHouse = true,
+local remark = 0      -- seconds the hat talks after a crest is picked (it ignores input meanwhile)
+local talking_until = -1
+local hat = { HouseStateIndex = 0, NewHouse = 2, SuggestedHouse = 2, HasWWHouse = true, HatTalking = false,
     WWHouse = { ToString = function() return "Ravenclaw" end } }
 local fns = {}
 for id, crest in pairs(CRESTS) do
     fns[#fns + 1] = "BndEvt__UI_BP_SortingHat_" .. crest .. "_K2Node_ComponentBoundEvent_" .. id .. "_OnHouseSelected__DelegateSignature"
     fns[#fns + 1] = "BndEvt__UI_BP_SortingHat_" .. crest .. "_K2Node_ComponentBoundEvent_" .. (id + 5) .. "_OnHouseHovered__DelegateSignature"
     hat[fns[#fns - 1]] = function(self)
-        if self.HouseStateIndex == 1 and not broken then self.NewHouse, self.HouseStateIndex = id, 2 end
+        if self.HouseStateIndex == 1 and not broken then
+            self.NewHouse, self.HouseStateIndex = id, 2
+            talking_until = os.clock() + remark
+        end
     end
     hat[fns[#fns]] = function() end
 end
@@ -35,10 +40,14 @@ local mgr = { IsValid = function() return true end }
 function mgr.OnInputAction(_, action, event)
     if event ~= 0 then return end
     sent[#sent + 1] = action
+    if os.clock() < talking_until then return end   -- the hat is talking: input is dropped
     if action == 1 then hat.HouseStateIndex = hat.HouseStateIndex == 1 and 2 or 1
     elseif action == 75 and hat.HouseStateIndex ~= 1 then accepted = hat.NewHouse; up = false end
 end
 StaticFindObject = function(p) if p == PATH then return hat end end
+-- The hat's talk flag follows the fake's clock.
+setmetatable(hat, { __index = function(_, k) if k == "HatTalking" then return os.clock() < talking_until end end })
+hat.HatTalking = nil
 FindFirstOf = function(cls) if cls == "UMGInputManager" then return mgr end end
 FindAllOf = function() return {} end
 RegisterLoadMapPostHook = function() end
@@ -53,6 +62,14 @@ local function upk() state.menu_step(-1) end
 
 -- The game reads the screen: the menu opens on the hat's suggestion.
 local function read_screen() t.hooks["/Script/Phoenix.PhoenixUserWidget:ReadMenu"]({ get = function() return hat end }); t.run(0.2) end
+-- Between scenarios: the last choice's checks run out, the screen goes (the world gate forgets
+-- its path) and the menu closes; then a fresh screen comes up.
+local function next_scenario()
+    t.run(3)
+    state.sorting_path = nil
+    t.run(1)
+    up, accepted, sent = true, nil, {}
+end
 read_screen()
 local opening = said[#said]
 assert(opening:find("^The Sorting%. Choose your house with the up and down arrows, then enter%. The hat suggests Ravenclaw%."),
@@ -72,36 +89,58 @@ assert(said[#said]:find("^Hufflepuff, known for patience, loyalty and hard work,
 press()
 assert(said[#said]:find("^Join Hufflepuff%? Press backslash or enter again"), "asks once: " .. said[#said])
 assert(#sent == 0, "nothing sent on the first press")
+remark = 5   -- the hat comments on the crest for 5 s
 enter()
+assert(said[#said] == "Choosing Hufflepuff.", "says what it's doing: " .. said[#said])
 t.run(0.5)
 assert(sent[1] == 1 and hat.HouseStateIndex == 1, "Back shows all the crests")
 assert(accepted == nil, "nothing accepted yet")
-t.run(2)
-assert(accepted == 1, "Hufflepuff accepted, after the screen showed it: " .. tostring(accepted))
+t.run(3)
+assert(hat.NewHouse == 1 and accepted == nil and #sent == 1, "picked; Accept waits while the hat talks")
+assert(state.screen_open(sorting), "and the menu stays: nothing is claimed yet")
+t.run(4)
+assert(accepted == 1, "Hufflepuff accepted once the hat was quiet: " .. tostring(accepted))
 assert(sent[#sent] == 75, "with the game's own Accept")
-assert(said[#said] == "Hufflepuff.", said[#said])
-t.run(1)
 state.sorting_path = nil   -- the world gate's part, once the screen is gone
-t.run(1)
+t.run(3)
 assert(not state.screen_open(sorting), "the menu closes with the screen")
+assert(said[#said] == "Choosing Hufflepuff.", "nothing said over the hat's verdict: " .. said[#said])
+remark = 0
 
 -- The suggestion from the opening view: picked through its crest too, never taken on trust.
-up, accepted, sent = true, nil, {}
+next_scenario()
 hat.HouseStateIndex, hat.NewHouse = 0, 2
 read_screen()
 press(); press()
-t.run(3)
+t.run(4)
 assert(accepted == 2 and #sent == 2 and sent[1] == 1 and sent[2] == 75, "the suggestion, through its crest: " .. #sent)
 -- A house already picked and shown (the player clicked a crest): accepted at once.
-up, accepted, sent = true, nil, {}
+next_scenario()
 hat.HouseStateIndex, hat.NewHouse = 2, 2
 read_screen()
 press(); press()
 t.run(0.5)
 assert(accepted == 2 and #sent == 1 and sent[1] == 75, "the house shown is just accepted")
+-- An Accept the screen drops anyway (the hat starts talking again just then) is sent again.
+next_scenario()
+hat.HouseStateIndex, hat.NewHouse = 2, 3
+talking_until = -1
+read_screen()
+upk(); upk(); upk(); upk(); down(); down(); down()   -- to Slytherin, 4 of 4
+local real = mgr.OnInputAction
+local dropped = false
+mgr.OnInputAction = function(self, action, event)
+    if action == 75 and event == 0 and not dropped then dropped = true; sent[#sent + 1] = action; return end
+    return real(self, action, event)
+end
+press(); press()
+t.run(6)
+mgr.OnInputAction = real
+assert(accepted == 3 and #sent == 2, "a dropped Accept is sent again: " .. tostring(accepted) .. ", " .. #sent)
 
 -- If the screen doesn't take the house (shows another), nothing is accepted.
-up, accepted, sent, broken = true, nil, {}, true
+next_scenario()
+broken = true
 hat.HouseStateIndex, hat.NewHouse = 0, 2
 read_screen()
 upk(); upk(); upk()                     -- Gryffindor
