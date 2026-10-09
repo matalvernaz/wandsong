@@ -6,11 +6,11 @@
 --
 -- So the mod lists the houses, starting on the hat's suggestion (Matt: "a menu with the default
 -- being what it suggests"); the arrows move, and Enter or the press key asks once, then
--- decides. Under it, the game's own way, found on the live screen: Accept takes the house the
--- screen shows; Back shows all four crests, a crest's own select handler (what clicking it
--- runs) brings that house back to show, then Accept. Nothing is accepted unless the screen
--- shows the house the player chose. While the screen is up the world layer stands down
--- (world.lua: "sorting").
+-- decides. Under it, the game's own way, found on the live screen (Oct 9): it opens on the hat's
+-- (or the imported Wizarding World) house; Back shows all four crests; a crest's own select
+-- handler (what clicking it runs) puts that house on show; Accept takes the house shown. The
+-- mod always picks through the crests, then accepts only once the screen shows the very house
+-- the player chose. While the screen is up the world layer stands down (world.lua: "sorting").
 local dispatch, state, speech, keys = require("dispatch"), require("state"), require("speech"), require("keys")
 
 local M = { title = "The Sorting" }
@@ -19,7 +19,9 @@ local function log(s) print("[Wandsong sorting] " .. s .. "\n") end
 local CLASS = "UI_BP_SortingHat_C"
 local OWNER = "UI_BP_SortingHat"              -- its bound events: BndEvt__UI_BP_SortingHat_<crest>_...
 local ACCEPT, BACK = 75, 1                    -- EUMGInputAction: UMGHouseSelectSwitchMode (F), UMGBack
-local SHOWS_ONE, SHOWS_ALL = 2, 1             -- HouseStateIndex: one house to accept, all four crests
+-- HouseStateIndex: the opening view (0, its house not trusted: the mod never accepts there), all
+-- four crests (1), a picked house to accept (2). Back goes 0 to 1, 1 to 2, 2 to 1.
+local OPENING, SHOWS_ALL, PICKED = 0, 1, 2
 -- HouseIds, and the game's own words for each (read from the screen, Oct 9).
 local HOUSES = {
     { id = 0, name = "Gryffindor", crest = "gryffindor", words = "known for daring, bravery, and chivalry" },
@@ -28,7 +30,8 @@ local HOUSES = {
     { id = 3, name = "Slytherin", crest = "slytherin", words = "known for cunning, ambition and a hunger for power" },
 }
 local STEP_MS = 800                           -- the screen's own transitions between steps
-local CONFIRM_FOR = 6                         -- seconds a first press waits for the second
+local CONFIRM_FOR = 15                        -- seconds a first press waits for the second (its
+                                              -- question alone takes 4 s to say: 6 was too short)
 
 local suggested, ww = nil, nil                -- house ids: the hat's, the player's Wizarding World
 local confirm_id, confirm_at = nil, -10
@@ -96,7 +99,7 @@ end
 local function accept(h)
     local w = screen()
     if not w then return fail("the screen closed") end
-    if int(w, "HouseStateIndex") ~= SHOWS_ONE or int(w, "NewHouse") ~= h.id then
+    if int(w, "HouseStateIndex") ~= PICKED or int(w, "NewHouse") ~= h.id then
         return fail("the screen shows house " .. tostring(int(w, "NewHouse")) .. ", state " .. tostring(int(w, "HouseStateIndex")))
     end
     if not send(ACCEPT) then return fail("Accept wasn't sent") end
@@ -115,16 +118,17 @@ local function pick(h)
     dispatch.later(STEP_MS, function() accept(h) end, "sorting accept")
 end
 
---- Carry out the choice: accept it if the screen shows it, else show all crests and pick it.
+--- Carry out the choice: accept it if it's the house picked and shown, else show all the crests
+--- (from the opening view or another pick) and pick it.
 local function choose(h)
     local w = screen()
     if not w then speech.say("The Sorting Hat's screen has closed."); return end
     busy_until = os.clock() + 4
     local st, shown = int(w, "HouseStateIndex"), int(w, "NewHouse")
     log(string.format("choose %s: state %s, shown %s", h.name, tostring(st), tostring(shown)))
-    if st == SHOWS_ONE and shown == h.id then accept(h); return end
+    if st == PICKED and shown == h.id then accept(h); return end
     if st == SHOWS_ALL then pick(h); return end
-    if st ~= SHOWS_ONE or not send(BACK) then return fail("unknown screen state " .. tostring(st)) end
+    if (st ~= OPENING and st ~= PICKED) or not send(BACK) then return fail("unknown screen state " .. tostring(st)) end
     dispatch.later(STEP_MS, function() pick(h) end, "sorting pick")
 end
 

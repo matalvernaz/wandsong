@@ -1,8 +1,9 @@
 -- The Sorting Hat's house screen as a menu (Oct 9: Matt couldn't choose a different house). The
--- fake screen behaves as the real one did that day: it shows one house to accept (state 2),
--- Back shows all four crests (state 1), a crest's own select handler puts its house back on
--- show, and Accept (F's action) takes the house shown. The menu starts on the hat's suggestion,
--- asks once, and accepts only the house the player chose.
+-- fake screen behaves as the real one did that day: it opens on the hat's house (state 0); Back
+-- goes 0 to all four crests (1), 1 to the picked house (2) and 2 to 1; a crest's own select
+-- handler puts its house on show (2); Accept (F's action) takes the house shown. The menu starts
+-- on the hat's suggestion, asks once, and accepts only the house the player chose, never from
+-- the opening view.
 local t = dofile("native/tests/testlib.lua")
 for k, v in pairs({ OEM_FOUR = 219, OEM_SIX = 221, OEM_FIVE = 220, RETURN = 13 }) do Key[k] = v end
 local said = {}
@@ -11,7 +12,7 @@ package.loaded.world = { gameplay = function() return false end, in_game = funct
 local PATH = "/Engine/Transient.GameEngine_1:BP_PhoenixGameInstance_C_1.UI_BP_SortingHat_C_1"
 local CRESTS = { [0] = "gryffindor", [1] = "hufflepuff", [2] = "ravenclaw", [3] = "slytherin" }
 local up, accepted, sent, broken = true, nil, {}, false
-local hat = { HouseStateIndex = 2, NewHouse = 2, SuggestedHouse = 2, HasWWHouse = true,
+local hat = { HouseStateIndex = 0, NewHouse = 2, SuggestedHouse = 2, HasWWHouse = true,
     WWHouse = { ToString = function() return "Ravenclaw" end } }
 local fns = {}
 for id, crest in pairs(CRESTS) do
@@ -34,8 +35,8 @@ local mgr = { IsValid = function() return true end }
 function mgr.OnInputAction(_, action, event)
     if event ~= 0 then return end
     sent[#sent + 1] = action
-    if action == 1 then hat.HouseStateIndex = hat.HouseStateIndex == 2 and 1 or 2
-    elseif action == 75 and hat.HouseStateIndex == 2 then accepted = hat.NewHouse; up = false end
+    if action == 1 then hat.HouseStateIndex = hat.HouseStateIndex == 1 and 2 or 1
+    elseif action == 75 and hat.HouseStateIndex ~= 1 then accepted = hat.NewHouse; up = false end
 end
 StaticFindObject = function(p) if p == PATH then return hat end end
 FindFirstOf = function(cls) if cls == "UMGInputManager" then return mgr end end
@@ -84,17 +85,24 @@ state.sorting_path = nil   -- the world gate's part, once the screen is gone
 t.run(1)
 assert(not state.screen_open(sorting), "the menu closes with the screen")
 
--- The suggestion: accepted at once, as F would.
+-- The suggestion from the opening view: picked through its crest too, never taken on trust.
+up, accepted, sent = true, nil, {}
+hat.HouseStateIndex, hat.NewHouse = 0, 2
+read_screen()
+press(); press()
+t.run(3)
+assert(accepted == 2 and #sent == 2 and sent[1] == 1 and sent[2] == 75, "the suggestion, through its crest: " .. #sent)
+-- A house already picked and shown (the player clicked a crest): accepted at once.
 up, accepted, sent = true, nil, {}
 hat.HouseStateIndex, hat.NewHouse = 2, 2
 read_screen()
 press(); press()
 t.run(0.5)
-assert(accepted == 2 and #sent == 1 and sent[1] == 75, "the hat's own suggestion is just accepted")
+assert(accepted == 2 and #sent == 1 and sent[1] == 75, "the house shown is just accepted")
 
 -- If the screen doesn't take the house (shows another), nothing is accepted.
 up, accepted, sent, broken = true, nil, {}, true
-hat.HouseStateIndex, hat.NewHouse = 2, 2
+hat.HouseStateIndex, hat.NewHouse = 0, 2
 read_screen()
 upk(); upk(); upk()                     -- Gryffindor
 press(); press()
@@ -102,11 +110,13 @@ t.run(3)
 assert(accepted == nil, "never accepts a house the player didn't choose")
 assert(said[#said]:find("didn't take that choice", 1, true), "and says so: " .. said[#said])
 assert(state.screen_open(sorting), "the menu stays for another try")
--- A first press long ago doesn't count as the confirmation.
+-- A first press long ago doesn't count as the confirmation; one 10 s ago does (the question
+-- takes 4 s to say).
 broken = false
-hat.HouseStateIndex = 2
-press(); t.run(7); press()
+hat.HouseStateIndex = 0
+press(); t.run(16); press()
 assert(said[#said]:find("^Join Gryffindor%?"), "asks again after a while: " .. said[#said])
+t.run(10)
 press()
 t.run(3)
 assert(accepted == 0, "then Gryffindor: " .. tostring(accepted))
