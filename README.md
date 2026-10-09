@@ -39,24 +39,30 @@ for the update command, expected behavior and logs. The complete game is not yet
 - Windows 10 or 11, 64-bit.
 - A screen reader is recommended but not required.
 
-## Installing
+## Installing and updating
 
-There is no published release yet. Build the installer as described below for a new install.
-For an existing development installation, use [the update script](docs/TESTING_ON_GAME_PC.md).
+Everything comes in one file, WandsongSetup-<version>.exe. There is no published release
+yet: build it as described below. For a development installation, use
+[the update script](docs/TESTING_ON_GAME_PC.md).
 
-1. Build `dist\Wandsong-<version>.zip` from source.
-2. Extract it anywhere, for example your Downloads folder.
-3. Quit Hogwarts Legacy if it is running.
-4. Open the extracted Wandsong folder and run WandsongSetup.exe.
-5. Setup finds the game by itself. Type 1 and press Enter to install.
-6. Start the game from Steam or Epic as usual. When it has loaded you will hear
-   "Wandsong ready".
+1. Quit Hogwarts Legacy if it is running.
+2. Run WandsongSetup-<version>.exe from wherever you saved it.
+3. Setup finds the game by itself (Steam or Epic) and says which Wandsong is installed,
+   if any. Press Enter to install it, or to update it to this version. If setup can't find the
+   game, it asks for the game's folder: paste it and press Enter.
+4. Start the game as usual. When it has loaded you will hear "Wandsong ready".
 
-Setup backs up any files it replaces. Run it again any time to update, uninstall, or switch
-"vanilla mode" on (play without mods) and off again.
+To update later, run the newer setup the same way. It replaces the mod's files, removes files
+the old version had that the new one doesn't, and keeps your settings and keys. The same setup
+uninstalls (type 2) and switches vanilla mode on and off (type 3: play without mods).
+
+Setup is read out by your screen reader; without one running, it speaks with Windows' own voice.
+If the game is in a folder Windows protects, setup asks for permission first. If someone else's
+UE4SS mods were already installed, setup backs up the files it replaces and puts them back when
+you uninstall.
 
 If Windows SmartScreen warns about an unrecognised app, choose More info, then Run anyway.
-The files are not code-signed yet.
+The file is not code-signed yet.
 
 ## First launch
 
@@ -152,16 +158,21 @@ switch tabs, and F to continue.
 
 ## Uninstalling
 
-Run WandsongSetup.exe and choose 2. Your original files are restored.
+Run the setup, type 2 and press Enter. Wandsong and its settings are removed, and any
+files setup replaced are put back.
 
 ## Building from source
 
 Needs Visual Studio 2022 Build Tools (C++), CMake and the GitHub CLI. Run:
 
-    powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
+    powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 -Version 0.4.0
 
-This fetches Prism and UE4SS, builds the speech helper and the installer, and writes
-dist\Wandsong-<version>.zip.
+This fetches Prism and UE4SS, builds the speech helper, the native modules and the setup, and
+writes dist\WandsongSetup-<version>.exe (the setup with UE4SS and the mod appended to it)
+and dist\Wandsong-<version>.zip (that file, this README and the licences). Test the setup
+against fake game folders, never the real game, with:
+
+    powershell -ExecutionPolicy Bypass -File tools\test_setup.ps1
 
 Run offline checks with Python 3 and CMake on Windows or Linux:
 

@@ -43,6 +43,9 @@ if ($Native) {
 
 Copy-Item (Join-Path $root "mod\Wandsong\Scripts\*.lua") $scripts -Force
 Write-Host "scripts -> $scripts"
+# What setup reports as installed ("A development build ... is installed").
+$revision = & git -C $root rev-parse --short HEAD 2>$null
+if ($revision) { Set-Content -Encoding ascii (Join-Path $mod "version.txt") "dev $revision" }
 if ($Native) {
     foreach ($dll in "prism_bridge.dll", "click_bridge.dll", "audio_bridge.dll", "input_bridge.dll", "lifetime_bridge.dll") {
         Copy-Item (Join-Path $root "native\build\Release\$dll") $scripts -Force

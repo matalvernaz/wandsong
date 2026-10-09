@@ -1,0 +1,4 @@
+// Written by CMake from version.h.in (tools/build_release.ps1 passes -DHA_VERSION=<version>).
+#pragma once
+#define HA_VERSION_STR "@HA_VERSION@"
+#define HA_VERSION_NUM @HA_VERSION_MAJOR@,@HA_VERSION_MINOR@,@HA_VERSION_PATCH@,0
