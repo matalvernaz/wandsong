@@ -29,14 +29,19 @@ local pawn = obj("Biped_Player", "/Game/Player", { InCinematic = true,
 
 -- The panel: three replies; the game's reader names the one in focus.
 local replies = { "I can't wait to start classes.", "I'm worried I'll fall behind.", "I'd rather not say." }
-local reads_itself = true
+local reads_itself, reader_empty = true, false
 local read_menu
 local panel = obj("UI_BP_OptionPanel_C", "/Engine/Transient.GI.UI_BP_OptionPanel_C_1", {
     Visibility = 0, CurrentIndex = 0, maxOptionIndex = 2,
     IsInViewport = function() return true end,
-    GatherMenuReaderStrings = function(self) return { replies[self.CurrentIndex + 1] } end,
+    -- The game's reader names the reply in focus, except once the choice has been up a while
+    -- (live, Oct 8: empty); each reply's button keeps its text.
+    GatherMenuReaderStrings = function(self) return reader_empty and {} or { replies[self.CurrentIndex + 1] } end,
     OptionsArray = { ForEach = function(_, fn)
-        for i = 1, 3 do fn(i, { get = function() return { Visibility = 0 } end }) end
+        for i = 1, 3 do
+            fn(i, { get = function() return { Visibility = 4, DisplayText = { GetText = function()
+                return { ToString = function() return replies[i] end } end } } end })
+        end
     end },
 })
 local sent = {}
@@ -81,8 +86,8 @@ t.run(0.6)
 assert(sent[#sent] == 53, "down arrow sends the panel's next-reply action")
 assert(#said == before + 1 and said[#said] == "I'm worried I'll fall behind. 2 of 3", "the next reply, once: " .. tostring(said[#said]))
 
--- Where the game doesn't read it out, the mod does.
-reads_itself = false
+-- Where the game doesn't read it out, the mod does, from the reply's own button.
+reads_itself, reader_empty = false, true
 before = #said
 handlers[Key.OEM_SIX]()   -- ] (review_next)
 t.run(0.6)
@@ -100,9 +105,12 @@ local count = #sent
 assert(not state.choice_step(1) and #sent == count, "once a reply is said, no choice is up")
 
 -- Enter (the game's own key for it) ends the choice too; the hint isn't repeated.
-reads_itself = true
+reads_itself, reader_empty = true, false
+panel.CurrentIndex = 0   -- the next conversation's choice
+local before_read = #said
 read_menu({ get = function() return panel end })
 t.run(0.2)
+assert(#said == before_read + 1 and said[#said]:find(" of 3", 1, true), "a new choice is read: " .. tostring(said[#said]))
 assert(not said[#said]:find("Up and down arrows", 1, true), "the hint comes once a session")
 handlers[Key.RETURN]()
 t.run(0.2)

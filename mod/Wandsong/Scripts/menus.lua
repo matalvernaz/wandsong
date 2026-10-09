@@ -347,14 +347,26 @@ local function read_choice_now()
         pcall(function() name = panel:GetFullName() end)
         if not name:find("Default__", 1, true) then pcall(function() up = panel:IsInViewport() == true end) end
         if up then
-            local parts = gather(panel, 1)
-            if not parts or #parts == 0 then parts = gather(panel, 0) end
-            local cleaned = {}
-            for _, p in ipairs(parts or {}) do
-                local c = clean(p)
-                if c ~= "" then cleaned[#cleaned + 1] = c end
+            -- The reply in focus, from its own button: once the choice had been up a while the
+            -- panel's reader gave nothing, while each button's DisplayText still held its reply
+            -- (Everett's question, Oct 8, read live). Else whatever the reader gives.
+            local text = ""
+            pcall(function()
+                local i = panel.CurrentIndex
+                panel.OptionsArray:ForEach(function(k, e)
+                    if k == i + 1 then text = clean(e:get().DisplayText:GetText():ToString()) end
+                end)
+            end)
+            if text == "" then
+                local parts = gather(panel, 1)
+                if not parts or #parts == 0 then parts = gather(panel, 0) end
+                local cleaned = {}
+                for _, p in ipairs(parts or {}) do
+                    local c = clean(p)
+                    if c ~= "" then cleaned[#cleaned + 1] = c end
+                end
+                text = rewrite(table.concat(legend_order(cleaned), ", "))
             end
-            local text = rewrite(table.concat(legend_order(cleaned), ", "))
             log("choice read by the mod -> " .. text)
             if text ~= "" then speak(with_choice_words(text, panel)) end
             return
