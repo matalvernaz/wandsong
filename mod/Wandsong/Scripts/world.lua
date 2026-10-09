@@ -634,11 +634,15 @@ local function take(a, kind, cn, pass, priority, seen)
     local n = nearby[key]
     -- Held, and a deletion was noted at this address since: a new object took its place.
     if n and n.serial and not lifetime.alive(key, n.serial) then drop(key); n = nil end
+    -- Without the deletion record, a new actor can take a gone one's address between passes:
+    -- the snapshot (path, name, extra) is the old actor's unless this fresh object's own path
+    -- and class still match it.
+    local p = path_of(a)
+    if n and ((n.path and p ~= n.path) or (n.cn and n.cn ~= cn)) then drop(key); n = nil end
     -- A thing an earlier (more specific) pass already holds stays with that pass.
     if n and n.pass ~= pass and (n.priority or 99) < priority then return false end
     local k = KINDS[kind]
     if d > math.max(k.range * 1.5, KEEP_CM) then
-        local p = n and n.path or path_of(a)
         if not (p and spoken_names[p] and d <= NAMED_KEEP_CM) then
             drop(key)
             return false
@@ -658,7 +662,7 @@ local function take(a, kind, cn, pass, priority, seen)
         nearby[key] = n
         if kind == "enemy" then enemy_tip() end
     end
-    if not n.path then n.path = path_of(a) end
+    if not n.path then n.path = p end
     if n.path then by_path[n.path] = key end
     n.kind, n.pass, n.priority, n.cn = kind, pass, priority, cn
     n.sound, n.every, n.range, n.pitch = k.sound, k.every, k.range, k.pitch or 1.0
