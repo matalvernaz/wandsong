@@ -49,7 +49,9 @@ confuse earlier game observations with proof that this revision fixes the freeze
    says what's installed (Mods\Wandsong\version.txt; dev deploys write "dev <hash>"), and
    Enter installs or updates: files the old record lists in the mod folder but the new version
    lacks are removed, player files are never touched. --check changes nothing. Test it only
-   against fake game folders: `powershell -File tools\test_setup.ps1`.
+   against fake game folders: `powershell -File tools\test_setup.ps1`. Interactive setups
+   (and --check) ask GitHub for the latest release; a newer one is downloaded, checked against
+   its published .sha256 and run with --install. Publish with tools\publish_release.ps1.
 4. UE4SS settings that matter (ue4ss/UE4SS-settings.ini is the template): EngineVersionOverride
    4 / 27, GuiConsoleEnabled = 0, bUseUObjectArrayCache = false, only Keybinds plus
    Wandsong enabled in mods.txt. Without these the game crashes early.
