@@ -21,7 +21,7 @@ $Keys = @($Keys | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public class HaKeys {
+public class WsKeys {
  [StructLayout(LayoutKind.Sequential)] public struct KI { public ushort vk, scan; public uint flags, time; public UIntPtr extra; public long padA; }
  [StructLayout(LayoutKind.Sequential)] public struct IN { public uint type; public uint pad; public KI ki; }
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, IN[] i, int size);
@@ -71,14 +71,14 @@ if ($hwnd -eq [IntPtr]::Zero) { Write-Output "Hogwarts Legacy has no game window
 # plus SetForegroundWindow, in a loop) sent those Alt taps into whatever was in front when
 # Windows refused the switch, and after crashes that was the desktop: NVDA read out desktop
 # icons and menus to Matt (Oct 7). If the game isn't in front, nothing is sent at all.
-function Game-In-Front { return [HaKeys]::GetForegroundWindow() -eq $hwnd }
+function Game-In-Front { return [WsKeys]::GetForegroundWindow() -eq $hwnd }
 
 $sentFile = Join-Path $env:TEMP 'wandsong_keys_sent.txt'
 $watchFile = Join-Path $env:TEMP 'wandsong_physical_input.txt'
-function Mark-Sent { Set-Content -Path $sentFile -Value ([HaKeys]::GetTickCount()) }
+function Mark-Sent { Set-Content -Path $sentFile -Value ([WsKeys]::GetTickCount()) }
 function Others-Active {
     # tools/input_watch.ps1, when running, knows real keyboard and mouse use from injected input.
-    $now = [int64][HaKeys]::GetTickCount()
+    $now = [int64][WsKeys]::GetTickCount()
     $w = Get-Content $watchFile -Raw -ErrorAction SilentlyContinue
     if ($w -match '^(\d+) (\d+)' -and $now - [int64]$matches[1] -lt 3000) {
         $idle = $now - [int64]$matches[2]
@@ -88,8 +88,8 @@ function Others-Active {
     $sent = [uint32]0
     $t = Get-Content $sentFile -Raw -ErrorAction SilentlyContinue
     if ($t) { [void][uint32]::TryParse($t.Trim(), [ref]$sent) }
-    $last = [int64][HaKeys]::LastInput()
-    $idle = [int64][HaKeys]::GetTickCount() - $last
+    $last = [int64][WsKeys]::LastInput()
+    $idle = [int64][WsKeys]::GetTickCount() - $last
     return ($last -gt [int64]$sent + 300) -and ($idle -ge 0) -and ($idle -lt $IdleSeconds * 1000)
 }
 
@@ -106,8 +106,8 @@ function Release-Stuck {
         $t = Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue
         foreach ($v in ("$t".Trim() -split '\s+')) {
             $vk = 0
-            if ([int]::TryParse($v, [ref]$vk) -and ([HaKeys]::GetAsyncKeyState($vk) -band 0x8000)) {
-                [HaKeys]::Key([uint16]$vk, $false, $true)
+            if ([int]::TryParse($v, [ref]$vk) -and ([WsKeys]::GetAsyncKeyState($vk) -band 0x8000)) {
+                [WsKeys]::Key([uint16]$vk, $false, $true)
                 Write-Output ("Released a key a stopped helper left down (virtual key 0x{0:X2})." -f $vk)
             }
         }
@@ -123,19 +123,19 @@ foreach ($k in $Keys) {
     if (Others-Active) { Write-Output "ABORT: someone used the PC in the last $IdleSeconds s; no more keys sent."; exit 3 }
     if (-not $checked) { $checked = $true; Release-Stuck }
     Start-Sleep -Milliseconds 150
-    if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
+    if ([WsKeys]::GetForegroundWindow() -ne $hwnd) { Write-Output "ABORT: focus changed before $k"; exit 2 }
     Write-Output "Game foreground verified (PID $($p.Id)): $k"
     if ($Probe -and -not $script:probed) {
         # Some minutes after a launch, a Windows overlay (Game Bar's launch panel, it seems)
         # can swallow injected letters, digits, space, enter and arrows while F-keys and
         # modifiers still pass (Oct 7). Probe once with an unused key pair before sending.
         $script:probed = $true
-        [HaKeys]::Key(0x7E, $false, $false); Start-Sleep -Milliseconds 40
-        $fkey = [HaKeys]::GetAsyncKeyState(0x7E); [HaKeys]::Key(0x7E, $false, $true)
+        [WsKeys]::Key(0x7E, $false, $false); Start-Sleep -Milliseconds 40
+        $fkey = [WsKeys]::GetAsyncKeyState(0x7E); [WsKeys]::Key(0x7E, $false, $true)
         if ($fkey -band 0x8000) {
             # F15 lands; does a letter? (B: bound by neither the game nor the mod.)
-            [HaKeys]::Key(0x42, $false, $false); Start-Sleep -Milliseconds 40
-            $letter = [HaKeys]::GetAsyncKeyState(0x42); [HaKeys]::Key(0x42, $false, $true)
+            [WsKeys]::Key(0x42, $false, $false); Start-Sleep -Milliseconds 40
+            $letter = [WsKeys]::GetAsyncKeyState(0x42); [WsKeys]::Key(0x42, $false, $true)
             if (-not ($letter -band 0x8000)) { Write-Output "WARNING: injected letters are being swallowed (an overlay holds the keyboard); keys may not reach the game." }
         }
     }
@@ -152,13 +152,13 @@ foreach ($k in $Keys) {
     if ($Post) {
         # Straight to the game's window: nothing can reach another window this way.
         $ext = $extended -contains $name
-        if ($ctrl) { [HaKeys]::Post($hwnd, 0x11, $false, $false) }
-        if ($shift) { [HaKeys]::Post($hwnd, 0x10, $false, $false) }
-        [HaKeys]::Post($hwnd, $vk, $ext, $false)
+        if ($ctrl) { [WsKeys]::Post($hwnd, 0x11, $false, $false) }
+        if ($shift) { [WsKeys]::Post($hwnd, 0x10, $false, $false) }
+        [WsKeys]::Post($hwnd, $vk, $ext, $false)
         Start-Sleep -Milliseconds $hold
-        [HaKeys]::Post($hwnd, $vk, $ext, $true)
-        if ($shift) { [HaKeys]::Post($hwnd, 0x10, $false, $true) }
-        if ($ctrl) { [HaKeys]::Post($hwnd, 0x11, $false, $true) }
+        [WsKeys]::Post($hwnd, $vk, $ext, $true)
+        if ($shift) { [WsKeys]::Post($hwnd, 0x10, $false, $true) }
+        if ($ctrl) { [WsKeys]::Post($hwnd, 0x11, $false, $true) }
         Start-Sleep -Milliseconds $DelayMs
         continue
     }
@@ -168,18 +168,18 @@ foreach ($k in $Keys) {
     if ($ctrl) { $holding += 0x11 }
     Note-Held $holding
     try {
-        if ($ctrl) { [HaKeys]::Key(0x11, $false, $false) }
-        if ($shift) { [HaKeys]::Key(0x10, $false, $false) }
-        [HaKeys]::Key($vk, $extended -contains $name, $false)
+        if ($ctrl) { [WsKeys]::Key(0x11, $false, $false) }
+        if ($shift) { [WsKeys]::Key(0x10, $false, $false) }
+        [WsKeys]::Key($vk, $extended -contains $name, $false)
         $held = [Diagnostics.Stopwatch]::StartNew()
         while ($held.ElapsedMilliseconds -lt $hold) {
-            if ([HaKeys]::GetForegroundWindow() -ne $hwnd) { $lostFocus = $true; break }
+            if ([WsKeys]::GetForegroundWindow() -ne $hwnd) { $lostFocus = $true; break }
             Start-Sleep -Milliseconds 20
         }
     } finally {
-        [HaKeys]::Key($vk, $extended -contains $name, $true)
-        if ($shift) { [HaKeys]::Key(0x10, $false, $true) }
-        if ($ctrl) { [HaKeys]::Key(0x11, $false, $true) }
+        [WsKeys]::Key($vk, $extended -contains $name, $true)
+        if ($shift) { [WsKeys]::Key(0x10, $false, $true) }
+        if ($ctrl) { [WsKeys]::Key(0x11, $false, $true) }
         Mark-Sent
         Remove-Item $heldFile -ErrorAction SilentlyContinue
     }

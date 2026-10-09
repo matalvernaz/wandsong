@@ -13,7 +13,7 @@ param([int]$IdleSeconds = 15)
 
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public class HaFocus {
+public class WsFocus {
  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO i);
  [DllImport("kernel32.dll")] public static extern uint GetTickCount();
@@ -46,30 +46,30 @@ public class HaFocus {
 $p = Get-Process HogwartsLegacy -ErrorAction SilentlyContinue | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
 if (-not $p -or $p.MainWindowHandle -eq [IntPtr]::Zero) { Write-Output "Hogwarts Legacy has no window."; exit 1 }
 $hwnd = $p.MainWindowHandle
-if ([HaFocus]::GetForegroundWindow() -eq $hwnd) { [HaFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is already in front."; exit 0 }
-$idle = [HaFocus]::IdleMs() / 1000
+if ([WsFocus]::GetForegroundWindow() -eq $hwnd) { [WsFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is already in front."; exit 0 }
+$idle = [WsFocus]::IdleMs() / 1000
 if ($idle -lt $IdleSeconds) {
     Write-Output ("Someone is using the PC (input {0:N0} s ago): not switching to the game." -f $idle)
     exit 2
 }
 for ($i = 0; $i -lt 4; $i++) {
-    if ([HaFocus]::IsIconic($hwnd)) { [void][HaFocus]::ShowWindow($hwnd, 9) }   # SW_RESTORE
-    $fg = [HaFocus]::GetForegroundWindow()
-    $fgThread = [HaFocus]::GetWindowThreadProcessId($fg, [IntPtr]::Zero)
-    $me = [HaFocus]::GetCurrentThreadId()
+    if ([WsFocus]::IsIconic($hwnd)) { [void][WsFocus]::ShowWindow($hwnd, 9) }   # SW_RESTORE
+    $fg = [WsFocus]::GetForegroundWindow()
+    $fgThread = [WsFocus]::GetWindowThreadProcessId($fg, [IntPtr]::Zero)
+    $me = [WsFocus]::GetCurrentThreadId()
     $attached = $false
-    if ($fgThread -ne 0 -and $fgThread -ne $me) { $attached = [HaFocus]::AttachThreadInput($me, $fgThread, $true) }
+    if ($fgThread -ne 0 -and $fgThread -ne $me) { $attached = [WsFocus]::AttachThreadInput($me, $fgThread, $true) }
     try {
-        [void][HaFocus]::BringWindowToTop($hwnd)
-        [void][HaFocus]::SetForegroundWindow($hwnd)
+        [void][WsFocus]::BringWindowToTop($hwnd)
+        [void][WsFocus]::SetForegroundWindow($hwnd)
     } finally {
-        if ($attached) { [void][HaFocus]::AttachThreadInput($me, $fgThread, $false) }
+        if ($attached) { [void][WsFocus]::AttachThreadInput($me, $fgThread, $false) }
     }
     Start-Sleep -Milliseconds 300
-    if ([HaFocus]::GetForegroundWindow() -eq $hwnd) { [HaFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is in front."; exit 0 }
-    [HaFocus]::SwitchToThisWindow($hwnd, $true)
+    if ([WsFocus]::GetForegroundWindow() -eq $hwnd) { [WsFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is in front."; exit 0 }
+    [WsFocus]::SwitchToThisWindow($hwnd, $true)
     Start-Sleep -Milliseconds 500
-    if ([HaFocus]::GetForegroundWindow() -eq $hwnd) { [HaFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is in front."; exit 0 }
+    if ([WsFocus]::GetForegroundWindow() -eq $hwnd) { [WsFocus]::NudgeFocus($hwnd); Write-Output "Hogwarts Legacy is in front."; exit 0 }
 }
 Write-Output "Windows didn't let the game come to the front; nothing was sent."
 exit 1

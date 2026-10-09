@@ -9,7 +9,7 @@ param([int]$Seconds = 300, [int]$Block = 0x51, [int]$Dodge = 0xA2, [switch]$Post
 
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public class HaReflex {
+public class WsReflex {
  [StructLayout(LayoutKind.Sequential)] public struct KI { public ushort vk, scan; public uint flags, time; public UIntPtr extra; public long padA; }
  [StructLayout(LayoutKind.Sequential)] public struct IN { public uint type; public uint pad; public KI ki; }
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, IN[] i, int size);
@@ -42,18 +42,18 @@ $reader = New-Object IO.StreamReader($fs)
 
 $heldNote = Join-Path $env:TEMP 'wandsong_keys_held_reflex.txt'
 function Press([int]$vk, [string]$why) {
-    if ([HaReflex]::GetForegroundWindow() -ne $hwnd) { Write-Output "$(Get-Date -Format HH:mm:ss.fff) skipped ($why): the game isn't in front"; return }
+    if ([WsReflex]::GetForegroundWindow() -ne $hwnd) { Write-Output "$(Get-Date -Format HH:mm:ss.fff) skipped ($why): the game isn't in front"; return }
     if ($Post) {
         # Straight to the game's window (see sendkeys.ps1 -Post).
-        [HaReflex]::Post($hwnd, [uint32]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Post($hwnd, [uint32]$vk, $true)
+        [WsReflex]::Post($hwnd, [uint32]$vk, $false); Start-Sleep -Milliseconds 120; [WsReflex]::Post($hwnd, [uint32]$vk, $true)
     } else {
         # Noted while down: if this helper is stopped mid-press, sendkeys.ps1 releases it later
         # (a key left down makes the mod read every later key as a chord: its keys go dead).
         Set-Content -Path $heldNote -Value $vk
-        [HaReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [HaReflex]::Key([uint16]$vk, $true)
+        [WsReflex]::Key([uint16]$vk, $false); Start-Sleep -Milliseconds 120; [WsReflex]::Key([uint16]$vk, $true)
         Remove-Item $heldNote -ErrorAction SilentlyContinue
         # Injected keys count as input: sendkeys.ps1 tells them from someone using the PC by this.
-        Set-Content -Path (Join-Path $env:TEMP 'wandsong_keys_sent.txt') -Value ([HaReflex]::GetTickCount())
+        Set-Content -Path (Join-Path $env:TEMP 'wandsong_keys_sent.txt') -Value ([WsReflex]::GetTickCount())
     }
     Write-Output "$(Get-Date -Format HH:mm:ss.fff) pressed $why"
 }

@@ -4,7 +4,7 @@
 param([int]$Dx = 0, [int]$Dy = 0, [int]$Steps = 10, [int]$DelayMs = 10)
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public class HaMouse {
+public class WsMouse {
  [StructLayout(LayoutKind.Sequential)] public struct MI { public int dx, dy; public uint data, flags, time; public UIntPtr extra; }
  [StructLayout(LayoutKind.Sequential)] public struct IN { public uint type; public uint pad; public MI mi; }
  [DllImport("user32.dll")] public static extern uint SendInput(uint n, IN[] i, int size);
@@ -14,8 +14,8 @@ public class HaMouse {
 '@
 $p = Get-Process HogwartsLegacy -ErrorAction SilentlyContinue | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
 if (-not $p) { Write-Output "Hogwarts Legacy is not running."; exit 1 }
-if ([HaMouse]::GetForegroundWindow() -ne $p.MainWindowHandle) { Write-Output "ABORT: Hogwarts Legacy is not in front"; exit 2 }
+if ([WsMouse]::GetForegroundWindow() -ne $p.MainWindowHandle) { Write-Output "ABORT: Hogwarts Legacy is not in front"; exit 2 }
 for ($i = 0; $i -lt $Steps; $i++) {
-    [HaMouse]::Move([int]($Dx / $Steps), [int]($Dy / $Steps))
+    [WsMouse]::Move([int]($Dx / $Steps), [int]($Dy / $Steps))
     Start-Sleep -Milliseconds $DelayMs
 }

@@ -5,17 +5,17 @@ param([string]$Out = "$env:TEMP\hl_shot.jpg", [int]$Width = 960, [int]$Quality =
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public class HaShot {
+public class WsShot {
  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 }
 '@
-[void][HaShot]::SetProcessDPIAware()
+[void][WsShot]::SetProcessDPIAware()
 $p = Get-Process HogwartsLegacy -ErrorAction SilentlyContinue | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
 if (-not $p) { Write-Output "Hogwarts Legacy is not running."; exit 1 }
-$r = New-Object HaShot+RECT
-[void][HaShot]::GetWindowRect($p.MainWindowHandle, [ref]$r)
+$r = New-Object WsShot+RECT
+[void][WsShot]::GetWindowRect($p.MainWindowHandle, [ref]$r)
 $w = $r.R - $r.L; $h = $r.B - $r.T
 $bmp = New-Object System.Drawing.Bitmap $w, $h
 $g = [System.Drawing.Graphics]::FromImage($bmp)

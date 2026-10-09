@@ -9,7 +9,7 @@ param([int]$Minutes = 240)
 
 Add-Type -ReferencedAssemblies System.Windows.Forms @'
 using System; using System.Runtime.InteropServices; using System.Windows.Forms;
-public class HaInputWatch : NativeWindow {
+public class WsInputWatch : NativeWindow {
  [StructLayout(LayoutKind.Sequential)] struct RID { public ushort page, usage; public uint flags; public IntPtr target; }
  [StructLayout(LayoutKind.Sequential)] struct HDR { public uint type, size; public IntPtr device, wparam; }
  [StructLayout(LayoutKind.Sequential)] struct LII { public uint cbSize; public uint dwTime; }
@@ -18,7 +18,7 @@ public class HaInputWatch : NativeWindow {
  [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LII i);
  [DllImport("kernel32.dll")] public static extern uint GetTickCount();
  public static uint LastPhysical;
- public HaInputWatch() {
+ public WsInputWatch() {
   // Input before the watch started may have been anyone's: count it as physical.
   var l = new LII(); l.cbSize = 8; GetLastInputInfo(ref l); LastPhysical = l.dwTime;
   CreateHandle(new CreateParams());
@@ -39,12 +39,12 @@ public class HaInputWatch : NativeWindow {
 '@
 
 $file = Join-Path $env:TEMP 'wandsong_physical_input.txt'
-$watch = New-Object HaInputWatch
+$watch = New-Object WsInputWatch
 $end = (Get-Date).AddMinutes($Minutes)
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 250
 $timer.add_Tick({
-    Set-Content -Path $file -Value ("{0} {1}" -f [HaInputWatch]::GetTickCount(), [HaInputWatch]::LastPhysical)
+    Set-Content -Path $file -Value ("{0} {1}" -f [WsInputWatch]::GetTickCount(), [WsInputWatch]::LastPhysical)
     if ((Get-Date) -gt $end) { $timer.Stop(); [System.Windows.Forms.Application]::Exit() }
 })
 $timer.Start()
