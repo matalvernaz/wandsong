@@ -836,8 +836,13 @@ label_for = function(button)
         local n = fname(owner)
         local selected = is_selected(owner)
         if n:match("_C_%d%d%d%d%d+$") then
+            -- Only character presets have presetGender: on other tiles (the save list's slots, Oct 9)
+            -- UE4SS hands back an object for the missing field, said as "style UObject: 0000...".
             local variant
-            pcall(function() variant = owner.presetGender end)
+            pcall(function()
+                local v = owner.presetGender
+                if type(v) == "number" or type(v) == "string" or type(v) == "boolean" then variant = v end
+            end)
             return nil, { weak = true, group = cls_name(owner), selected = selected, variant = variant }
         end
         if n:find("[Ss]lider") then return "Slider", { slider = true } end
@@ -1071,7 +1076,7 @@ local function finish_labels(items)
                 desc = PRESET_DESCRIPTIONS[seen_n[it.group]]
             end
             local noun = (it.section and it.section ~= heading) and it.section or group_noun(base)
-            it.text = noun .. " " .. seen_n[it.group] .. " of " .. totals[it.group] ..
+            it.text = noun .. (totals[it.group] > 1 and (" " .. seen_n[it.group] .. " of " .. totals[it.group]) or "") ..
                       (variant and (", style " .. (tonumber(variant) and tonumber(variant) + 1 or variant)) or "") ..
                       (desc and (": " .. desc) or "") ..
                       (it.selected and ", selected" or "")
