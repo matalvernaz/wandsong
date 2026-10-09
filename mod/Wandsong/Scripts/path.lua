@@ -1033,6 +1033,7 @@ end, "stay close")
 
 local function where_am_i()
     if state.steering then return end   -- steering a spell lesson's wand (spells.lua)
+    if state.choice_step and state.choice_step(-1) then return end   -- a dialogue reply (menus.lua)
     -- In menus the up arrow moves up the list.
     if not world.in_game() then
         if state.menu_step and not world.gameplay() then state.menu_step(-1)
@@ -1098,6 +1099,7 @@ keys.action{ id = "turn_right_big", name = "Turn right 90 degrees", group = "In 
 keys.action{ id = "turn_around", name = "Turn around (in menus: next item)", group = "In the world", default = "down_arrow",
              run = function()
                  if state.steering then return end
+                 if state.choice_step and state.choice_step(1) then return end   -- a dialogue reply
                  if not world.in_game() then
                      if state.menu_step and not world.gameplay() then state.menu_step(1)
                      elseif world.gameplay() then speech.say(world.not_ready_reason()) end

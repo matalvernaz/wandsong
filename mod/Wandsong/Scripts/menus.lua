@@ -259,6 +259,134 @@ local function is_loading_class(cls)
     return cls:find("LoadingScreen", 1, true) or cls == "UI_BP_PSO_FS_C"
 end
 
+-- --- Dialogue choices ------------------------------------------------------------------------
+-- The game's option panel (UI_BP_OptionPanel_C) comes up mid-scene, and its reader names only the
+-- reply in focus. In the Sorting (Oct 8) Matt pressed the arrows ("That works once this scene
+-- ends"), then the review keys ("Nothing to read on this screen", "No menu is open"), and didn't
+-- know Enter says the reply. So each reply read says its place ("1 of 3"), the first choice of a
+-- session says how to choose, and the up and down arrows and the review keys move through the
+-- replies and the press key says one, through the panel's own input actions (what W, S and Enter
+-- send). The arrows are free there: the game binds them to nothing in conversations.
+local CHOICE_PREV, CHOICE_NEXT, CHOICE_CONFIRM = 52, 53, 54   -- EUMGInputAction values
+local CHOICE_UP_FOR = 600     -- seconds a choice counts as up after its last read
+local choice_up_at = nil      -- when a reply was last read out; nil once one is said
+local choice_taught = false
+local choice_moved_at, choice_read_at = -10, -10
+local function is_choice_class(cls) return cls:find("OptionPanel", 1, true) ~= nil end
+
+--- The focused reply's place and the number of replies, from the panel's own fields (read on the
+--- panel the game has just read out); nil when they don't add up.
+local function choice_position(panel)
+    local index, max, total, shown
+    pcall(function() index = panel.CurrentIndex end)
+    pcall(function() max = panel.maxOptionIndex end)
+    pcall(function()
+        local n, s = 0, 0
+        panel.OptionsArray:ForEach(function(_, e)
+            n = n + 1
+            local v
+            pcall(function() v = e:get().Visibility end)
+            if v ~= nil and v ~= 1 and v ~= 2 then s = s + 1 end   -- neither collapsed nor hidden
+        end)
+        total, shown = n, s
+    end)
+    log(string.format("choice: index %s, max index %s, buttons %s, shown %s",
+        tostring(index), tostring(max), tostring(total), tostring(shown)))
+    local count = (shown and shown > 0) and shown or (math.type(max) == "integer" and max + 1) or nil
+    if math.type(index) ~= "integer" or not count or count < 2 or count > 9 or index < 0 or index >= count then
+        return nil
+    end
+    return index + 1, count
+end
+
+local function choice_hint()
+    local b = require("bindings")
+    return "Up and down arrows, or " .. b.spoken("UMGOptionPanelPrevious", "W") .. " and " ..
+           b.spoken("UMGOptionPanelNext", "S") .. ", choose a reply; " ..
+           b.spoken("UMGOptionPanelConfirm", "Enter") .. " says it."
+end
+
+--- A reply the game read out, followed by its place and, the first time, how to choose.
+local function with_choice_words(text, panel)
+    choice_up_at, choice_read_at = os.clock(), os.clock()
+    local pos, count = choice_position(panel)
+    local words = pos and (pos .. " of " .. count) or ""
+    if not choice_taught then
+        choice_taught = true
+        words = (words ~= "" and words .. ". " or "") .. choice_hint()
+    end
+    if words == "" then return text end
+    return text .. (text:match("[%.!?]$") and " " or ". ") .. words
+end
+
+local function choice_active()
+    if not choice_up_at or state.loading() or os.clock() - choice_up_at > CHOICE_UP_FOR then return false end
+    if require("world").in_game() then choice_up_at = nil; return false end   -- play has resumed
+    return true
+end
+
+-- What W, S and Enter send, fed to the game's UMG input manager (press, then release).
+local function send_choice(action)
+    if state.loading() then return false end
+    local mgr = FindFirstOf("UMGInputManager")
+    if not (mgr and mgr:IsValid()) then log("no UMGInputManager"); return false end
+    local ok, err = pcall(function() mgr:OnInputAction(action, 0) end)
+    if not ok then log("choice action failed: " .. tostring(err)); return false end
+    dispatch.later(50, function()
+        local fresh = FindFirstOf("UMGInputManager")
+        pcall(function() if fresh and fresh:IsValid() then fresh:OnInputAction(action, 1) end end)
+    end, "choice key release", true)
+    log("sent choice action " .. action)
+    return true
+end
+
+-- Should the game not read the new reply out itself, read it here from the panel found afresh.
+local function read_choice_now()
+    for _, panel in ipairs(FindAllOf("UI_BP_OptionPanel_C") or {}) do
+        local name, up = "", false
+        pcall(function() name = panel:GetFullName() end)
+        if not name:find("Default__", 1, true) then pcall(function() up = panel:IsInViewport() == true end) end
+        if up then
+            local parts = gather(panel, 1)
+            if not parts or #parts == 0 then parts = gather(panel, 0) end
+            local cleaned = {}
+            for _, p in ipairs(parts or {}) do
+                local c = clean(p)
+                if c ~= "" then cleaned[#cleaned + 1] = c end
+            end
+            local text = rewrite(table.concat(legend_order(cleaned), ", "))
+            log("choice read by the mod -> " .. text)
+            if text ~= "" then speak(with_choice_words(text, panel)) end
+            return
+        end
+    end
+end
+
+--- Up/down arrows and the review keys while a reply is to be chosen: true when they were used.
+state.choice_step = function(delta)
+    if not choice_active() then return false end
+    if not send_choice(delta < 0 and CHOICE_PREV or CHOICE_NEXT) then
+        speak("That didn't move to another reply. Try " .. require("bindings").spoken("UMGOptionPanelNext", "S") .. ".")
+        return true
+    end
+    local moved = os.clock()
+    choice_moved_at = moved
+    dispatch.later(400, function()
+        if choice_read_at < moved and choice_active() then read_choice_now() end
+    end, "choice read")
+    return true
+end
+--- The press key says the reply in focus.
+state.choice_confirm = function()
+    if not choice_active() then return false end
+    if send_choice(CHOICE_CONFIRM) then choice_up_at = nil end
+    return true
+end
+-- Saying a reply (or leaving the conversation) with the game's own keys ends the choice too.
+keys.observe(function(combo)
+    if choice_up_at and (combo == "enter" or combo == "space" or combo == "escape") then choice_up_at = nil end
+end)
+
 -- Handles one ReadMenu call, on the dispatcher's next tick (never inside the hook itself).
 local tips_reset_at = -100
 local function on_read_menu(widget)
@@ -300,6 +428,8 @@ local function on_read_menu(widget)
         if c ~= "" then cleaned[#cleaned + 1] = c end
     end
     local text = rewrite(table.concat(legend_order(cleaned), ", "))
+    -- A dialogue reply: its place among the replies, and the first time, how to choose.
+    if is_choice_class(cls) and text ~= "" then text = with_choice_words(text, widget) end
     if cls:find("Tutorial_NonModal", 1, true) and text ~= "" then
         local items = {}
         for _, part in ipairs(legend_order(cleaned)) do items[#items + 1] = { text = rewrite(part) } end
@@ -1108,6 +1238,7 @@ local function read_details()
 end
 
 local function step(delta, buttons_only, with_position)
+    if state.choice_step(delta) then return end   -- a dialogue reply to choose
     if not refresh() or #review_items == 0 then nothing_to_read("Nothing to read on this screen"); return end
     local i = review_index
     repeat
@@ -1382,6 +1513,7 @@ end)
 -- instead of pressing whatever now sits at that position.
 local function press_current()
     if state.activity and not virtual and state.activity.press then state.activity.press(); return end
+    if not virtual and state.choice_confirm() then return end   -- says the dialogue reply in focus
     local before, prev = review_top, review_items[review_index]
     if not refresh() then nothing_to_read("No menu is open."); return end
     local item = review_items[review_index]
