@@ -1,6 +1,7 @@
 # Roadmap (2026-10-06): following a reference access mod
 
-Matt's direction (Oct 6): base Wandsong on a reference access mod for another game as much as possible. Its player's guide is the reference design: what it does, the keys it
+Matt's direction (Oct 6): base Wandsong on a reference access mod for another game as
+much as possible. Its player's guide is the reference design: what it does, the keys it
 uses and how it talks. This file maps each of its features onto Hogwarts Legacy, marks what we
 have, and orders the rest. Deliberate differences are listed at the end with the reason.
 

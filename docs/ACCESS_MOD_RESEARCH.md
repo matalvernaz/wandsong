@@ -1,6 +1,7 @@
 # Access mod conventions (research, 2026-10-02)
 
-Sources: project docs of several open-source game access mods; reviews of A Hero's Call and Swamp; TLOU2 accessibility blog.
+Sources: project docs of several open-source game access mods; reviews of A Hero's Call and
+Swamp; TLOU2 accessibility blog.
 
 ## Ideas to borrow
 - **Buffers:** focus speaks a short label; Ctrl+Up/Down walks the focused

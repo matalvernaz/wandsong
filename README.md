@@ -201,9 +201,10 @@ Layout:
 - [Prism](https://github.com/ethindp/prism) (MPL 2.0) handles screen reader and voice output;
   its notices are in the licenses folder of each release.
 - The in-process speech and click modules (native/prism_bridge.c, native/click_bridge.cpp)
-  are adapted, with permission,
-  from another access mod's code. They statically link Lua 5.4.4 (MIT), the version UE4SS embeds.
-- Ideas borrowed with thanks from other access mods, and from the audio games A Hero's Call and Swamp.
+  are adapted, with permission, from another access mod's code. They statically link
+  Lua 5.4.4 (MIT), the version UE4SS embeds.
+- Ideas borrowed with thanks from other access mods, and from the audio games A Hero's Call
+  and Swamp.
 
 Wandsong is a fan-made accessibility mod. It is not affiliated with or endorsed by
 Warner Bros. Games, Avalanche Software or Portkey Games, and it needs a legitimate copy of the
