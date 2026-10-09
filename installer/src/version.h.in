@@ -1,4 +1,4 @@
-// Written by CMake from version.h.in (tools/build_release.ps1 passes -DHA_VERSION=<version>).
+// Written by CMake from version.h.in (tools/build_release.ps1 passes -DWANDSONG_VERSION=<version>).
 #pragma once
-#define HA_VERSION_STR "@HA_VERSION@"
-#define HA_VERSION_NUM @HA_VERSION_MAJOR@,@HA_VERSION_MINOR@,@HA_VERSION_PATCH@,0
+#define WANDSONG_VERSION_STR "@WANDSONG_VERSION@"
+#define WANDSONG_VERSION_NUM @WANDSONG_VERSION_MAJOR@,@WANDSONG_VERSION_MINOR@,@WANDSONG_VERSION_PATCH@,0

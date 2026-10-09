@@ -77,7 +77,7 @@ function Write-Pack($exeIn, $dir, $exeOut) {
 Fetch-Prism
 Fetch-UE4SS
 Build "helper"
-Build "installer" @("-DHA_VERSION=$Version")
+Build "installer" @("-DWANDSONG_VERSION=$Version")
 Build "native"
 
 # Everything that goes into the game's Win64 folder, as it will be laid out there.

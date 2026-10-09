@@ -2,8 +2,8 @@
 #include "version.h"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION HA_VERSION_NUM
- PRODUCTVERSION HA_VERSION_NUM
+ FILEVERSION WANDSONG_VERSION_NUM
+ PRODUCTVERSION WANDSONG_VERSION_NUM
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
 BEGIN
@@ -13,11 +13,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Wandsong contributors"
       VALUE "FileDescription", "Wandsong setup"
-      VALUE "FileVersion", HA_VERSION_STR
+      VALUE "FileVersion", WANDSONG_VERSION_STR
       VALUE "InternalName", "WandsongSetup"
       VALUE "OriginalFilename", "WandsongSetup.exe"
       VALUE "ProductName", "Wandsong"
-      VALUE "ProductVersion", HA_VERSION_STR
+      VALUE "ProductVersion", WANDSONG_VERSION_STR
     END
   END
   BLOCK "VarFileInfo"

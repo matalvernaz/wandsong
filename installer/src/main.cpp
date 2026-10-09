@@ -40,7 +40,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr char kVersion[] = HA_VERSION_STR;
+constexpr char kVersion[] = WANDSONG_VERSION_STR;
 constexpr char kSteamAppId[] = "990080";
 const fs::path kBinRel = fs::path("Phoenix") / "Binaries" / "Win64";
 const fs::path kBackupDir = "Wandsong-backup";
