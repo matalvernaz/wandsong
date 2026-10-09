@@ -90,11 +90,12 @@ end
 -- The key a checkpoint asks for (EUMGInputAction 77-80 = UMGSpellMinigameOption1-4).
 local OPTIONS = { [77] = { "UMGSpellMinigameOption1", "SpaceBar" }, [78] = { "UMGSpellMinigameOption2", "F" },
                   [79] = { "UMGSpellMinigameOption3" }, [80] = { "UMGSpellMinigameOption4" } }
+--- The key to name for a checkpoint, and true when the press key stands in for it: options 3
+--- and 4 are mouse buttons in the game, and any option can be left without a keyboard key.
+--- M.press answers a checkpoint by the same rule.
 local function option_key(code)
     local o = OPTIONS[code]
     if not o then return nil end
-    -- Options 3 and 4 are mouse buttons in the game: the press key stands in for them.
-    if not o[2] then return press_key(), true end
     local k = bindings.key(o[1], o[2])
     if not k or not bindings.virtual_key(k) then return press_key(), true end
     return bindings.spoken(o[1], o[2]), false
@@ -462,8 +463,8 @@ function M.press()
         speech.say("Spell tracing assistance stopped.")
         return
     end
-    -- Tracing by ear: a mouse-button checkpoint is open, and this key stands in for it.
-    if lesson.mode == "adapted" and lesson.window_code and lesson.window_code >= 79 then
+    -- Tracing by ear: a checkpoint is open that was named as this key (no keyboard key of its own).
+    if lesson.mode == "adapted" and lesson.window_code and select(2, option_key(lesson.window_code)) then
         if action(lesson.window_code) then log("checkpoint by press key " .. lesson.window_code) end
         return
     end
