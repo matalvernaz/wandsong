@@ -7,6 +7,52 @@ marked. Timed ones: name it before it comes, one sound means now, never drown sp
 None of this is built. Each needs the game's own data probed first (positions, angles, states).
 Ordered by when bob meets them in the story.
 
+## The ones already built, redesigned
+
+Matt (Oct 8): the spell lessons and the knight statues work, but aren't well designed.
+
+### Spell lessons: a rhythm game instead of steering
+
+Now: strokes named by their arrows a moment early, held arrows steer the wand, each
+checkpoint's key named before its window and a chime for "now". Steering a continuous path by
+ear is the hard part, and nothing lets you learn the shape before you're tracing it.
+
+- Learn the shape first, as a tune. [From Dots to Shapes](https://access.archive-ouverte.unige.ch/access/metadata/0ee8f9da-bc39-4e37-b14e-a7c478b135b7/download)
+  teaches blind pupils shapes with sound games, Simon and Point Connecting among them. For us:
+  before the lesson, play the symbol as notes, one per stroke: left and right by stereo, up
+  higher, down lower, longer strokes held longer. Replay it on a key; then perform it.
+- One sound per action, in time. [Beatstar](https://applevis.com/apps/mac/games/beatstar)
+  maps each sound to a button: press the right one for each sound, in time; one sound means
+  press nothing. For us: each stroke's arrow note on a beat, held while it lasts; each
+  checkpoint its own percussion hit meaning press now.
+- Say it before it's due. [Finger Dance](https://www.cs.uoregon.edu/Activities/Poster_Contest/2007/AaronPoster.pdf)
+  starts a drum roll one beat, half a beat or a quarter of a beat before each keystroke. For
+  us: a roll that ends exactly at each turn, so the change of arrow lands on the beat.
+- Start slow. [Blindfold Bop](https://www.perkins.org/resource/blindfold-bop-game-teach-voiceover-gestures/)
+  starts with long gaps and few actions and speeds up. For us: a slow practice pass at the
+  spell's own speed or less, before the real one.
+
+### Knight statues: a "seen" meter and a map of the room
+
+Now: each knight rings a bell, a hum along each knight's line of sight, a chord where they
+meet, standing counts, step directions. You still have to picture lines in a room you can't
+see.
+
+- Stealth games turn being seen into a sound. Audio stealth games such as
+  [Maroon Berets](https://eagalon.itch.io/maroonberets) and
+  [Shadows of the Circuit](https://applevis.com/forum/macos-mac-apps/new-release-shadows-circuit-audio-driven-stealth-game)
+  are about being or not being seen, and the
+  [design write-ups](https://amara.org/subtitles/4SwBdOk0E4LH/en/1/download/How%20Stealth%20Game%20Guards%20See%20and%20Hear%20%20School%20of%20Stealth%20Part%201.en.txt)
+  note that a visibility meter (Thief's light gem) has to become a sound without a screen.
+  For us: one sound in your head, not in the room: silent when no knight sees you, one voice
+  per knight that does, a full chord when all three do. Each knight's voice comes in as you
+  step into its gaze, so where the voices change is where its line is.
+- Explore the room as a map first. The [Audiom drawing editor](https://www.ski.org/event/digital-drawing-wysiwyg-editor-blind-users-here/)
+  lets blind users move over a canvas with the arrow keys and hear what's there. For us: a key
+  opens the puzzle as a small grid of the floor; arrows move over it, each square says how
+  many knights' gazes cross it and where the knights stand. You find the spot on the map, then
+  walk there yourself, as a sighted player sees the beams and walks to them.
+
 ## Flying class and broom races: rings in the sky
 
 - [Audio Rally Racing](https://inviocean.com/games-catalog/audio-rally-racing-en/): a co-driver
