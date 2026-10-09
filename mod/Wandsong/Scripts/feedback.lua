@@ -108,6 +108,9 @@ function M.translate(key)
 end
 
 -- What a notification says aloud, or nil for one with nothing readable.
+--- True while the game shows an interaction prompt (hotspots.lua stays out of its way).
+function M.prompt_active() return active_prompt ~= nil end
+
 -- A spell just unlocked, with the key that casts it: the game may stop time right after until
 -- it's cast (Oct 9: after "New Spell Unlocked: Protego" the vault waited for Q, and nothing said so).
 local SPELL_KEYS = { Protego = { "AM_Protego", "Q" }, ["Basic Cast"] = { "AM_Stupefy", "LeftMouseButton" } }
