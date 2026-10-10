@@ -36,6 +36,7 @@
 
 #include "lua.h"
 #include "lauxlib.h"
+#include "lua_lock.h"
 
 /* PRISM types only; we resolve the functions ourselves, so suppress its dllimport decls. */
 #define PRISM_STATIC
@@ -272,6 +273,7 @@ static const luaL_Reg prism_funcs[] = {
     {"set_volume", l_set_volume},
     {"set_pitch", l_set_pitch},
     {"is_ready", l_is_ready},
+    {"lua_lock", wandsong_lua_lock_report},
     {NULL, NULL}
 };
 
@@ -296,7 +298,7 @@ static HMODULE load_from_own_dir(const char* dllName) {
 }
 
 #define RESOLVE(var, name) do { \
-    (var) = (void*)GetProcAddress(g_prism, (name)); \
+    (var) = reinterpret_cast<decltype(var)>(GetProcAddress(g_prism, (name))); \
     if (!(var)) { all = 0; } \
 } while (0)
 
@@ -304,10 +306,11 @@ static HMODULE load_from_own_dir(const char* dllName) {
  * whole module. Everything the mod says goes through here, so a prism.dll that predates an
  * export must never cost the player their screen reader over a nice-to-have. */
 #define RESOLVE_OPT(var, name) do { \
-    (var) = (void*)GetProcAddress(g_prism, (name)); \
+    (var) = reinterpret_cast<decltype(var)>(GetProcAddress(g_prism, (name))); \
 } while (0)
 
-__declspec(dllexport) int luaopen_prism_bridge(lua_State *L) {
+/* Built as C++ (CMakeLists.txt): the loader looks the name up unmangled. */
+extern "C" __declspec(dllexport) int luaopen_prism_bridge(lua_State *L) {
     char modDir[MAX_PATH];
     DWORD dirLen;
     BOOL dirSet = FALSE;

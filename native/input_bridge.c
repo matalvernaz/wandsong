@@ -15,6 +15,7 @@
 #include <windows.h>
 #include "lua.h"
 #include "lauxlib.h"
+#include "lua_lock.h"
 
 static int game_focused(void) {
     HWND w = GetForegroundWindow();
@@ -81,10 +82,12 @@ static const luaL_Reg funcs[] = {
     {"down", l_down},
     {"key", l_key},
     {"mouse_move", l_mouse_move},
+    {"lua_lock", wandsong_lua_lock_report},
     {NULL, NULL},
 };
 
-__declspec(dllexport) int luaopen_input_bridge(lua_State *L) {
+/* Built as C++ (CMakeLists.txt): the loader looks the name up unmangled. */
+extern "C" __declspec(dllexport) int luaopen_input_bridge(lua_State *L) {
     luaL_newlib(L, funcs);
     return 1;
 }

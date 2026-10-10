@@ -32,10 +32,10 @@
 #include <new>
 #include <unordered_map>
 
-extern "C" {
+// Lua is built as C++ here, as UE4SS builds its own (CMakeLists.txt): no extern "C".
 #include "lua.h"
 #include "lauxlib.h"
-}
+#include "lua_lock.h"
 
 namespace {
 
@@ -219,7 +219,7 @@ int l_test_notify(lua_State* L) {
 
 const luaL_Reg kFuncs[] = {
     {"start", l_start}, {"watch", l_watch}, {"alive", l_alive}, {"forget", l_forget},
-    {"clear", l_clear}, {"stats", l_stats}, {"test_notify", l_test_notify}, {nullptr, nullptr},
+    {"clear", l_clear}, {"stats", l_stats}, {"test_notify", l_test_notify}, {"lua_lock", wandsong_lua_lock_report}, {nullptr, nullptr},
 };
 
 }  // namespace

@@ -91,6 +91,12 @@ require("dispatch").every(1000, function()
     if out then out:write((ok and "ok\n" or "error\n") .. res .. "\n"); out:close() end
 end, "dev request")
 
+-- Which lock each native module's Lua copy takes (native/lua_lock.cpp): UE4SS 3.0.1's, or why not.
+for _, name in ipairs(host.NATIVE) do
+    local m = package.loaded[name]
+    if type(m) == "table" and m.lua_lock then diag.log(name .. ": " .. tostring(m.lua_lock())) end
+end
+
 speech.say("Wandsong ready. Semicolon for help.")
 if host.problem then speech.say(host.problem, true) end
 print("[Wandsong] loaded\n")

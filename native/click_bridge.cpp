@@ -10,10 +10,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-extern "C" {
+// Lua is built as C++ here, as UE4SS builds its own (CMakeLists.txt): no extern "C".
 #include "lua.h"
 #include "lauxlib.h"
-}
+#include "lua_lock.h"
 
 struct FWeakObjectPtrLayout { int32_t object_index; int32_t object_serial_number; };
 struct FNameLayout { uint32_t comparison_index; uint32_t number; };
@@ -182,7 +182,7 @@ static const luaL_Reg functions[] = {
     {"broadcast_dropdown_changed", l_broadcast_dropdown_changed},
     {"broadcast_capture_begin", l_broadcast_capture_begin},
     {"broadcast_capture_end", l_broadcast_capture_end},
-    {nullptr, nullptr}
+    {"lua_lock", wandsong_lua_lock_report}, {nullptr, nullptr}
 };
 
 extern "C" __declspec(dllexport) int luaopen_click_bridge(lua_State* L) {

@@ -32,10 +32,10 @@
 #include <string>
 #include <vector>
 
-extern "C" {
+// Lua is built as C++ here, as UE4SS builds its own (CMakeLists.txt): no extern "C".
 #include "lua.h"
 #include "lauxlib.h"
-}
+#include "lua_lock.h"
 
 namespace {
 
@@ -392,7 +392,7 @@ const luaL_Reg kFuncs[] = {
     {"init", l_init}, {"listener", l_listener}, {"play", l_play}, {"play_ui", l_play_ui},
     {"loop", l_loop}, {"stop", l_stop}, {"stop_all", l_stop_all}, {"sounds", l_sounds},
     {"playing", l_playing},
-    {nullptr, nullptr}};
+    {"lua_lock", wandsong_lua_lock_report}, {nullptr, nullptr}};
 
 }  // namespace
 

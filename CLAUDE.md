@@ -258,8 +258,10 @@ In the game's Mods\Wandsong\ folder:
   hop, climb, ledge; stop_all stops one-shots already playing, playing() counts them),
   input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
-  forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 51 checks including syntax, startup, controls, registry cleanup, dispatcher,
+  forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version) built as UE4SS builds its
+  own: as C++ and taking UE4SS's global Lua lock (lua_lock.h, lua_lock.cpp; each module's
+  lua_lock() says which), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
+- native/tests/: 52 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also
@@ -267,6 +269,16 @@ In the game's Mods\Wandsong\ folder:
 
 ## Hard-won rules (each one cost a crash)
 
+- The native modules' Lua copy must be built exactly as UE4SS builds its own Lua 5.4.4: as C++
+  (errors are C++ throws there; a C copy's longjmp would land in UE4SS's try/catch frames) and
+  with lua_lock/lua_unlock calling UE4SS's LuaLock/LuaUnlock, one global CRITICAL_SECTION
+  (LuaRaw/src/luauser.c; stock 5.4.4 otherwise). Lua releases that lock while any C function
+  runs, so without it a module's API calls, and the GC steps they trigger, ran beside Lua on
+  UE4SS's async thread: the Oct 9, 18:56 startup hang (a garbage to-be-closed list, the game
+  thread throwing forever), and likely the intermittent startup heap corruption. LuaLock and
+  LuaUnlock aren't exported: lua_lock.cpp finds them in the 3.0.1 release build by RVA after
+  checking its header and their code bytes, else runs unlocked and says so in the log. Modules
+  must never call lua_newthread or lua_close (UE4SS's luai_userstate hooks aren't in our copy).
 - Never keep UObjects between ticks, except through the deletion record: never use a held
   wrapper (not even IsValid) until lifetime.alive(address, serial) says it hasn't been deleted
   since it was found, and without the record running, never hold one. Otherwise keep the path
