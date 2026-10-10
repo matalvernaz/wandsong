@@ -62,8 +62,13 @@ in private temporary fake games; CI runs it alongside `tools/test_setup.ps1`.
    (and --check) ask GitHub for the latest release; a newer one is downloaded, checked against
    its published .sha256 and run with --install. Publish with tools\publish_release.ps1.
 4. UE4SS settings that matter (ue4ss/UE4SS-settings.ini is the template): EngineVersionOverride
-   4 / 27, GuiConsoleEnabled = 0, bUseUObjectArrayCache = false, only Keybinds plus
-   Wandsong enabled in mods.txt. Without these the game crashes early.
+   4 / 27, bUseUObjectArrayCache = false (UE4SS's own advice for crashes at startup), and the
+   consoles off (GuiConsoleEnabled = 0, ConsoleEnabled = 0); setup sets just these keys in an
+   existing ini. The shipped mods.txt enables only Keybinds plus Wandsong; setup adds Wandsong
+   to a player's existing list and leaves their other mods as they were. (An Oct 5 note said
+   other UE4SS mods crash the game early; no such crash was ever recorded, so it's unverified.)
+   UE4SS 3.0.1 is the newest release; its rolling test build carries Lua 5.4.7 and keeps its
+   files in Win64\ue4ss, which setup doesn't handle yet (host.lua guards the mod itself).
 5. Dev loop: close the game normally, edit, test, build the input module and deploy:
    ```
    powershell -ExecutionPolicy Bypass -File tools\update_for_testing.ps1
@@ -105,7 +110,13 @@ In the game's Mods\Wandsong\ folder:
 
 ## Architecture (mod/Wandsong/Scripts)
 
-- main.lua: load order (diag first), mark key (F8), ready message.
+- main.lua: load order (diag first, then host's check), mark key (F8), ready message.
+- host.lua: reads the Lua version from UE4SS.dll itself ("$LuaVersion: Lua 5.4.4"), two
+  folders up from the mod in both UE4SS layouts. The native modules carry their own Lua 5.4.4
+  and work on UE4SS's state, so on another Lua (UE4SS's rolling test build: Lua 5.4.7, yet
+  GetVersion says 3.0.1) package.preload keeps all five out, their users fall back (speech
+  through the helper program) and the ready message says to run setup. Unreadable: load as
+  before. dispatch.lua's 3.0.1 callback cleanup also requires Lua 5.4.4.
 - diag.lua: log and trace files; wraps print so every module's log lands in the file.
 - dispatch.lua: the one game-thread dispatcher (run, later, every), throttled to 100 ms through
   persistent Blueprint ReceiveTick/Tick hooks. At most one ExecuteInGameThread fallback is
@@ -248,7 +259,7 @@ In the game's Mods\Wandsong\ folder:
   input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 50 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 51 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also

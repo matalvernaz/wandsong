@@ -2,6 +2,9 @@
 -- Speech goes through the player's screen reader (via wandsong_helper.exe and Prism).
 
 local diag = require("diag")   -- first: it captures every later log line
+-- Before any native module loads: they're only safe on the Lua they were built with.
+local host = require("host")
+host.guard()
 local speech = require("speech")
 speech.start()
 
@@ -89,4 +92,5 @@ require("dispatch").every(1000, function()
 end, "dev request")
 
 speech.say("Wandsong ready. Semicolon for help.")
+if host.problem then speech.say(host.problem, true) end
 print("[Wandsong] loaded\n")

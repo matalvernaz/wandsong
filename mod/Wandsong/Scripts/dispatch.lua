@@ -216,7 +216,10 @@ end
 local clean_callback = false
 pcall(function()
     local a, b, c = UE4SS.GetVersion()
-    clean_callback = a == 3 and b == 0 and c == 1
+    -- UE4SS's test build calls itself 3.0.1 too; the release is the one with Lua 5.4.4
+    -- (host.lua; unread when main.lua didn't run the check).
+    local lua = require("host").lua
+    clean_callback = a == 3 and b == 0 and c == 1 and (lua == nil or lua == "5.4.4")
 end)
 local function fallback()
     if pending then return end
