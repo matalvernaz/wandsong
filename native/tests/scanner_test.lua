@@ -17,8 +17,10 @@ local things = {
     ["/Game/Upstairs"] = { kind = "person", name = "Student", pos = { 200, 0, 600 } },   -- closer, but a floor up
 }
 local px, py, pz = 0, 0, 0
+local tracked
 package.loaded["world"] = {
     in_game = function() return true end,
+    track = function(path) tracked = path end,
     position = function() return px, py, pz, 0 end,
     entries = function()
         local out = {}
@@ -43,8 +45,10 @@ for _, a in pairs(require("keys").actions()) do run[a.id] = a.run end
 
 run.scan_next()
 assert(said[#said]:find("^Professor fig, 4 metres, ahead, 1 of 4"), said[#said])
+assert(tracked == "/Game/Fig", "the thing named is the one tracked by sound")
 run.scan_next()
 assert(said[#said]:find("^Chest, 9 metres, right, 2 of 4"), said[#said])
+assert(tracked == "/Game/Chest", "the next one takes over the tracking")
 run.scan_next()
 assert(said[#said]:find("^Troll, 20 metres, behind, 3 of 4"), said[#said])
 run.scan_next()
@@ -52,17 +56,22 @@ assert(said[#said]:find("^Student, 6 metres, ahead, above, 4 of 4"), "other floo
 run.scan_next()
 assert(said[#said]:find("^Professor fig"), "wraps to the first: " .. said[#said])
 
--- Repeat gives a fresh distance after walking closer.
+-- Repeat gives a fresh distance after walking closer, and tracks it again (once reached, the
+-- world lets it go).
 px = 200
+tracked = nil
 run.scan_repeat()
 assert(faced == "/Game/Fig", "Home faces the selected actor")
 assert(said[#said]:find("^Professor fig, 2 metres"), "fresh distance: " .. said[#said])
+assert(tracked == "/Game/Fig", "Home tracks it again")
 
 -- Categories.
 run.scan_cat_next()
 assert(said[#said]:find("^People, 2 nearby"), said[#said])
+assert(tracked == "/Game/Fig", "a category tracks its first thing")
 run.scan_cat_next()
 assert(said[#said]:find("^Enemies, 1 nearby"), said[#said])
+assert(tracked == "/Game/Troll", tracked)
 
 -- A thing that disappears is skipped.
 run.scan_cat_prev(); run.scan_cat_prev()          -- back to everything

@@ -202,7 +202,11 @@ t.run(10)
 kind,name=kind_of("/Game/Vault.BP_AncientMagicHotSpot_Trial_2")
 assert(kind=="magic" and name=="Ancient magic hotspot","a hotspot 83 m away is tracked: "..tostring(kind).." "..tostring(name))
 assert(kind_of("/Game/Vault.BP_AncientMagicHotSpot_Fake")==nil,"a fake hotspot isn't")
-assert(notes>=2,"the hotspot's bell sounds from far off, got "..notes)
+assert(notes==1,"the hotspot's bell sounds from far off, once until it's picked or 20 s pass, got "..notes)
+world.track("/Game/Vault.BP_AncientMagicHotSpot_Trial_2")
+t.run(5)
+assert(notes>=4,"picked in the scanner, its bell keeps a beat from far off, got "..notes)
+world.track(nil)
 
 -- The quest-failed screen (Try Again / Exit) is a menu: the world stands down while it's up.
 local fail_up=true

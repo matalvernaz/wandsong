@@ -120,7 +120,9 @@ Help and speech:
 
 In the world:
 
-- Page Down/Up: next/previous nearby thing, with name, distance and direction.
+- Page Down/Up: next/previous nearby thing, with name, distance and direction. The thing
+  picked keeps sounding until you reach it; other things sound once as they come near, then
+  softly every 20 seconds (enemies keep growling).
 - Shift+Page Down/Up: change scanner category, including the quest objective.
 - Home: read the selected thing again and face it. Shift+Home: walk to it.
 - Shift+grave accent: autowalk to the objective or follow your guide; press again to stop.

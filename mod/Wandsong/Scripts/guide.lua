@@ -17,7 +17,9 @@ local function sections()
         { "What you hear",
           "People make a soft two-note sound from where they stand, creatures the same sound lower, " ..
           "enemies a low growl. Chests and collectibles sparkle, doors knock. A deep bell is ancient magic " ..
-          "gathering, where the game's wisps of light lead. Walls are a soft rush that " ..
+          "gathering, where the game's wisps of light lead. Each thing sounds once as it comes near, again " ..
+          "as you pass close to a door, chest or collectible, and otherwise softly every 20 seconds; " ..
+          "enemies keep growling. Walls are a soft rush that " ..
           "gets louder as you get closer; an airy burst means a wall beside you has ended, like a doorway. " ..
           "The objective beacon pings along the game's route to your objective. Press " .. k("sounds") ..
           " to hear every sound with its meaning, and " .. k("what_was_that") .. " to have the last sounds named." },
@@ -30,7 +32,10 @@ local function sections()
           "with their name, distance and direction. " .. k("scan_repeat") .. " says the current one again, freshly. " ..
           k("scan_cat_next") .. " and " .. k("scan_cat_prev") .. " pick a category: the quest objective, " ..
           "people, enemies, creatures, chests, collectibles, doors or things to use; empty ones are skipped. " ..
-          k("scan_repeat") .. " also turns you to face it, and " .. k("scan_walk") .. " walks you there." },
+          k("scan_repeat") .. " also turns you to face it, and " .. k("scan_walk") .. " walks you there. " ..
+          "The thing the scanner names keeps sounding from where it is until you reach it, then you hear " ..
+          "the arrival sound; things to use, silent otherwise, sparkle higher. " .. k("scan_repeat") ..
+          " picks it again." },
         { "Getting where you're going",
           k("autowalk") .. " walks you along the game's route to your objective, or follows the person " ..
           "leading you when there is one; any movement key stops it. Your game's movement keys move you yourself. " ..

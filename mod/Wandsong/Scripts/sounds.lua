@@ -11,9 +11,10 @@ local LEGEND = {
     { "door", "Door: a low knock from the door's position." },
     { "item", "Collectible, like a Field Guide page: a bright sparkle." },
     { "item", "Chest: the same sparkle, lower.", 0.8 },
-    { "note", "Ancient magic hotspot: a deep bell, every two seconds, from where ancient magic gathers, even far off. The game leads sighted players there with wisps of light.", 0.6 },
+    { "note", "Ancient magic hotspot: a deep bell from where ancient magic gathers, even far off. The game leads sighted players there with wisps of light.", 0.6 },
+    { "item", "Something to use you picked with the scanner, like a lever: a higher sparkle, until you reach it.", 1.25 },
     { "ping", "Objective beacon: a ping from a point about 8 metres along the game's route to your objective. Follow it and you follow the path. Higher means the path goes up, lower means down." },
-    { "arrive", "Arrived at your objective." },
+    { "arrive", "Arrived at your objective, or at the thing you picked with the scanner." },
     { "step", "Footstep: one per stride while you walk. No steps means you're standing still." },
     { "land", "Landing: you've come down from a jump or a fall." },
     { "step_blocked", "Bump: you're pushing to move but something is in the way." },
@@ -41,7 +42,8 @@ local LEGEND = {
 
 function M.items()
     local world = require("world")
-    local items = { { text = "Each sound below plays when you press it. Positioned sounds come from where the thing is; these previews play in the centre." } }
+    local items = { { text = "Each sound below plays when you press it. Positioned sounds come from where the thing is; these previews play in the centre." },
+                    { text = "Nearby things sound once as they come near, again as you pass close to a door, chest or collectible, and otherwise softly every 20 seconds. Enemies keep growling, and the thing you picked with the scanner keeps sounding until you reach it." } }
     for _, e in ipairs(LEGEND) do
         local name, text, pitch = e[1], e[2], e[3]
         items[#items + 1] = {

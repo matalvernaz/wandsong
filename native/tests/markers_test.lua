@@ -11,6 +11,7 @@ local things = {
 }
 package.loaded.world = {
     in_game = function() return true end,
+    track = function() end,
     position = function() return 0, 0, 0, 0 end,
     entries = function()
         local out = {}

@@ -5,7 +5,7 @@ local t = dofile("native/tests/testlib.lua")
 local said, walked, faced = {}, nil, nil
 local marks = { { x = 1000, y = 0, z = 0 }, { x = 0, y = 2000, z = 0 } }
 local objective = { x = 1000, y = 0, z = 0, name = "Quest objective" }
-package.loaded.world = { in_game = function() return true end, position = function() return 0, 0, 0, 0 end,
+package.loaded.world = { in_game = function() return true end, track = function() end, position = function() return 0, 0, 0, 0 end,
     entries = function() return {} end, locate = function() return nil end }
 package.loaded.markers = { list = function() return marks end, marked = function() return false end }
 package.loaded.path = { objective = function() return objective end,

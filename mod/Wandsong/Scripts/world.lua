@@ -133,11 +133,14 @@ local function call_bool(o, fn)
 end
 
 -- key (object address) -> { path, kind, name, name_src, x, y, z, dist, seen_at, pass,
--- priority, sound, every, range, pitch, next_at, extra, cn }: snapshots. Only while holding
--- (see "Holding") also obj, the object, and serial, its watch in the deletion record.
+-- priority, sound, every, range, pitch, next_at, heard_at, near_heard, extra, cn }: snapshots.
+-- Only while holding (see "Holding") also obj, the object, and serial, its watch in the
+-- deletion record.
 local nearby = {}
 local by_path = {}  -- path -> key
 local spoken_names, logged_names = {}, {}
+-- The scanner's current thing, by path (see "Ambient sounds"), and whether it has sounded yet.
+local tracked, tracked_heard = nil, false
 
 -- Forget one thing: its snapshot, its path, and its watch.
 local function drop(key)
@@ -149,7 +152,7 @@ local function drop(key)
 end
 
 local function clear_world(reset_names)
-    nearby, by_path = {}, {}
+    nearby, by_path, tracked = {}, {}, nil
     if holding then lifetime.clear() end
     -- Names learned from subtitles stay: object paths are unique for the whole run, and the
     -- pause menu's screen load counts as a load (Fig was "Student" again after it, Oct 7).
@@ -863,32 +866,109 @@ end
 
 -- --- Ambient sounds ---------------------------------------------------------------------
 
--- Only the nearest few things make sounds, one at a time (after another access mod):
--- overlapping cues from everything in range were hard to tell apart.
-local MAX_AUDIBLE = 8
+-- Two layers, so a busy place doesn't beep all at once (Matt, Oct 9: "a bit overwhelming with
+-- everything beeping at once"):
+--   * steady: the scanner's current thing (M.track) keeps a beat from as far as the scanner
+--     reaches until the player is beside it, then the arrival sound; enemies keep theirs;
+--   * background: everything else sounds once as it comes into range, once more as the player
+--     passes close to a door, chest, collectible or ancient magic, and otherwise only every
+--     REST_S while still in range: quieter, the nearest few of each kind (a crowd doesn't hide
+--     the chest behind it), never two within BG_GAP_S.
+-- Either way one sound per turn at most (after another access mod: overlapping cues from
+-- everything in range were hard to tell apart).
+local MAX_FOES = 8                -- enemies keep a beat: the nearest this many
+local BG_EACH = 4                 -- background: the nearest this many of each kind
+local BG_GAP_S = 0.8
+local REST_S = 20
+local NEAR_CM = 400
+local NEAR_KINDS = { door = true, chest = true, collect = true, magic = true }
+local TRACK_EVERY = 1.5
+local TRACK_RANGE_CM = 4000       -- the scanner's reach (ancient magic: its own, further)
+local TRACK_ARRIVE_CM = 200
+local STEADY_VOLUME, BG_VOLUME = 0.7, 0.45
+-- A picked thing without a sound of its own (something to use, an object): a higher sparkle.
+-- Puzzle knights have statues.lua's bells instead.
+local TRACK_SOUND, TRACK_PITCH = "item", 1.25
+local bg_at = -math.huge
+
+--- Picks the thing (by path, nil for none) whose sound keeps a steady beat until the player
+--- is beside it: the scanner's current thing.
+function M.track(path)
+    if path == tracked then return end
+    tracked, tracked_heard = path, false
+    local n = path and nearby[by_path[path]]
+    if n then n.next_at = os.clock() + 0.3 end
+end
+
+--- The tracked thing's path, or nil (none picked, or reached).
+function M.tracked() return tracked end
+
+local function sound_at(x, y, z, volume, sound, pitch, label)
+    audio.play(sound, x, y, z + 60, volume, pitch)
+    state.cue(label .. " " .. state.where(px, py, yaw_now, x, y))
+end
+
 local function ambient()
     if not in_game or not audio or not M.sounds_enabled() or state.loading() then return end
     local now = os.clock()
     local order = {}
-    for key, n in pairs(nearby) do if n.sound then order[#order + 1] = key end end   -- silent kinds: scanner only
+    for key, n in pairs(nearby) do
+        -- Silent kinds (things to use, objects, statues) are for the scanner, unless picked there.
+        if n.sound or (tracked and n.path == tracked) then order[#order + 1] = key end
+    end
     table.sort(order, function(a, b) return (nearby[a].dist or 1e9) < (nearby[b].dist or 1e9) end)
-    local played = 0
-    for rank, key in ipairs(order) do
+    local foes, ranks, best, best_why, best_d = 0, {}, nil, nil, nil
+    for _, key in ipairs(order) do
         local n = nearby[key]
-        if rank > MAX_AUDIBLE or played >= 1 then break end
-        if now >= n.next_at then
-            n.next_at = now + n.every
-            -- From the last pass's snapshot: no lookup of the thing itself.
-            local x, y, z = n.x, n.y, n.z
-            local dx, dy, dz = x - px, y - py, z - pz
-            if math.sqrt(dx * dx + dy * dy + dz * dz) <= n.range then
-                audio.play(n.sound, x, y, z + 60, 0.7, n.pitch)
-                local names = { person = "Person", enemy = "Enemy", beast = "Creature", chest = "Chest",
-                                collect = "Collectible", door = "Door", magic = "Ancient magic" }
-                state.cue((names[n.kind] or n.kind) .. " " .. state.where(px, py, yaw_now, x, y))
-                played = played + 1
+        -- From the last pass's snapshot: no lookup of the thing itself.
+        local x, y, z = n.x, n.y, n.z
+        local dx, dy, dz = x - px, y - py, z - pz
+        local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if tracked and n.path == tracked then
+            if d <= TRACK_ARRIVE_CM then
+                -- Reached: back to the background, as if just heard. Picked while already
+                -- beside it, it was never heard: no arrival either.
+                tracked, n.heard_at, n.near_heard = nil, now, true
+                if tracked_heard then
+                    audio.play_ui("arrive", 0.5)
+                    state.cue("Arrived at " .. n.name)
+                    return
+                end
+            elseif now >= n.next_at then
+                n.next_at = now + math.min(TRACK_EVERY, n.every)
+                local sound = n.sound or (n.kind ~= "statue" and TRACK_SOUND)
+                if sound and d <= math.max(TRACK_RANGE_CM, n.range) then
+                    tracked_heard, n.heard_at = true, now
+                    sound_at(x, y, z, STEADY_VOLUME, sound, n.sound and n.pitch or TRACK_PITCH, n.name)
+                    return
+                end
+            end
+        elseif n.kind == "enemy" then
+            foes = foes + 1
+            if foes <= MAX_FOES and now >= n.next_at then
+                n.next_at = now + n.every
+                if d <= n.range then
+                    sound_at(x, y, z, STEADY_VOLUME, n.sound, n.pitch, KIND_NOUN.enemy)
+                    return
+                end
+            end
+        else
+            -- Passing close counts again once well away.
+            if n.near_heard and d > NEAR_CM * 2 then n.near_heard = false end
+            ranks[n.kind] = (ranks[n.kind] or 0) + 1
+            if ranks[n.kind] <= BG_EACH and d <= n.range then
+                local why
+                if NEAR_KINDS[n.kind] and not n.near_heard and d <= NEAR_CM then why = 1   -- close by
+                elseif not n.heard_at then why = 2                                       -- came into range
+                elseif now - n.heard_at >= REST_S then why = 3 end                       -- still there
+                if why and (not best or why < best_why) then best, best_why, best_d = n, why, d end
             end
         end
+    end
+    if best and now - bg_at >= BG_GAP_S then
+        bg_at, best.heard_at = now, now
+        if best_d <= NEAR_CM then best.near_heard = true end
+        sound_at(best.x, best.y, best.z, BG_VOLUME, best.sound, best.pitch, KIND_NOUN[best.kind] or best.kind)
     end
 end
 

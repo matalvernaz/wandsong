@@ -149,7 +149,13 @@ In the game's Mods\Wandsong\ folder:
   (OverrideCharacterID, DefaultWorldID, GetCharacterID once per character, else the cleaned
   class name); 3D ambient sounds via audio_bridge.dll; crash fuse (world_active.flag); status
   and memory reports. API: in_game, enabled, ui_busy, not_ready_reason, entries, locate,
-  nearest, position, pawn. Shift+F5 only mutes sounds; it does not close the gameplay gate.
+  nearest, position, pawn, track/tracked. Shift+F5 only mutes sounds; it does not close the gameplay gate.
+  Ambient sounds come in two layers (Matt, Oct 9: everything beeping at once was too much):
+  the scanner's current thing (track) and the nearest 8 enemies keep a beat, the picked thing
+  out to 40 m until the player is within 2 m (then "arrive"); everything else sounds once on
+  coming into range, once when passed within 4 m (doors, chests, collectibles, magic), then
+  every 20 s, at volume 0.45, the nearest 4 of each kind, never two within 0.8 s.
+  native/tests/world_ambient_test.lua measures a crowded corridor.
   Films (Content\Movies\FMV: the Pensieve memories, seasons, credits) play with the player's
   InCinematic off: the gate also asks the cinematic Bink player (MP_PlayBinkMedia:IsPlaying,
   an asset) and counts a film as a scene, believed for 15 minutes at most. The Sorting Hat's
@@ -174,7 +180,8 @@ In the game's Mods\Wandsong\ folder:
   objective direction and the tracked quest task (MissionManager GetMissionLogDataBP).
 - scanner.lua: Page Down/Up, Home (re-announce and turn to face), Shift+Page Down/Up
   categories (empty skipped; "Quest objective" is its own category), Shift+Home walk to it,
-  Shift+F9 dump to scan_dump.txt. Reads world.entries(); positions fresh each read.
+  Shift+F9 dump to scan_dump.txt. Reads world.entries(); positions fresh each read. The
+  thing it names is tracked by sound (world.track); quest points have the beacon instead.
 - gamesettings.lua: the game's own accessibility settings, switched with PhoenixGameSettings'
   setters and SaveSettings (as its Accessibility menu does). Audio cues (AudioVisualizer, the
   real switch, plus AccessibilityAudioCueOpacity) at every start unless switched off on the
@@ -241,7 +248,7 @@ In the game's Mods\Wandsong\ folder:
   input_bridge.c (key, mouse_move, focused), lifetime_bridge.cpp (the
   deletion record: a delete listener registered through UE4SS.dll's exports; watch, alive,
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 49 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 50 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also

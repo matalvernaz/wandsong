@@ -119,6 +119,10 @@ local function index_of(path)
     return nil
 end
 
+-- The current thing keeps a steady sound until the player is beside it (world.lua, "Ambient
+-- sounds"); quest points have the beacon instead.
+local function pick(e) world.track(e and not e.point and e.path or nil) end
+
 -- What a sighted player would notice about a thing at a glance, beyond its name, by kind:
 -- modules register describers (statues.lua: which way a knight and its reflection face).
 M.details = {}
@@ -152,6 +156,7 @@ local function ready()
     if generation ~= state.generation then
         generation = state.generation
         list, selected, built_at = {}, nil, -100
+        pick(nil)
     end
     if not world.in_game() then return false end
     return true
@@ -169,7 +174,7 @@ local function step(dir)
     for _ = 1, #list do
         i = (i - 1 + dir) % #list + 1
         selected = list[i].path
-        if describe(i) then return end
+        if describe(i) then pick(list[i]); return end
         log("gone: " .. list[i].path)
     end
     speech.say("Everything that was here has gone")
@@ -185,9 +190,10 @@ local function current()
         i = selected and index_of(selected)
     end
     if not i then step(1) return end
-    if not describe(i, true) then speech.say(list[i].name .. " has gone"); selected = nil; return end
-    -- As in other access mods, Home also turns you to face it.
+    if not describe(i, true) then speech.say(list[i].name .. " has gone"); selected = nil; pick(nil); return end
+    -- As in other access mods, Home also turns you to face it, and tracks it again once reached.
     local e = list[i]
+    pick(e)
     if e.point then require("path").face_point(e.x, e.y, e.name)
     else require("path").face_to(e.path, e.name, true) end
 end
@@ -203,6 +209,7 @@ local function category(dir)
     end
     local c = CATEGORIES[cat_i]
     speech.say(c.name .. ", " .. (#list == 0 and "none nearby" or (#list .. " nearby")))
+    pick(list[1])
     if #list > 0 then
         selected = list[1].path
         dispatch.later(50, function() describe(1) end, "scanner first")
@@ -213,8 +220,9 @@ local function with_selected(fn)
     if not ready() then return end
     if stale() or CATEGORIES[cat_i].kind == "objective" then build() end
     local i = selected and index_of(selected)
-    if not i and selected then speech.say("What you picked has gone. Use page down to pick again.") return end
+    if not i and selected then speech.say("What you picked has gone. Use page down to pick again.") pick(nil) return end
     if not i then speech.say("Nothing selected. Use page down to pick something first.") return end
+    pick(list[i])
     fn(list[i])
 end
 
