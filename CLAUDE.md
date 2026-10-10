@@ -127,6 +127,9 @@ In the game's Mods\Wandsong\ folder:
   function reference. While state.loading(), only during_load tasks run; obsolete queued
   work and delayed world tasks are discarded across load generations. Likewise while the
   game, having ticked, hasn't for 0.3 s (dispatch.ticking() false; world.in_game() too).
+  Closed (M.close, M.open) while main.lua loads the modules: no tasks run and no fallback
+  is posted until everything is registered. A fallback is posted at least 15 ms after the
+  last one finished (UE4SS releases its references on the game thread just after).
 - state.lua: loading generation (every load mark, menus' screen loads included), world
   counter (map loads and a new player object only: objects of an earlier world are never
   looked up), cinematic scene, pause state, modal tutorial, mod screen, recent cues.
@@ -261,7 +264,7 @@ In the game's Mods\Wandsong\ folder:
   forget, clear, stats), static Lua 5.4.4 (UE4SS 3.0.1's version) built as UE4SS builds its
   own: as C++ and taking UE4SS's global Lua lock (lua_lock.h, lua_lock.cpp; each module's
   lua_lock() says which), luahost test runner. helper/ and installer/ are the fallback speech exe and setup.
-- native/tests/: 52 checks including syntax, startup, controls, registry cleanup, dispatcher,
+- native/tests/: 53 checks including syntax, startup, controls, registry cleanup, dispatcher,
   navigation, scanner, subtitles, HUD feedback and the gameplay gate. Run `python tools/run_tests.py`
   from the repo root on Windows/Linux. Each test gets its own temporary runtime/config folder;
   the runner rejects dispatcher task errors as well as process failures. GitHub Actions also
@@ -269,6 +272,17 @@ In the game's Mods\Wandsong\ folder:
 
 ## Hard-won rules (each one cost a crash)
 
+- Never let two threads take UE4SS registry references at once. UE4SS's luaL_ref/luaL_unref
+  aren't atomic across threads (issue #1445): two at once can hand out the same reference, and
+  a hook's function or Lua thread is then collected while still in use (heap corruption,
+  "Ref was not function"). main.lua runs on UE4SS's event-loop thread and every RegisterHook,
+  RegisterCustomEvent and RegisterKeyBind takes references; ExecuteInGameThread takes them on
+  the calling thread; a UFunction's out parameters take them on the game thread, and UE4SS
+  releases an action's thread reference there after it runs. So the dispatcher stays closed
+  until main.lua is done, posts its fallback (the one off-thread ExecuteInGameThread) only well
+  after the last one finished, and key callbacks only set flags and queue work (no UE4SS
+  calls). The Oct 9 18:56 hang and 23:13 heap corruption both followed a fallback posted
+  while main.lua was still loading.
 - The native modules' Lua copy must be built exactly as UE4SS builds its own Lua 5.4.4: as C++
   (errors are C++ throws there; a C copy's longjmp would land in UE4SS's try/catch frames) and
   with lua_lock/lua_unlock calling UE4SS's LuaLock/LuaUnlock, one global CRITICAL_SECTION

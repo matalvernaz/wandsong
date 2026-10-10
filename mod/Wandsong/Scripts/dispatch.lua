@@ -178,7 +178,21 @@ local last_ran, stall_logged = os.clock(), false
 local running, pending = false, false
 local next_tick = 0
 local driver, fallback_calls, callback_freed, callback_missed = "starting", 0, 0, 0
+
+-- Nothing runs on the game thread, and no fallback is posted, while main.lua is still loading
+-- the modules (M.close, M.open). Loading runs on UE4SS's event-loop thread and takes registry
+-- references (every RegisterHook, RegisterCustomEvent and RegisterKeyBind); a fallback posted
+-- from the async thread takes its own (ExecuteInGameThread), and so does a task on the game
+-- thread (a UFunction's out parameters). UE4SS's luaL_ref isn't atomic across threads, so two
+-- at once can be handed the same reference, and one owner's function or Lua thread is then
+-- collected while still in use (UE4SS issue #1445). The Oct 9 18:56 hang and 23:13 heap
+-- corruption both followed a first fallback posted while main.lua was still loading.
+local open = true
+function M.close() open = false end
+function M.open() open = true end
+
 local function game_tick()
+    if not open then return end
     -- Nothing at all inside a map load, not even work allowed during loads (state.lua).
     if state.in_map_load() then return end
     if running or os.clock() < next_tick then return end
@@ -213,6 +227,11 @@ end
 -- Capture only luaL_ref's possible slots and release the exact, unique callback when it
 -- executes. Never scan the registry, never release the thread (UE4SS owns it). A newer
 -- engine's bookkeeping is left alone. At most one fallback may be outstanding.
+-- UE4SS releases a finished action's Lua thread reference on the game thread right after the
+-- callback returns, and ExecuteInGameThread takes new references here on the async thread: the
+-- next post waits until that release is long done.
+local FALLBACK_GAP_S = 0.015  -- a scheduler quantum; well under TICK_MS, so the cadence stays
+local done_at = -math.huge
 local clean_callback = false
 pcall(function()
     local a, b, c = UE4SS.GetVersion()
@@ -222,7 +241,7 @@ pcall(function()
     clean_callback = a == 3 and b == 0 and c == 1 and (lua == nil or lua == "5.4.4")
 end)
 local function fallback()
-    if pending then return end
+    if pending or os.clock() - done_at < FALLBACK_GAP_S then return end
     pending = true
     local reg, candidates
     if clean_callback then
@@ -244,6 +263,7 @@ local function fallback()
         end
         -- Keep pending set during work, including any nested ProcessEvent calls.
         game_tick()
+        done_at = os.clock()
         pending = false
     end
     fallback_calls = fallback_calls + 1
@@ -280,7 +300,7 @@ LoopAsync(TICK_MS, function()
         stall_logged = true
         diag.trace("game thread hasn't run the mod for 8 s (frozen, or a long load)")
     end
-    if (#queue > 0 or #timers > 0) and os.clock() - last_hook > FALLBACK_AFTER_S then
+    if open and (#queue > 0 or #timers > 0) and os.clock() - last_hook > FALLBACK_AFTER_S then
         if driver ~= "fallback" then driver = "fallback"; log("dispatcher: fallback (no Blueprint ticks)") end
         fallback()
     end

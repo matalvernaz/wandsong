@@ -5,6 +5,10 @@ local diag = require("diag")   -- first: it captures every later log line
 -- Before any native module loads: they're only safe on the Lua they were built with.
 local host = require("host")
 host.guard()
+-- No game-thread work until every module below has loaded (dispatch.lua, M.close): loading
+-- runs on UE4SS's event-loop thread, taking registry references the game thread mustn't race.
+local dispatch = require("dispatch")
+dispatch.close()
 local speech = require("speech")
 speech.start()
 
@@ -77,7 +81,7 @@ keys.action{
 -- hears nothing. Never register hooks from a request (UE4SS keeps the request's Lua thread).
 local files = require("files")
 local REQUEST, RESULT = files.runtime("dev_request.lua"), files.runtime("dev_result.txt")
-require("dispatch").every(1000, function()
+dispatch.every(1000, function()
     local f = io.open(REQUEST, "r")
     if not f then return end
     local src = f:read("a")
@@ -99,4 +103,6 @@ end
 
 speech.say("Wandsong ready. Semicolon for help.")
 if host.problem then speech.say(host.problem, true) end
+-- Everything is registered: game-thread work may start.
+dispatch.open()
 print("[Wandsong] loaded\n")
